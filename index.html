@@ -6789,7 +6789,7 @@ async function impRead(){
   }
   if(mime==='application/pdf'){
     try{
-      const lines = await pdfTextLines(f), rows = impParseImobzi(lines);
+      const lines = await pdfTextLines(f); let rows = impParseImobzi(lines); if(tipoDica) rows = rows.filter(r=>r.tipo===tipoDica);
       if(rows.length){
         impRows = rows; impRows.forEach(r=>{ r.dup = impIsDup(r); if(r.dup) r.sel = false; });
         const cnt = fl=>rows.filter(r=>r.flag===fl).length;
