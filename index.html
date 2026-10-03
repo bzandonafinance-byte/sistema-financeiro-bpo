@@ -1051,6 +1051,32 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .explore-banner{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#fff7e0;border:1px solid #f1deaa;color:#6b4e00;border-radius:6px;padding:10px 14px;font-size:12.5px;margin-bottom:14px;}
 .exb-actions{display:flex;gap:8px;}
 .usr-emp{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px;max-height:150px;overflow-y:auto;padding:8px 10px;border:1px solid var(--border-color);border-radius:var(--radius-sm);background:#fafafb;}
+
+.cp{position:relative;}
+.cat-wrap .cp .cp-input{padding-left:32px;}
+.cp-input{width:100%;height:32px;border:1px solid var(--border-color-strong);border-radius:var(--radius-sm);padding:0 9px;font-size:12.5px;background:#fff;color:var(--text-primary);}
+.cp-list{display:none;position:absolute;left:0;right:0;top:calc(100% + 3px);z-index:80;max-height:240px;overflow-y:auto;background:#fff;border:1px solid var(--border-color-strong);border-radius:var(--radius-sm);box-shadow:0 8px 24px rgba(16,24,40,.14);}
+.cp-item{display:flex;justify-content:space-between;gap:12px;padding:8px 10px;font-size:12.5px;cursor:pointer;border-bottom:1px solid #f0f1f3;}
+.cp-item:hover{background:#f3f4f6;}
+.cp-item em{font-style:normal;color:var(--text-tertiary);font-size:11px;white-space:nowrap;}
+.cp-none{padding:12px;color:var(--text-tertiary);font-size:12px;}
+
+.modal.modal-xl{max-width:1180px;width:96vw;}
+.imp-tbl th,.imp-tbl td{padding:7px 6px;white-space:nowrap;}
+.imp-tbl .cx-input,.imp-tbl .cx-select{height:30px;}
+.imp-off{opacity:.5;}
+.imp-tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;background:#f3f4f6;color:#374151;white-space:nowrap;}
+.imp-tag.warn{background:#fff6df;color:#8a5a00;} .imp-tag.new{background:#eaf1ff;color:#2f5bd7;}
+.imp-total{margin-top:12px;font-size:13px;text-align:right;color:var(--text-secondary);}
+.imp-obs{background:#fff7e0;border:1px solid #f1deaa;color:#6b4e00;border-radius:6px;padding:9px 12px;font-size:12.5px;margin-bottom:12px;line-height:1.45;}
+.imp-err{margin-top:12px;background:#fdecec;border:1px solid #f9d4d2;color:#a3231b;border-radius:6px;padding:9px 12px;font-size:12.5px;line-height:1.45;}
+.imp-wait{display:flex;gap:16px;align-items:center;justify-content:center;padding:48px 10px;font-size:13px;}
+.imp-spin{width:26px;height:26px;border:3px solid #e5e7eb;border-top-color:var(--accent);border-radius:50%;animation:impspin 0.9s linear infinite;}
+@keyframes impspin{to{transform:rotate(360deg);}}
+.imp-done{text-align:center;padding:30px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;}
+.imp-ok{width:46px;height:46px;border-radius:50%;background:#e9faf1;color:#0f8a55;font-size:24px;display:flex;align-items:center;justify-content:center;}
+.lc-empty .cx-btn{margin:0;}
+.imp-tbl td:nth-child(5){min-width:190px;}
 </style>
 </head>
 <body>
@@ -1324,7 +1350,7 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
           <span class="subpanel-link" id="fFornecedorQuickAdd" style="font-size:11px;">+ Cadastrar novo fornecedor</span>
         </div>
         <div class="form-field">
-          <label>Categoria <span class="req">*</span></label>
+          <label>Conta contábil <span class="req">*</span></label>
           <div class="cat-wrap"><span class="cat-ico" id="fCatIco"></span><select id="fCategoria"></select></div>
         </div>
         <div class="form-field col-span-2">
@@ -1465,7 +1491,7 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
         <div class="form-field"><label>Cliente <span class="req">*</span></label><select id="rCliente"></select>
           <span class="subpanel-link" id="rClienteQuickAdd" style="font-size:11px;">+ Cadastrar novo cliente</span>
         </div>
-        <div class="form-field"><label>Categoria <span class="req">*</span></label><div class="cat-wrap"><span class="cat-ico" id="rCatIco"></span><select id="rCategoria"></select></div></div>
+        <div class="form-field"><label>Conta contábil <span class="req">*</span></label><div class="cat-wrap"><span class="cat-ico" id="rCatIco"></span><select id="rCategoria"></select></div></div>
         <div class="form-field col-span-2"><label>Descrição <span class="req">*</span></label><input type="text" id="rDescricao" placeholder="Descrição do recebimento"></div>
         <div class="form-field"><label>Competência <span class="req">*</span></label><input type="month" id="rCompetencia"></div>
         <div class="form-field"><label>Vencimento <span class="req">*</span></label><input type="date" id="rVencimento"></div>
@@ -1706,8 +1732,8 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
         <div class="form-field col-span-2" style="border-top:1px solid var(--border-color);padding-top:10px;">
           <label style="font-size:12px;font-weight:700;color:var(--text-primary);">Regra de classificação (sugestão automática)</label>
         </div>
-        <div class="form-field"><label>Categoria padrão</label><select id="spCategoria"></select></div>
-        <div class="form-field"><label>Plano de Contas</label><select id="spPlanoContas"></select></div>
+        <div class="form-field"><label>Conta contábil padrão</label><select id="spCategoria"></select></div>
+        <div class="form-field" style="display:none;"><label>Plano de Contas</label><select id="spPlanoContas"></select></div>
         <div class="form-field"><label>Centro de custo padrão</label><select id="spCentroCusto"></select></div>
         <div class="form-field"><label>Forma de pagamento</label><select id="spFormaPagamento"></select></div>
         <div class="form-field"><label>Histórico padrão</label><input type="text" id="spHistorico" placeholder="Ex: Licenciamento de software"></div>
@@ -1771,8 +1797,8 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
         <div class="form-field"><label>CNPJ/CPF</label><input type="text" id="clCnpj" placeholder="00.000.000/0001-00"></div>
         <div class="form-field"><label>E-mail</label><input type="email" id="clEmail"></div>
         <div class="form-field"><label>Telefone</label><input type="text" id="clTelefone"></div>
-        <div class="form-field"><label>Categoria padrão</label><select id="clCategoria"></select></div>
-        <div class="form-field"><label>Plano de Contas</label><select id="clPlanoContas"></select></div>
+        <div class="form-field"><label>Conta contábil padrão</label><select id="clCategoria"></select></div>
+        <div class="form-field" style="display:none;"><label>Plano de Contas</label><select id="clPlanoContas"></select></div>
         <div class="form-field"><label>Centro de Custo</label><select id="clCentroCusto"></select></div>
         <div class="form-field col-span-2"><label>Observações</label><textarea id="clObservacoes" placeholder="Observações (opcional)"></textarea></div>
       </div>
@@ -1823,7 +1849,7 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
       <div class="form-grid">
         <div class="form-field col-span-2"><label>Nome / Razão Social</label><input type="text" id="qpNome" placeholder="Nome ou razão social"></div>
         <div class="form-field"><label>CNPJ/CPF</label><input type="text" id="qpCnpj" placeholder="00.000.000/0001-00"></div>
-        <div class="form-field"><label>Categoria</label><select id="qpCategoria"></select></div>
+        <div class="form-field"><label>Conta contábil</label><select id="qpCategoria"></select></div>
         <div class="form-field"><label>Centro de Custo</label><select id="qpCentroCusto"></select></div>
       </div>
     </div>
@@ -1836,6 +1862,10 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 
 <div class="toast" id="toast"></div>
 
+<script>
+/* Plano de contas padrão (planilha do Bruno) — contas: [cód, nome, pai, nível, A/S, D/C/M, BP/DRE/CT, grupo, subgrupo, aceita lançamento] */
+const PLANO_SEED = [["1","ATIVO","",1,"S","D","BP","Ativo","",0],["1.01","ATIVO CIRCULANTE","1",2,"S","D","BP","Ativo Circulante","",0],["1.01.01","Disponibilidades","1.01",3,"S","D","BP","Ativo Circulante","Disponibilidades",0],["1.01.01.001","Caixa Geral","1.01.01",4,"A","D","BP","Ativo Circulante","Disponibilidades",1],["1.01.01.002","Caixa Pequeno","1.01.01",4,"A","D","BP","Ativo Circulante","Disponibilidades",1],["1.01.01.003","Fundo Fixo","1.01.01",4,"A","D","BP","Ativo Circulante","Disponibilidades",1],["1.01.01.004","Numerários em Trânsito","1.01.01",4,"A","D","BP","Ativo Circulante","Disponibilidades",1],["1.01.01.005","Valores a Depositar","1.01.01",4,"A","D","BP","Ativo Circulante","Disponibilidades",1],["1.01.01.006","Cheques a Depositar","1.01.01",4,"A","D","BP","Ativo Circulante","Disponibilidades",1],["1.01.01.007","Caixa em Moeda Estrangeira","1.01.01",4,"A","D","BP","Ativo Circulante","Disponibilidades",1],["1.01.02","Bancos Conta Movimento","1.01",3,"S","D","BP","Ativo Circulante","Bancos",0],["1.01.02.001","Banco Conta Corrente - Banco 1","1.01.02",4,"A","D","BP","Ativo Circulante","Bancos",1],["1.01.02.002","Banco Conta Corrente - Banco 2","1.01.02",4,"A","D","BP","Ativo Circulante","Bancos",1],["1.01.02.003","Banco Conta Corrente - Banco 3","1.01.02",4,"A","D","BP","Ativo Circulante","Bancos",1],["1.01.02.004","Conta de Pagamento / Instituição Financeira","1.01.02",4,"A","D","BP","Ativo Circulante","Bancos",1],["1.01.02.005","Conta Digital","1.01.02",4,"A","D","BP","Ativo Circulante","Bancos",1],["1.01.02.006","Conta em Moeda Estrangeira","1.01.02",4,"A","D","BP","Ativo Circulante","Bancos",1],["1.01.02.007","Valores em Trânsito Bancário","1.01.02",4,"A","D","BP","Ativo Circulante","Bancos",1],["1.01.03","Aplicações Financeiras - Curto Prazo","1.01",3,"S","D","BP","Ativo Circulante","Aplicações Financeiras",0],["1.01.03.001","CDB","1.01.03",4,"A","D","BP","Ativo Circulante","Aplicações Financeiras",1],["1.01.03.002","RDB","1.01.03",4,"A","D","BP","Ativo Circulante","Aplicações Financeiras",1],["1.01.03.003","Fundos de Investimento","1.01.03",4,"A","D","BP","Ativo Circulante","Aplicações Financeiras",1],["1.01.03.004","Tesouro / Títulos Públicos","1.01.03",4,"A","D","BP","Ativo Circulante","Aplicações Financeiras",1],["1.01.03.005","Poupança","1.01.03",4,"A","D","BP","Ativo Circulante","Aplicações Financeiras",1],["1.01.03.006","Aplicações Automáticas","1.01.03",4,"A","D","BP","Ativo Circulante","Aplicações Financeiras",1],["1.01.03.007","Operações Compromissadas","1.01.03",4,"A","D","BP","Ativo Circulante","Aplicações Financeiras",1],["1.01.03.008","Letras Financeiras","1.01.03",4,"A","D","BP","Ativo Circulante","Aplicações Financeiras",1],["1.01.03.009","Outras Aplicações Financeiras","1.01.03",4,"A","D","BP","Ativo Circulante","Aplicações Financeiras",1],["1.01.03.010","Rendimentos a Apropriar","1.01.03",4,"A","D","BP","Ativo Circulante","Aplicações Financeiras",1],["1.01.04","Clientes e Contas a Receber","1.01",3,"S","D","BP","Ativo Circulante","Contas a Receber",0],["1.01.04.001","Clientes Nacionais","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.002","Clientes Estrangeiros","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.003","Duplicatas a Receber","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.004","Cartões de Crédito a Receber","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.005","Cartões de Débito a Receber","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.006","PIX a Receber","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.007","Boletos a Receber","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.008","Marketplace a Receber","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.009","Recebíveis de Adquirentes","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.010","Contas a Receber - Partes Relacionadas","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.011","Receitas a Faturar","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.012","Serviços Prestados a Faturar","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.013","Vendas a Faturar","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.014","Juros a Receber","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.015","Outros Créditos de Clientes","1.01.04",4,"A","D","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.016","(-) Perdas Estimadas com Créditos de Liquidação Duvidosa","1.01.04",4,"A","C","BP","Ativo Circulante","Contas a Receber",1],["1.01.04.017","(-) Ajuste a Valor Presente - Clientes","1.01.04",4,"A","C","BP","Ativo Circulante","Contas a Receber",1],["1.01.05","Adiantamentos e Outros Créditos","1.01",3,"S","D","BP","Ativo Circulante","Outros Créditos",0],["1.01.05.001","Adiantamentos a Fornecedores","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.002","Adiantamentos a Empregados","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.003","Adiantamentos para Viagens","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.004","Adiantamentos a Sócios / Administradores","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.005","Empréstimos a Empregados","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.006","Empréstimos a Sócios","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.007","Créditos com Partes Relacionadas","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.008","Cheques em Cobrança","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.009","Valores a Recuperar","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.010","Sinistros a Receber","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.011","Reembolsos a Receber","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.012","Dividendos a Receber","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.013","Comissões a Receber","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.014","Cauções de Curto Prazo","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.015","Depósitos Judiciais de Curto Prazo","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.05.016","Outros Devedores","1.01.05",4,"A","D","BP","Ativo Circulante","Outros Créditos",1],["1.01.06","Tributos a Recuperar / Compensar","1.01",3,"S","D","BP","Ativo Circulante","Tributos a Recuperar",0],["1.01.06.001","ICMS a Recuperar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.002","ICMS-ST a Recuperar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.003","IPI a Recuperar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.004","PIS a Recuperar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.005","COFINS a Recuperar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.006","ISS a Recuperar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.007","IRRF a Recuperar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.008","INSS a Compensar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.009","FGTS a Compensar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.010","IRPJ a Compensar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.011","CSLL a Compensar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.012","Simples Nacional a Compensar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.013","ICMS DIFAL a Recuperar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.014","Crédito de Tributos Federais","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.015","Crédito de Tributos Estaduais","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.016","Crédito de Tributos Municipais","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.017","PER/DCOMP - Créditos","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.06.018","Outros Tributos a Recuperar","1.01.06",4,"A","D","BP","Ativo Circulante","Tributos a Recuperar",1],["1.01.07","Estoques","1.01",3,"S","D","BP","Ativo Circulante","Estoques",0],["1.01.07.001","Mercadorias para Revenda","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.002","Matérias-Primas","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.003","Materiais Secundários","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.004","Materiais de Embalagem","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.005","Produtos em Elaboração","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.006","Produtos Acabados","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.007","Produtos em Trânsito","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.008","Materiais de Consumo","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.009","Materiais de Manutenção","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.010","Peças e Componentes","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.011","Almoxarifado","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.012","Importações em Andamento","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.013","Estoque em Poder de Terceiros","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.014","Estoque de Terceiros em Nosso Poder","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.015","Adiantamentos para Importação","1.01.07",4,"A","D","BP","Ativo Circulante","Estoques",1],["1.01.07.016","(-) Provisão para Perdas de Estoques","1.01.07",4,"A","C","BP","Ativo Circulante","Estoques",1],["1.01.07.017","(-) Ajuste ao Valor Realizável Líquido","1.01.07",4,"A","C","BP","Ativo Circulante","Estoques",1],["1.01.08","Despesas Antecipadas","1.01",3,"S","D","BP","Ativo Circulante","Despesas Antecipadas",0],["1.01.08.001","Seguros a Apropriar","1.01.08",4,"A","D","BP","Ativo Circulante","Despesas Antecipadas",1],["1.01.08.002","Aluguéis Antecipados","1.01.08",4,"A","D","BP","Ativo Circulante","Despesas Antecipadas",1],["1.01.08.003","Assinaturas e Licenças Antecipadas","1.01.08",4,"A","D","BP","Ativo Circulante","Despesas Antecipadas",1],["1.01.08.004","Manutenções Antecipadas","1.01.08",4,"A","D","BP","Ativo Circulante","Despesas Antecipadas",1],["1.01.08.005","Publicidade Antecipada","1.01.08",4,"A","D","BP","Ativo Circulante","Despesas Antecipadas",1],["1.01.08.006","Juros a Apropriar","1.01.08",4,"A","D","BP","Ativo Circulante","Despesas Antecipadas",1],["1.01.08.007","Prêmios de Seguros","1.01.08",4,"A","D","BP","Ativo Circulante","Despesas Antecipadas",1],["1.01.08.008","IPTU a Apropriar","1.01.08",4,"A","D","BP","Ativo Circulante","Despesas Antecipadas",1],["1.01.08.009","IPVA a Apropriar","1.01.08",4,"A","D","BP","Ativo Circulante","Despesas Antecipadas",1],["1.01.08.010","Taxas e Anuidades a Apropriar","1.01.08",4,"A","D","BP","Ativo Circulante","Despesas Antecipadas",1],["1.01.08.011","Outras Despesas Antecipadas","1.01.08",4,"A","D","BP","Ativo Circulante","Despesas Antecipadas",1],["1.02","ATIVO NÃO CIRCULANTE","1",2,"S","D","BP","Ativo Não Circulante","",0],["1.02.01","Realizável a Longo Prazo","1.02",3,"S","D","BP","Ativo Não Circulante","Realizável LP",0],["1.02.01.001","Clientes - Longo Prazo","1.02.01",4,"A","D","BP","Ativo Não Circulante","Realizável LP",1],["1.02.01.002","Empréstimos a Partes Relacionadas","1.02.01",4,"A","D","BP","Ativo Não Circulante","Realizável LP",1],["1.02.01.003","Empréstimos a Sócios","1.02.01",4,"A","D","BP","Ativo Não Circulante","Realizável LP",1],["1.02.01.004","Depósitos Judiciais","1.02.01",4,"A","D","BP","Ativo Não Circulante","Realizável LP",1],["1.02.01.005","Depósitos e Cauções","1.02.01",4,"A","D","BP","Ativo Não Circulante","Realizável LP",1],["1.02.01.006","Tributos Diferidos Ativos","1.02.01",4,"A","D","BP","Ativo Não Circulante","Realizável LP",1],["1.02.01.007","Tributos a Recuperar - Longo Prazo","1.02.01",4,"A","D","BP","Ativo Não Circulante","Realizável LP",1],["1.02.01.008","Aplicações Financeiras - Longo Prazo","1.02.01",4,"A","D","BP","Ativo Não Circulante","Realizável LP",1],["1.02.01.009","Créditos Diversos - Longo Prazo","1.02.01",4,"A","D","BP","Ativo Não Circulante","Realizável LP",1],["1.02.01.010","Despesas Antecipadas - Longo Prazo","1.02.01",4,"A","D","BP","Ativo Não Circulante","Realizável LP",1],["1.02.01.011","(-) Perdas Estimadas - Longo Prazo","1.02.01",4,"A","C","BP","Ativo Não Circulante","Realizável LP",1],["1.02.01.012","(-) Ajuste a Valor Presente - Longo Prazo","1.02.01",4,"A","C","BP","Ativo Não Circulante","Realizável LP",1],["1.02.02","Investimentos","1.02",3,"S","D","BP","Ativo Não Circulante","Investimentos",0],["1.02.02.001","Participações em Controladas","1.02.02",4,"A","D","BP","Ativo Não Circulante","Investimentos",1],["1.02.02.002","Participações em Coligadas","1.02.02",4,"A","D","BP","Ativo Não Circulante","Investimentos",1],["1.02.02.003","Outras Participações Societárias","1.02.02",4,"A","D","BP","Ativo Não Circulante","Investimentos",1],["1.02.02.004","Propriedades para Investimento","1.02.02",4,"A","D","BP","Ativo Não Circulante","Investimentos",1],["1.02.02.005","Obras de Arte","1.02.02",4,"A","D","BP","Ativo Não Circulante","Investimentos",1],["1.02.02.006","Terrenos para Valorização","1.02.02",4,"A","D","BP","Ativo Não Circulante","Investimentos",1],["1.02.02.007","Incentivos Fiscais","1.02.02",4,"A","D","BP","Ativo Não Circulante","Investimentos",1],["1.02.02.008","Ágio por Expectativa de Rentabilidade Futura","1.02.02",4,"A","D","BP","Ativo Não Circulante","Investimentos",1],["1.02.02.009","(-) Perdas por Redução ao Valor Recuperável - Investimentos","1.02.02",4,"A","C","BP","Ativo Não Circulante","Investimentos",1],["1.02.02.010","Outros Investimentos Permanentes","1.02.02",4,"A","D","BP","Ativo Não Circulante","Investimentos",1],["1.02.03","Imobilizado","1.02",3,"S","D","BP","Ativo Não Circulante","Imobilizado",0],["1.02.03.001","Terrenos","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.002","Edificações","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.003","Benfeitorias em Imóveis de Terceiros","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.004","Instalações","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.005","Máquinas e Equipamentos","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.006","Equipamentos Industriais","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.007","Ferramentas","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.008","Móveis e Utensílios","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.009","Equipamentos de Informática","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.010","Servidores e Data Center","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.011","Equipamentos de Comunicação","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.012","Veículos","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.013","Empilhadeiras e Equipamentos de Movimentação","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.014","Equipamentos de Segurança","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.015","Equipamentos de Laboratório","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.016","Equipamentos de Produção","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.017","Equipamentos de Áudio e Vídeo","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.018","Equipamentos de Energia","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.019","Obras em Andamento","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.020","Imobilizado em Andamento","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.021","Consórcios para Aquisição de Imobilizado","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.03.022","Outros Bens do Imobilizado","1.02.03",4,"A","D","BP","Ativo Não Circulante","Imobilizado",1],["1.02.04","Depreciação / Exaustão Acumulada","1.02",3,"S","C","BP","Ativo Não Circulante","Depreciação Acumulada",0],["1.02.04.001","(-) Depreciação Acumulada - Edificações","1.02.04",4,"A","C","BP","Ativo Não Circulante","Depreciação Acumulada",1],["1.02.04.002","(-) Depreciação Acumulada - Instalações","1.02.04",4,"A","C","BP","Ativo Não Circulante","Depreciação Acumulada",1],["1.02.04.003","(-) Depreciação Acumulada - Máquinas e Equipamentos","1.02.04",4,"A","C","BP","Ativo Não Circulante","Depreciação Acumulada",1],["1.02.04.004","(-) Depreciação Acumulada - Ferramentas","1.02.04",4,"A","C","BP","Ativo Não Circulante","Depreciação Acumulada",1],["1.02.04.005","(-) Depreciação Acumulada - Móveis e Utensílios","1.02.04",4,"A","C","BP","Ativo Não Circulante","Depreciação Acumulada",1],["1.02.04.006","(-) Depreciação Acumulada - Informática","1.02.04",4,"A","C","BP","Ativo Não Circulante","Depreciação Acumulada",1],["1.02.04.007","(-) Depreciação Acumulada - Veículos","1.02.04",4,"A","C","BP","Ativo Não Circulante","Depreciação Acumulada",1],["1.02.04.008","(-) Depreciação Acumulada - Outros Bens","1.02.04",4,"A","C","BP","Ativo Não Circulante","Depreciação Acumulada",1],["1.02.04.009","(-) Exaustão Acumulada","1.02.04",4,"A","C","BP","Ativo Não Circulante","Depreciação Acumulada",1],["1.02.04.010","(-) Impairment do Imobilizado","1.02.04",4,"A","C","BP","Ativo Não Circulante","Depreciação Acumulada",1],["1.02.05","Intangível","1.02",3,"S","D","BP","Ativo Não Circulante","Intangível",0],["1.02.05.001","Softwares","1.02.05",4,"A","D","BP","Ativo Não Circulante","Intangível",1],["1.02.05.002","Licenças de Software","1.02.05",4,"A","D","BP","Ativo Não Circulante","Intangível",1],["1.02.05.003","Marcas e Patentes","1.02.05",4,"A","D","BP","Ativo Não Circulante","Intangível",1],["1.02.05.004","Direitos Autorais","1.02.05",4,"A","D","BP","Ativo Não Circulante","Intangível",1],["1.02.05.005","Direitos de Uso","1.02.05",4,"A","D","BP","Ativo Não Circulante","Intangível",1],["1.02.05.006","Franquias","1.02.05",4,"A","D","BP","Ativo Não Circulante","Intangível",1],["1.02.05.007","Carteira de Clientes Adquirida","1.02.05",4,"A","D","BP","Ativo Não Circulante","Intangível",1],["1.02.05.008","Desenvolvimento de Sistemas Capitalizado","1.02.05",4,"A","D","BP","Ativo Não Circulante","Intangível",1],["1.02.05.009","Pesquisa e Desenvolvimento Capitalizado","1.02.05",4,"A","D","BP","Ativo Não Circulante","Intangível",1],["1.02.05.010","Goodwill","1.02.05",4,"A","D","BP","Ativo Não Circulante","Intangível",1],["1.02.05.011","Outros Ativos Intangíveis","1.02.05",4,"A","D","BP","Ativo Não Circulante","Intangível",1],["1.02.06","Amortização Acumulada","1.02",3,"S","C","BP","Ativo Não Circulante","Amortização Acumulada",0],["1.02.06.001","(-) Amortização Acumulada - Softwares","1.02.06",4,"A","C","BP","Ativo Não Circulante","Amortização Acumulada",1],["1.02.06.002","(-) Amortização Acumulada - Licenças","1.02.06",4,"A","C","BP","Ativo Não Circulante","Amortização Acumulada",1],["1.02.06.003","(-) Amortização Acumulada - Marcas e Patentes","1.02.06",4,"A","C","BP","Ativo Não Circulante","Amortização Acumulada",1],["1.02.06.004","(-) Amortização Acumulada - Direitos de Uso","1.02.06",4,"A","C","BP","Ativo Não Circulante","Amortização Acumulada",1],["1.02.06.005","(-) Amortização Acumulada - Outros Intangíveis","1.02.06",4,"A","C","BP","Ativo Não Circulante","Amortização Acumulada",1],["1.02.06.006","(-) Impairment do Intangível","1.02.06",4,"A","C","BP","Ativo Não Circulante","Amortização Acumulada",1],["1.02.07","Ativos de Direito de Uso","1.02",3,"S","D","BP","Ativo Não Circulante","Arrendamentos",0],["1.02.07.001","Direito de Uso - Imóveis","1.02.07",4,"A","D","BP","Ativo Não Circulante","Arrendamentos",1],["1.02.07.002","Direito de Uso - Veículos","1.02.07",4,"A","D","BP","Ativo Não Circulante","Arrendamentos",1],["1.02.07.003","Direito de Uso - Máquinas e Equipamentos","1.02.07",4,"A","D","BP","Ativo Não Circulante","Arrendamentos",1],["1.02.07.004","(-) Depreciação Acumulada - Direito de Uso","1.02.07",4,"A","C","BP","Ativo Não Circulante","Arrendamentos",1],["1.02.07.005","(-) Impairment - Direito de Uso","1.02.07",4,"A","C","BP","Ativo Não Circulante","Arrendamentos",1],["2","PASSIVO","",1,"S","C","BP","Passivo","",0],["2.01","PASSIVO CIRCULANTE","2",2,"S","C","BP","Passivo Circulante","",0],["2.01.01","Fornecedores","2.01",3,"S","C","BP","Passivo Circulante","Fornecedores",0],["2.01.01.001","Fornecedores Nacionais","2.01.01",4,"A","C","BP","Passivo Circulante","Fornecedores",1],["2.01.01.002","Fornecedores Estrangeiros","2.01.01",4,"A","C","BP","Passivo Circulante","Fornecedores",1],["2.01.01.003","Fornecedores - Partes Relacionadas","2.01.01",4,"A","C","BP","Passivo Circulante","Fornecedores",1],["2.01.01.004","Duplicatas a Pagar","2.01.01",4,"A","C","BP","Passivo Circulante","Fornecedores",1],["2.01.01.005","Mercadorias a Receber / Faturas a Conferir","2.01.01",4,"A","C","BP","Passivo Circulante","Fornecedores",1],["2.01.01.006","Outros Fornecedores","2.01.01",4,"A","C","BP","Passivo Circulante","Fornecedores",1],["2.01.02","Obrigações Trabalhistas","2.01",3,"S","C","BP","Passivo Circulante","Obrigações Trabalhistas",0],["2.01.02.001","Salários a Pagar","2.01.02",4,"A","C","BP","Passivo Circulante","Obrigações Trabalhistas",1],["2.01.02.002","Pró-Labore a Pagar","2.01.02",4,"A","C","BP","Passivo Circulante","Obrigações Trabalhistas",1],["2.01.02.003","Férias a Pagar","2.01.02",4,"A","C","BP","Passivo Circulante","Obrigações Trabalhistas",1],["2.01.02.004","13º Salário a Pagar","2.01.02",4,"A","C","BP","Passivo Circulante","Obrigações Trabalhistas",1],["2.01.02.005","Rescisões a Pagar","2.01.02",4,"A","C","BP","Passivo Circulante","Obrigações Trabalhistas",1],["2.01.02.006","Participações / PLR a Pagar","2.01.02",4,"A","C","BP","Passivo Circulante","Obrigações Trabalhistas",1],["2.01.02.007","Comissões a Pagar","2.01.02",4,"A","C","BP","Passivo Circulante","Obrigações Trabalhistas",1],["2.01.02.008","Autônomos a Pagar","2.01.02",4,"A","C","BP","Passivo Circulante","Obrigações Trabalhistas",1],["2.01.02.009","Pensão Alimentícia a Recolher","2.01.02",4,"A","C","BP","Passivo Circulante","Obrigações Trabalhistas",1],["2.01.02.010","Outras Obrigações com Pessoal","2.01.02",4,"A","C","BP","Passivo Circulante","Obrigações Trabalhistas",1],["2.01.03","Encargos Sociais","2.01",3,"S","C","BP","Passivo Circulante","Encargos Sociais",0],["2.01.03.001","INSS a Recolher","2.01.03",4,"A","C","BP","Passivo Circulante","Encargos Sociais",1],["2.01.03.002","FGTS a Recolher","2.01.03",4,"A","C","BP","Passivo Circulante","Encargos Sociais",1],["2.01.03.003","Contribuições Sindicais a Recolher","2.01.03",4,"A","C","BP","Passivo Circulante","Encargos Sociais",1],["2.01.03.004","INSS Retido a Recolher","2.01.03",4,"A","C","BP","Passivo Circulante","Encargos Sociais",1],["2.01.03.005","Outros Encargos Sociais","2.01.03",4,"A","C","BP","Passivo Circulante","Encargos Sociais",1],["2.01.04","Obrigações Tributárias","2.01",3,"S","C","BP","Passivo Circulante","Obrigações Tributárias",0],["2.01.04.001","ICMS a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.002","ICMS-ST a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.003","ICMS DIFAL a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.004","IPI a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.005","ISS a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.006","PIS a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.007","COFINS a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.008","IRPJ a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.009","CSLL a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.010","Simples Nacional a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.011","IRRF a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.012","PIS/COFINS/CSLL Retidos a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.013","ISS Retido a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.014","Tributos Parcelados - Curto Prazo","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.015","Taxas Municipais a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.04.016","Outros Tributos a Recolher","2.01.04",4,"A","C","BP","Passivo Circulante","Obrigações Tributárias",1],["2.01.05","Empréstimos e Financiamentos - CP","2.01",3,"S","C","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",0],["2.01.05.001","Capital de Giro - Curto Prazo","2.01.05",4,"A","C","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",1],["2.01.05.002","Financiamentos Bancários - Curto Prazo","2.01.05",4,"A","C","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",1],["2.01.05.003","Conta Garantida","2.01.05",4,"A","C","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",1],["2.01.05.004","Cheque Especial","2.01.05",4,"A","C","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",1],["2.01.05.005","Antecipação de Recebíveis","2.01.05",4,"A","C","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",1],["2.01.05.006","Empréstimos com Sócios","2.01.05",4,"A","C","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",1],["2.01.05.007","Empréstimos com Partes Relacionadas","2.01.05",4,"A","C","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",1],["2.01.05.008","Financiamento de Veículos - CP","2.01.05",4,"A","C","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",1],["2.01.05.009","Financiamento de Máquinas - CP","2.01.05",4,"A","C","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",1],["2.01.05.010","Juros a Pagar","2.01.05",4,"A","C","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",1],["2.01.05.011","(-) Encargos Financeiros a Apropriar - CP","2.01.05",4,"A","D","BP","Passivo Circulante","Empréstimos e Financiamentos - CP",1],["2.01.06","Arrendamentos - CP","2.01",3,"S","C","BP","Passivo Circulante","Arrendamentos - CP",0],["2.01.06.001","Passivo de Arrendamento - Imóveis CP","2.01.06",4,"A","C","BP","Passivo Circulante","Arrendamentos - CP",1],["2.01.06.002","Passivo de Arrendamento - Veículos CP","2.01.06",4,"A","C","BP","Passivo Circulante","Arrendamentos - CP",1],["2.01.06.003","Passivo de Arrendamento - Equipamentos CP","2.01.06",4,"A","C","BP","Passivo Circulante","Arrendamentos - CP",1],["2.01.06.004","Juros de Arrendamento a Apropriar - CP","2.01.06",4,"A","C","BP","Passivo Circulante","Arrendamentos - CP",1],["2.01.07","Adiantamentos de Clientes","2.01",3,"S","C","BP","Passivo Circulante","Adiantamentos de Clientes",0],["2.01.07.001","Adiantamentos de Clientes","2.01.07",4,"A","C","BP","Passivo Circulante","Adiantamentos de Clientes",1],["2.01.07.002","Sinal de Clientes","2.01.07",4,"A","C","BP","Passivo Circulante","Adiantamentos de Clientes",1],["2.01.07.003","Receitas Antecipadas","2.01.07",4,"A","C","BP","Passivo Circulante","Adiantamentos de Clientes",1],["2.01.07.004","Créditos de Clientes","2.01.07",4,"A","C","BP","Passivo Circulante","Adiantamentos de Clientes",1],["2.01.07.005","Vales / Créditos a Utilizar","2.01.07",4,"A","C","BP","Passivo Circulante","Adiantamentos de Clientes",1],["2.01.08","Outras Obrigações","2.01",3,"S","C","BP","Passivo Circulante","Outras Obrigações",0],["2.01.08.001","Aluguéis a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.002","Condomínio a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.003","Energia a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.004","Água a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.005","Telefonia a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.006","Serviços a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.007","Fretes a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.008","Seguros a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.009","Dividendos a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.010","Juros sobre Capital Próprio a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.011","Reembolsos a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.012","Valores de Terceiros a Repassar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.013","Cartões / Convênios a Repassar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.08.014","Outras Contas a Pagar","2.01.08",4,"A","C","BP","Passivo Circulante","Outras Obrigações",1],["2.01.09","Provisões - Curto Prazo","2.01",3,"S","C","BP","Passivo Circulante","Provisões - Curto Prazo",0],["2.01.09.001","Provisão de Férias","2.01.09",4,"A","C","BP","Passivo Circulante","Provisões - Curto Prazo",1],["2.01.09.002","Provisão de 13º Salário","2.01.09",4,"A","C","BP","Passivo Circulante","Provisões - Curto Prazo",1],["2.01.09.003","Provisão de Encargos sobre Férias","2.01.09",4,"A","C","BP","Passivo Circulante","Provisões - Curto Prazo",1],["2.01.09.004","Provisão de Encargos sobre 13º","2.01.09",4,"A","C","BP","Passivo Circulante","Provisões - Curto Prazo",1],["2.01.09.005","Provisão para Bônus / PLR","2.01.09",4,"A","C","BP","Passivo Circulante","Provisões - Curto Prazo",1],["2.01.09.006","Provisão para Processos Trabalhistas - CP","2.01.09",4,"A","C","BP","Passivo Circulante","Provisões - Curto Prazo",1],["2.01.09.007","Provisão para Processos Cíveis - CP","2.01.09",4,"A","C","BP","Passivo Circulante","Provisões - Curto Prazo",1],["2.01.09.008","Provisão para Processos Tributários - CP","2.01.09",4,"A","C","BP","Passivo Circulante","Provisões - Curto Prazo",1],["2.01.09.009","Outras Provisões - CP","2.01.09",4,"A","C","BP","Passivo Circulante","Provisões - Curto Prazo",1],["2.02","PASSIVO NÃO CIRCULANTE","2",2,"S","C","BP","Passivo Não Circulante","",0],["2.02.01","Empréstimos e Financiamentos - LP","2.02",3,"S","C","BP","Passivo Não Circulante","Empréstimos e Financiamentos - LP",0],["2.02.01.001","Capital de Giro - Longo Prazo","2.02.01",4,"A","C","BP","Passivo Não Circulante","Empréstimos e Financiamentos - LP",1],["2.02.01.002","Financiamentos Bancários - Longo Prazo","2.02.01",4,"A","C","BP","Passivo Não Circulante","Empréstimos e Financiamentos - LP",1],["2.02.01.003","Financiamento de Veículos - LP","2.02.01",4,"A","C","BP","Passivo Não Circulante","Empréstimos e Financiamentos - LP",1],["2.02.01.004","Financiamento de Máquinas - LP","2.02.01",4,"A","C","BP","Passivo Não Circulante","Empréstimos e Financiamentos - LP",1],["2.02.01.005","Empréstimos com Sócios - LP","2.02.01",4,"A","C","BP","Passivo Não Circulante","Empréstimos e Financiamentos - LP",1],["2.02.01.006","Empréstimos com Partes Relacionadas - LP","2.02.01",4,"A","C","BP","Passivo Não Circulante","Empréstimos e Financiamentos - LP",1],["2.02.01.007","Debêntures a Pagar","2.02.01",4,"A","C","BP","Passivo Não Circulante","Empréstimos e Financiamentos - LP",1],["2.02.01.008","Notas Promissórias / Dívida Privada","2.02.01",4,"A","C","BP","Passivo Não Circulante","Empréstimos e Financiamentos - LP",1],["2.02.01.009","(-) Encargos Financeiros a Apropriar - LP","2.02.01",4,"A","D","BP","Passivo Não Circulante","Empréstimos e Financiamentos - LP",1],["2.02.02","Arrendamentos - LP","2.02",3,"S","C","BP","Passivo Não Circulante","Arrendamentos - LP",0],["2.02.02.001","Passivo de Arrendamento - Imóveis LP","2.02.02",4,"A","C","BP","Passivo Não Circulante","Arrendamentos - LP",1],["2.02.02.002","Passivo de Arrendamento - Veículos LP","2.02.02",4,"A","C","BP","Passivo Não Circulante","Arrendamentos - LP",1],["2.02.02.003","Passivo de Arrendamento - Equipamentos LP","2.02.02",4,"A","C","BP","Passivo Não Circulante","Arrendamentos - LP",1],["2.02.02.004","Juros de Arrendamento a Apropriar - LP","2.02.02",4,"A","C","BP","Passivo Não Circulante","Arrendamentos - LP",1],["2.02.03","Obrigações Tributárias - LP","2.02",3,"S","C","BP","Passivo Não Circulante","Obrigações Tributárias - LP",0],["2.02.03.001","Tributos Parcelados - Longo Prazo","2.02.03",4,"A","C","BP","Passivo Não Circulante","Obrigações Tributárias - LP",1],["2.02.03.002","IRPJ Diferido Passivo","2.02.03",4,"A","C","BP","Passivo Não Circulante","Obrigações Tributárias - LP",1],["2.02.03.003","CSLL Diferida Passiva","2.02.03",4,"A","C","BP","Passivo Não Circulante","Obrigações Tributárias - LP",1],["2.02.03.004","Outros Tributos Diferidos","2.02.03",4,"A","C","BP","Passivo Não Circulante","Obrigações Tributárias - LP",1],["2.02.04","Provisões - Longo Prazo","2.02",3,"S","C","BP","Passivo Não Circulante","Provisões - Longo Prazo",0],["2.02.04.001","Provisão para Processos Trabalhistas - LP","2.02.04",4,"A","C","BP","Passivo Não Circulante","Provisões - Longo Prazo",1],["2.02.04.002","Provisão para Processos Cíveis - LP","2.02.04",4,"A","C","BP","Passivo Não Circulante","Provisões - Longo Prazo",1],["2.02.04.003","Provisão para Processos Tributários - LP","2.02.04",4,"A","C","BP","Passivo Não Circulante","Provisões - Longo Prazo",1],["2.02.04.004","Provisão para Garantias","2.02.04",4,"A","C","BP","Passivo Não Circulante","Provisões - Longo Prazo",1],["2.02.04.005","Provisão para Desmobilização","2.02.04",4,"A","C","BP","Passivo Não Circulante","Provisões - Longo Prazo",1],["2.02.04.006","Outras Provisões - LP","2.02.04",4,"A","C","BP","Passivo Não Circulante","Provisões - Longo Prazo",1],["2.02.05","Outras Obrigações - LP","2.02",3,"S","C","BP","Passivo Não Circulante","Outras Obrigações - LP",0],["2.02.05.001","Fornecedores - Longo Prazo","2.02.05",4,"A","C","BP","Passivo Não Circulante","Outras Obrigações - LP",1],["2.02.05.002","Contas a Pagar - Longo Prazo","2.02.05",4,"A","C","BP","Passivo Não Circulante","Outras Obrigações - LP",1],["2.02.05.003","Obrigações com Partes Relacionadas - LP","2.02.05",4,"A","C","BP","Passivo Não Circulante","Outras Obrigações - LP",1],["2.02.05.004","Receitas Diferidas - Longo Prazo","2.02.05",4,"A","C","BP","Passivo Não Circulante","Outras Obrigações - LP",1],["2.02.05.005","Outras Obrigações - Longo Prazo","2.02.05",4,"A","C","BP","Passivo Não Circulante","Outras Obrigações - LP",1],["3","PATRIMÔNIO LÍQUIDO","",1,"S","C","BP","Patrimônio Líquido","",0],["3.01","Capital Social","3",2,"S","C","BP","Patrimônio Líquido","Capital Social",0],["3.01.001","Capital Social Subscrito","3.01",3,"A","C","BP","Patrimônio Líquido","Capital Social",1],["3.01.002","(-) Capital Social a Integralizar","3.01",3,"A","D","BP","Patrimônio Líquido","Capital Social",1],["3.01.003","Adiantamento para Futuro Aumento de Capital","3.01",3,"A","C","BP","Patrimônio Líquido","Capital Social",1],["3.02","Reservas de Capital","3",2,"S","C","BP","Patrimônio Líquido","Reservas de Capital",0],["3.02.001","Ágio na Emissão de Ações / Quotas","3.02",3,"A","C","BP","Patrimônio Líquido","Reservas de Capital",1],["3.02.002","Reserva de Incentivos / Subvenções de Capital","3.02",3,"A","C","BP","Patrimônio Líquido","Reservas de Capital",1],["3.02.003","Outras Reservas de Capital","3.02",3,"A","C","BP","Patrimônio Líquido","Reservas de Capital",1],["3.03","Reservas de Lucros","3",2,"S","C","BP","Patrimônio Líquido","Reservas de Lucros",0],["3.03.001","Reserva Legal","3.03",3,"A","C","BP","Patrimônio Líquido","Reservas de Lucros",1],["3.03.002","Reserva Estatutária","3.03",3,"A","C","BP","Patrimônio Líquido","Reservas de Lucros",1],["3.03.003","Reserva para Contingências","3.03",3,"A","C","BP","Patrimônio Líquido","Reservas de Lucros",1],["3.03.004","Reserva de Retenção de Lucros","3.03",3,"A","C","BP","Patrimônio Líquido","Reservas de Lucros",1],["3.03.005","Reserva de Incentivos Fiscais","3.03",3,"A","C","BP","Patrimônio Líquido","Reservas de Lucros",1],["3.03.006","Reserva de Lucros a Realizar","3.03",3,"A","C","BP","Patrimônio Líquido","Reservas de Lucros",1],["3.03.007","Outras Reservas de Lucros","3.03",3,"A","C","BP","Patrimônio Líquido","Reservas de Lucros",1],["3.04","Ajustes de Avaliação Patrimonial","3",2,"S","C","BP","Patrimônio Líquido","Ajustes de Avaliação Patrimonial",0],["3.04.001","Ajustes de Avaliação Patrimonial","3.04",3,"A","C","BP","Patrimônio Líquido","Ajustes de Avaliação Patrimonial",1],["3.04.002","Ajustes de Conversão","3.04",3,"A","C","BP","Patrimônio Líquido","Ajustes de Avaliação Patrimonial",1],["3.04.003","Outros Resultados Abrangentes","3.04",3,"A","C","BP","Patrimônio Líquido","Ajustes de Avaliação Patrimonial",1],["3.05","Resultados Acumulados","3",2,"S","C","BP","Patrimônio Líquido","Resultados Acumulados",0],["3.05.001","Lucros Acumulados","3.05",3,"A","C","BP","Patrimônio Líquido","Resultados Acumulados",1],["3.05.002","(-) Prejuízos Acumulados","3.05",3,"A","D","BP","Patrimônio Líquido","Resultados Acumulados",1],["3.05.003","Resultado do Exercício","3.05",3,"A","C","BP","Patrimônio Líquido","Resultados Acumulados",1],["3.05.004","Ajustes de Exercícios Anteriores","3.05",3,"A","C","BP","Patrimônio Líquido","Resultados Acumulados",1],["3.06","Distribuições e Contas dos Sócios","3",2,"S","C","BP","Patrimônio Líquido","Distribuições e Contas dos Sócios",0],["3.06.001","Dividendos Propostos","3.06",3,"A","C","BP","Patrimônio Líquido","Distribuições e Contas dos Sócios",1],["3.06.002","Juros sobre Capital Próprio","3.06",3,"A","C","BP","Patrimônio Líquido","Distribuições e Contas dos Sócios",1],["3.06.003","Distribuição Antecipada de Lucros","3.06",3,"A","C","BP","Patrimônio Líquido","Distribuições e Contas dos Sócios",1],["3.06.004","(-) Quotas / Ações em Tesouraria","3.06",3,"A","D","BP","Patrimônio Líquido","Distribuições e Contas dos Sócios",1],["4","RECEITAS","",1,"S","C","DRE","Receitas","",0],["4.01","Receita Bruta Operacional","4",2,"S","C","DRE","Receitas","Receita Bruta Operacional",0],["4.01.001","Venda de Mercadorias - Mercado Interno","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.002","Venda de Produtos - Mercado Interno","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.003","Prestação de Serviços - Mercado Interno","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.004","Receita de Assinaturas / Recorrência","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.005","Receita de Licenciamento","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.006","Receita de Franquias","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.007","Receita de Comissões","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.008","Receita de Intermediação","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.009","Receita de Locação","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.010","Receita de Manutenção","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.011","Receita de Consultoria","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.012","Receita de Projetos","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.013","Receita de Treinamentos","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.014","Receita de Suporte Técnico","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.015","Receita de Fretes","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.016","Receita de Marketplace","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.017","Receita de E-commerce","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.018","Receita de Exportação de Mercadorias","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.019","Receita de Exportação de Produtos","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.020","Receita de Serviços ao Exterior","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.021","Receita de Royalties","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.022","Receita de Publicidade","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.023","Receita de Eventos","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.01.024","Outras Receitas Operacionais","4.01",3,"A","C","DRE","Receitas","Receita Bruta Operacional",1],["4.02","Deduções da Receita Bruta","4",2,"S","C","DRE","Receitas","Deduções da Receita Bruta",0],["4.02.001","(-) Devoluções de Vendas","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.02.002","(-) Cancelamentos de Vendas","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.02.003","(-) Abatimentos Concedidos","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.02.004","(-) Descontos Incondicionais","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.02.005","(-) ICMS sobre Vendas","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.02.006","(-) ICMS-ST sobre Vendas","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.02.007","(-) IPI sobre Vendas","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.02.008","(-) ISS sobre Serviços","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.02.009","(-) PIS sobre Receita","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.02.010","(-) COFINS sobre Receita","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.02.011","(-) Simples Nacional sobre Receita","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.02.012","(-) Outros Tributos sobre Receita","4.02",3,"A","D","DRE","Receitas","Deduções da Receita Bruta",1],["4.03","Outras Receitas Operacionais","4",2,"S","C","DRE","Receitas","Outras Receitas Operacionais",0],["4.03.001","Receita com Recuperação de Despesas","4.03",3,"A","C","DRE","Receitas","Outras Receitas Operacionais",1],["4.03.002","Receita com Reembolsos","4.03",3,"A","C","DRE","Receitas","Outras Receitas Operacionais",1],["4.03.003","Receita com Venda de Sucata","4.03",3,"A","C","DRE","Receitas","Outras Receitas Operacionais",1],["4.03.004","Receita com Bonificações","4.03",3,"A","C","DRE","Receitas","Outras Receitas Operacionais",1],["4.03.005","Receita com Indenizações","4.03",3,"A","C","DRE","Receitas","Outras Receitas Operacionais",1],["4.03.006","Receita com Subvenções Operacionais","4.03",3,"A","C","DRE","Receitas","Outras Receitas Operacionais",1],["4.03.007","Receita com Reversão de Provisões","4.03",3,"A","C","DRE","Receitas","Outras Receitas Operacionais",1],["4.03.008","Receita com Recuperação de Créditos Baixados","4.03",3,"A","C","DRE","Receitas","Outras Receitas Operacionais",1],["4.03.009","Receita de Aluguel Operacional","4.03",3,"A","C","DRE","Receitas","Outras Receitas Operacionais",1],["4.03.010","Outras Receitas Operacionais","4.03",3,"A","C","DRE","Receitas","Outras Receitas Operacionais",1],["4.04","Receitas Financeiras","4",2,"S","C","DRE","Receitas","Receitas Financeiras",0],["4.04.001","Rendimentos de Aplicações Financeiras","4.04",3,"A","C","DRE","Receitas","Receitas Financeiras",1],["4.04.002","Juros Ativos","4.04",3,"A","C","DRE","Receitas","Receitas Financeiras",1],["4.04.003","Descontos Financeiros Obtidos","4.04",3,"A","C","DRE","Receitas","Receitas Financeiras",1],["4.04.004","Variação Monetária Ativa","4.04",3,"A","C","DRE","Receitas","Receitas Financeiras",1],["4.04.005","Variação Cambial Ativa","4.04",3,"A","C","DRE","Receitas","Receitas Financeiras",1],["4.04.006","Receita com Derivativos","4.04",3,"A","C","DRE","Receitas","Receitas Financeiras",1],["4.04.007","Atualização de Créditos","4.04",3,"A","C","DRE","Receitas","Receitas Financeiras",1],["4.04.008","Outras Receitas Financeiras","4.04",3,"A","C","DRE","Receitas","Receitas Financeiras",1],["4.05","Outras Receitas / Ganhos","4",2,"S","C","DRE","Receitas","Outras Receitas / Ganhos",0],["4.05.001","Ganho na Venda de Imobilizado","4.05",3,"A","C","DRE","Receitas","Outras Receitas / Ganhos",1],["4.05.002","Ganho na Venda de Investimentos","4.05",3,"A","C","DRE","Receitas","Outras Receitas / Ganhos",1],["4.05.003","Ganho por Valor Justo","4.05",3,"A","C","DRE","Receitas","Outras Receitas / Ganhos",1],["4.05.004","Ganho por Equivalência Patrimonial","4.05",3,"A","C","DRE","Receitas","Outras Receitas / Ganhos",1],["4.05.005","Dividendos Recebidos","4.05",3,"A","C","DRE","Receitas","Outras Receitas / Ganhos",1],["4.05.006","Receitas Não Recorrentes","4.05",3,"A","C","DRE","Receitas","Outras Receitas / Ganhos",1],["4.05.007","Outros Ganhos","4.05",3,"A","C","DRE","Receitas","Outras Receitas / Ganhos",1],["5","CUSTOS","",1,"S","D","DRE","Custos","",0],["5.01","Custo das Mercadorias Vendidas","5",2,"S","D","DRE","Custos","Custo das Mercadorias Vendidas",0],["5.01.001","Custo das Mercadorias Vendidas","5.01",3,"A","D","DRE","Custos","Custo das Mercadorias Vendidas",1],["5.01.002","Fretes sobre Compras","5.01",3,"A","D","DRE","Custos","Custo das Mercadorias Vendidas",1],["5.01.003","Seguros sobre Compras","5.01",3,"A","D","DRE","Custos","Custo das Mercadorias Vendidas",1],["5.01.004","Impostos Não Recuperáveis sobre Compras","5.01",3,"A","D","DRE","Custos","Custo das Mercadorias Vendidas",1],["5.01.005","Quebras e Perdas de Estoque","5.01",3,"A","D","DRE","Custos","Custo das Mercadorias Vendidas",1],["5.01.006","Ajustes de Inventário","5.01",3,"A","D","DRE","Custos","Custo das Mercadorias Vendidas",1],["5.01.007","Outros Custos de Mercadorias","5.01",3,"A","D","DRE","Custos","Custo das Mercadorias Vendidas",1],["5.02","Custo dos Produtos Vendidos","5",2,"S","D","DRE","Custos","Custo dos Produtos Vendidos",0],["5.02.001","Matéria-Prima Consumida","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.002","Materiais Secundários Consumidos","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.003","Embalagens Consumidas","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.004","Mão de Obra Direta","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.005","Encargos da Mão de Obra Direta","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.006","Energia da Produção","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.007","Manutenção da Produção","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.008","Depreciação da Produção","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.009","Serviços de Terceiros - Produção","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.010","Controle de Qualidade","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.011","Ferramentas e Consumíveis","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.012","Perdas de Produção","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.013","Custos Indiretos de Fabricação","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.014","Variação de Estoques de Produção","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.02.015","Outros Custos de Produção","5.02",3,"A","D","DRE","Custos","Custo dos Produtos Vendidos",1],["5.03","Custo dos Serviços Prestados","5",2,"S","D","DRE","Custos","Custo dos Serviços Prestados",0],["5.03.001","Mão de Obra Direta - Serviços","5.03",3,"A","D","DRE","Custos","Custo dos Serviços Prestados",1],["5.03.002","Encargos da Mão de Obra - Serviços","5.03",3,"A","D","DRE","Custos","Custo dos Serviços Prestados",1],["5.03.003","Prestadores / Terceiros - Serviços","5.03",3,"A","D","DRE","Custos","Custo dos Serviços Prestados",1],["5.03.004","Materiais Aplicados em Serviços","5.03",3,"A","D","DRE","Custos","Custo dos Serviços Prestados",1],["5.03.005","Deslocamentos de Serviços","5.03",3,"A","D","DRE","Custos","Custo dos Serviços Prestados",1],["5.03.006","Hospedagens de Serviços","5.03",3,"A","D","DRE","Custos","Custo dos Serviços Prestados",1],["5.03.007","Softwares Aplicados ao Serviço","5.03",3,"A","D","DRE","Custos","Custo dos Serviços Prestados",1],["5.03.008","Infraestrutura Aplicada ao Serviço","5.03",3,"A","D","DRE","Custos","Custo dos Serviços Prestados",1],["5.03.009","Equipamentos Aplicados ao Serviço","5.03",3,"A","D","DRE","Custos","Custo dos Serviços Prestados",1],["5.03.010","Outros Custos dos Serviços","5.03",3,"A","D","DRE","Custos","Custo dos Serviços Prestados",1],["5.04","Custos de Logística / Operação","5",2,"S","D","DRE","Custos","Custos de Logística / Operação",0],["5.04.001","Fretes de Entrega","5.04",3,"A","D","DRE","Custos","Custos de Logística / Operação",1],["5.04.002","Transportadoras","5.04",3,"A","D","DRE","Custos","Custos de Logística / Operação",1],["5.04.003","Combustíveis Operacionais","5.04",3,"A","D","DRE","Custos","Custos de Logística / Operação",1],["5.04.004","Pedágios Operacionais","5.04",3,"A","D","DRE","Custos","Custos de Logística / Operação",1],["5.04.005","Armazenagem","5.04",3,"A","D","DRE","Custos","Custos de Logística / Operação",1],["5.04.006","Embalagens de Expedição","5.04",3,"A","D","DRE","Custos","Custos de Logística / Operação",1],["5.04.007","Movimentação de Cargas","5.04",3,"A","D","DRE","Custos","Custos de Logística / Operação",1],["5.04.008","Seguro de Cargas","5.04",3,"A","D","DRE","Custos","Custos de Logística / Operação",1],["5.04.009","Rastreamento","5.04",3,"A","D","DRE","Custos","Custos de Logística / Operação",1],["5.04.010","Logística Reversa","5.04",3,"A","D","DRE","Custos","Custos de Logística / Operação",1],["5.04.011","Outros Custos Logísticos","5.04",3,"A","D","DRE","Custos","Custos de Logística / Operação",1],["5.05","Custos de Tecnologia / Plataforma","5",2,"S","D","DRE","Custos","Custos de Tecnologia / Plataforma",0],["5.05.001","Cloud / Hospedagem - Custo","5.05",3,"A","D","DRE","Custos","Custos de Tecnologia / Plataforma",1],["5.05.002","APIs e Serviços de Terceiros - Custo","5.05",3,"A","D","DRE","Custos","Custos de Tecnologia / Plataforma",1],["5.05.003","Licenças por Usuário / Cliente","5.05",3,"A","D","DRE","Custos","Custos de Tecnologia / Plataforma",1],["5.05.004","Gateways de Pagamento","5.05",3,"A","D","DRE","Custos","Custos de Tecnologia / Plataforma",1],["5.05.005","Processamento de Dados","5.05",3,"A","D","DRE","Custos","Custos de Tecnologia / Plataforma",1],["5.05.006","Mensageria / SMS / E-mail Transacional","5.05",3,"A","D","DRE","Custos","Custos de Tecnologia / Plataforma",1],["5.05.007","CDN e Infraestrutura","5.05",3,"A","D","DRE","Custos","Custos de Tecnologia / Plataforma",1],["5.05.008","Suporte Técnico Terceirizado","5.05",3,"A","D","DRE","Custos","Custos de Tecnologia / Plataforma",1],["5.05.009","Outros Custos de Tecnologia","5.05",3,"A","D","DRE","Custos","Custos de Tecnologia / Plataforma",1],["5.06","Outros Custos Diretos","5",2,"S","D","DRE","Custos","Outros Custos Diretos",0],["5.06.001","Comissões sobre Vendas","5.06",3,"A","D","DRE","Custos","Outros Custos Diretos",1],["5.06.002","Royalties sobre Vendas","5.06",3,"A","D","DRE","Custos","Outros Custos Diretos",1],["5.06.003","Taxas de Marketplace","5.06",3,"A","D","DRE","Custos","Outros Custos Diretos",1],["5.06.004","Taxas de Cartão / Adquirência","5.06",3,"A","D","DRE","Custos","Outros Custos Diretos",1],["5.06.005","Taxas de Intermediação","5.06",3,"A","D","DRE","Custos","Outros Custos Diretos",1],["5.06.006","Garantias de Produtos / Serviços","5.06",3,"A","D","DRE","Custos","Outros Custos Diretos",1],["5.06.007","Instalação / Implantação","5.06",3,"A","D","DRE","Custos","Outros Custos Diretos",1],["5.06.008","Outros Custos Variáveis Diretos","5.06",3,"A","D","DRE","Custos","Outros Custos Diretos",1],["6","DESPESAS OPERACIONAIS","",1,"S","D","DRE","Despesas","",0],["6.01","Despesas com Pessoal","6",2,"S","D","DRE","Despesas","Despesas com Pessoal",0],["6.01.001","Salários","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.002","Pró-Labore","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.003","Horas Extras","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.004","Adicionais","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.005","Comissões de Pessoal","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.006","Bônus","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.007","PLR","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.008","Férias","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.009","13º Salário","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.010","INSS Patronal","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.011","FGTS","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.012","Benefícios - Vale Transporte","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.013","Benefícios - Vale Refeição","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.014","Benefícios - Vale Alimentação","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.015","Plano de Saúde","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.016","Plano Odontológico","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.017","Seguro de Vida","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.018","Auxílio Creche","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.019","Auxílio Home Office","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.020","Outros Benefícios","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.021","Medicina e Segurança do Trabalho","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.022","Uniformes e EPIs","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.023","Treinamento e Desenvolvimento","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.024","Recrutamento e Seleção","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.025","Estagiários","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.026","Aprendizes","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.027","Rescisões","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.028","Indenizações Trabalhistas","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.029","Confraternizações","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.01.030","Outras Despesas com Pessoal","6.01",3,"A","D","DRE","Despesas","Despesas com Pessoal",1],["6.02","Despesas Administrativas","6",2,"S","D","DRE","Despesas","Despesas Administrativas",0],["6.02.001","Aluguéis","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.002","Condomínio","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.003","IPTU","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.004","Energia Elétrica","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.005","Água e Esgoto","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.006","Gás","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.007","Telefonia Fixa","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.008","Telefonia Móvel","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.009","Internet","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.010","Correios e Malotes","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.011","Material de Escritório","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.012","Material de Limpeza","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.013","Material de Copa e Cozinha","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.014","Impressos e Gráfica","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.015","Cartório","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.016","Certificados Digitais","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.017","Associações e Anuidades","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.018","Licenças e Alvarás","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.019","Despesas com Reuniões","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.020","Copa e Refeições","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.021","Estacionamento","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.022","Táxi / Aplicativos de Transporte","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.023","Viagens - Passagens","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.024","Viagens - Hospedagem","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.025","Viagens - Alimentação","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.026","Viagens - Transporte","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.027","Despesas de Representação","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.028","Doações e Contribuições","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.02.029","Outras Despesas Administrativas","6.02",3,"A","D","DRE","Despesas","Despesas Administrativas",1],["6.03","Serviços Profissionais e Terceiros","6",2,"S","D","DRE","Despesas","Serviços Profissionais e Terceiros",0],["6.03.001","Contabilidade","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.002","Auditoria","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.003","Consultoria Empresarial","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.004","Consultoria Financeira","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.005","Consultoria Tributária","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.006","Consultoria Jurídica","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.007","Advogados","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.008","Serviços de RH","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.009","Serviços de TI","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.010","Desenvolvimento de Software","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.011","Design / Criação","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.012","Agência de Marketing","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.013","Assessoria de Imprensa","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.014","Segurança / Vigilância","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.015","Limpeza Terceirizada","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.016","Portaria / Recepção","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.017","Manutenção Predial","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.018","Manutenção de Equipamentos","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.019","Freelancers","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.020","Autônomos","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.03.021","Outros Serviços de Terceiros","6.03",3,"A","D","DRE","Despesas","Serviços Profissionais e Terceiros",1],["6.04","Despesas Comerciais e Marketing","6",2,"S","D","DRE","Despesas","Despesas Comerciais e Marketing",0],["6.04.001","Publicidade e Propaganda","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.002","Marketing Digital","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.003","Google Ads / Mídia Paga","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.004","Redes Sociais / Social Media","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.005","Produção de Conteúdo","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.006","Eventos e Feiras","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.007","Patrocínios","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.008","Brindes","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.009","Amostras Grátis","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.010","Material Promocional","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.011","Comissões Comerciais","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.012","Premiações de Vendas","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.013","CRM","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.014","Prospecção / Leads","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.015","Pesquisas de Mercado","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.016","Despesas com Representantes","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.017","Despesas com Vendedores","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.018","Viagens Comerciais","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.019","Pós-Venda / Customer Success","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.020","SAC / Atendimento","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.04.021","Outras Despesas Comerciais","6.04",3,"A","D","DRE","Despesas","Despesas Comerciais e Marketing",1],["6.05","Tecnologia e Sistemas","6",2,"S","D","DRE","Despesas","Tecnologia e Sistemas",0],["6.05.001","ERP","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.002","CRM - Administrativo","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.003","Softwares de Escritório","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.004","Licenças SaaS","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.005","Antivírus / Segurança da Informação","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.006","Cloud / Hospedagem - Administrativo","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.007","Domínios e Certificados SSL","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.008","E-mail Corporativo","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.009","Backup","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.010","Internet / Links Dedicados","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.011","Suporte de TI","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.012","Manutenção de Hardware","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.013","Locação de Equipamentos de TI","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.014","Aquisição de Pequenos Equipamentos de TI","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.015","Telefonia / VoIP","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.016","Ferramentas de BI / Analytics","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.017","Automação / RPA / IA","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.05.018","Outras Despesas de Tecnologia","6.05",3,"A","D","DRE","Despesas","Tecnologia e Sistemas",1],["6.06","Ocupação, Manutenção e Utilidades","6",2,"S","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",0],["6.06.001","Manutenção Predial","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.002","Manutenção Elétrica","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.003","Manutenção Hidráulica","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.004","Manutenção de Ar-Condicionado","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.005","Manutenção de Máquinas","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.006","Manutenção de Veículos","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.007","Jardinagem","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.008","Dedetização","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.009","Coleta de Resíduos","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.010","Segurança Patrimonial","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.011","Monitoramento / Alarmes","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.012","Locação de Máquinas e Equipamentos","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.013","Locação de Veículos","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.014","Combustíveis","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.015","Lubrificantes","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.016","Pedágios","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.017","Lavagem de Veículos","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.018","Peças e Reparos","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.06.019","Outras Despesas de Ocupação / Manutenção","6.06",3,"A","D","DRE","Despesas","Ocupação, Manutenção e Utilidades",1],["6.07","Seguros","6",2,"S","D","DRE","Despesas","Seguros",0],["6.07.001","Seguro Patrimonial","6.07",3,"A","D","DRE","Despesas","Seguros",1],["6.07.002","Seguro de Veículos","6.07",3,"A","D","DRE","Despesas","Seguros",1],["6.07.003","Seguro de Responsabilidade Civil","6.07",3,"A","D","DRE","Despesas","Seguros",1],["6.07.004","Seguro Garantia","6.07",3,"A","D","DRE","Despesas","Seguros",1],["6.07.005","Seguro de Transporte","6.07",3,"A","D","DRE","Despesas","Seguros",1],["6.07.006","Seguro Cibernético","6.07",3,"A","D","DRE","Despesas","Seguros",1],["6.07.007","Outros Seguros","6.07",3,"A","D","DRE","Despesas","Seguros",1],["6.08","Depreciação e Amortização","6",2,"S","D","DRE","Despesas","Depreciação e Amortização",0],["6.08.001","Depreciação - Edificações","6.08",3,"A","D","DRE","Despesas","Depreciação e Amortização",1],["6.08.002","Depreciação - Instalações","6.08",3,"A","D","DRE","Despesas","Depreciação e Amortização",1],["6.08.003","Depreciação - Máquinas e Equipamentos","6.08",3,"A","D","DRE","Despesas","Depreciação e Amortização",1],["6.08.004","Depreciação - Móveis e Utensílios","6.08",3,"A","D","DRE","Despesas","Depreciação e Amortização",1],["6.08.005","Depreciação - Informática","6.08",3,"A","D","DRE","Despesas","Depreciação e Amortização",1],["6.08.006","Depreciação - Veículos","6.08",3,"A","D","DRE","Despesas","Depreciação e Amortização",1],["6.08.007","Depreciação - Direito de Uso","6.08",3,"A","D","DRE","Despesas","Depreciação e Amortização",1],["6.08.008","Amortização - Softwares","6.08",3,"A","D","DRE","Despesas","Depreciação e Amortização",1],["6.08.009","Amortização - Licenças","6.08",3,"A","D","DRE","Despesas","Depreciação e Amortização",1],["6.08.010","Amortização - Outros Intangíveis","6.08",3,"A","D","DRE","Despesas","Depreciação e Amortização",1],["6.08.011","Perdas por Impairment","6.08",3,"A","D","DRE","Despesas","Depreciação e Amortização",1],["6.09","Despesas Tributárias","6",2,"S","D","DRE","Despesas","Despesas Tributárias",0],["6.09.001","IOF","6.09",3,"A","D","DRE","Despesas","Despesas Tributárias",1],["6.09.002","IPTU","6.09",3,"A","D","DRE","Despesas","Despesas Tributárias",1],["6.09.003","IPVA","6.09",3,"A","D","DRE","Despesas","Despesas Tributárias",1],["6.09.004","Taxas Municipais","6.09",3,"A","D","DRE","Despesas","Despesas Tributárias",1],["6.09.005","Taxas Estaduais","6.09",3,"A","D","DRE","Despesas","Despesas Tributárias",1],["6.09.006","Taxas Federais","6.09",3,"A","D","DRE","Despesas","Despesas Tributárias",1],["6.09.007","Contribuições e Anuidades","6.09",3,"A","D","DRE","Despesas","Despesas Tributárias",1],["6.09.008","Multas Fiscais","6.09",3,"A","D","DRE","Despesas","Despesas Tributárias",1],["6.09.009","Juros sobre Tributos","6.09",3,"A","D","DRE","Despesas","Despesas Tributárias",1],["6.09.010","Tributos Não Recuperáveis","6.09",3,"A","D","DRE","Despesas","Despesas Tributárias",1],["6.09.011","Outras Despesas Tributárias","6.09",3,"A","D","DRE","Despesas","Despesas Tributárias",1],["6.10","Despesas Financeiras","6",2,"S","D","DRE","Despesas","Despesas Financeiras",0],["6.10.001","Juros Passivos","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.002","Juros de Empréstimos","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.003","Juros de Financiamentos","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.004","Juros de Arrendamentos","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.005","Tarifas Bancárias","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.006","Taxas de Boletos","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.007","Taxas PIX / Transferências","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.008","Taxas de Cartão","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.009","Descontos Financeiros Concedidos","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.010","Variação Monetária Passiva","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.011","Variação Cambial Passiva","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.012","Perdas com Derivativos","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.013","Multas e Juros por Atraso","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.014","Encargos de Antecipação de Recebíveis","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.10.015","Outras Despesas Financeiras","6.10",3,"A","D","DRE","Despesas","Despesas Financeiras",1],["6.11","Perdas, Provisões e Contingências","6",2,"S","D","DRE","Despesas","Perdas, Provisões e Contingências",0],["6.11.001","Perdas com Clientes / Inadimplência","6.11",3,"A","D","DRE","Despesas","Perdas, Provisões e Contingências",1],["6.11.002","Constituição de PCLD","6.11",3,"A","D","DRE","Despesas","Perdas, Provisões e Contingências",1],["6.11.003","Perdas de Estoques","6.11",3,"A","D","DRE","Despesas","Perdas, Provisões e Contingências",1],["6.11.004","Perdas por Obsolescência","6.11",3,"A","D","DRE","Despesas","Perdas, Provisões e Contingências",1],["6.11.005","Perdas com Sinistros","6.11",3,"A","D","DRE","Despesas","Perdas, Provisões e Contingências",1],["6.11.006","Provisões Trabalhistas","6.11",3,"A","D","DRE","Despesas","Perdas, Provisões e Contingências",1],["6.11.007","Provisões Cíveis","6.11",3,"A","D","DRE","Despesas","Perdas, Provisões e Contingências",1],["6.11.008","Provisões Tributárias","6.11",3,"A","D","DRE","Despesas","Perdas, Provisões e Contingências",1],["6.11.009","Provisão para Garantias","6.11",3,"A","D","DRE","Despesas","Perdas, Provisões e Contingências",1],["6.11.010","Outras Perdas e Provisões","6.11",3,"A","D","DRE","Despesas","Perdas, Provisões e Contingências",1],["6.12","Outras Despesas Operacionais","6",2,"S","D","DRE","Despesas","Outras Despesas Operacionais",0],["6.12.001","Multas Contratuais","6.12",3,"A","D","DRE","Despesas","Outras Despesas Operacionais",1],["6.12.002","Indenizações","6.12",3,"A","D","DRE","Despesas","Outras Despesas Operacionais",1],["6.12.003","Baixa de Ativos","6.12",3,"A","D","DRE","Despesas","Outras Despesas Operacionais",1],["6.12.004","Perda na Venda de Imobilizado","6.12",3,"A","D","DRE","Despesas","Outras Despesas Operacionais",1],["6.12.005","Perda na Venda de Investimentos","6.12",3,"A","D","DRE","Despesas","Outras Despesas Operacionais",1],["6.12.006","Despesas Não Recorrentes","6.12",3,"A","D","DRE","Despesas","Outras Despesas Operacionais",1],["6.12.007","Despesas com Reestruturação","6.12",3,"A","D","DRE","Despesas","Outras Despesas Operacionais",1],["6.12.008","Outras Despesas Operacionais","6.12",3,"A","D","DRE","Despesas","Outras Despesas Operacionais",1],["7","RESULTADO E TRIBUTOS SOBRE O LUCRO","",1,"S","D","DRE","Resultado e Tributos","",0],["7.01","Resultado de Equivalência Patrimonial","7",2,"S","D","DRE","Resultado e Tributos","Resultado de Equivalência Patrimonial",0],["7.01.001","Receita de Equivalência Patrimonial","7.01",3,"A","C","DRE","Resultado e Tributos","Resultado de Equivalência Patrimonial",1],["7.01.002","(-) Despesa de Equivalência Patrimonial","7.01",3,"A","D","DRE","Resultado e Tributos","Resultado de Equivalência Patrimonial",1],["7.02","Resultado Antes dos Tributos - Ajustes","7",2,"S","D","DRE","Resultado e Tributos","Resultado Antes dos Tributos - Ajustes",0],["7.02.001","Ajustes Não Recorrentes Positivos","7.02",3,"A","C","DRE","Resultado e Tributos","Resultado Antes dos Tributos - Ajustes",1],["7.02.002","Ajustes Não Recorrentes Negativos","7.02",3,"A","D","DRE","Resultado e Tributos","Resultado Antes dos Tributos - Ajustes",1],["7.03","Tributos sobre o Lucro","7",2,"S","D","DRE","Resultado e Tributos","Tributos sobre o Lucro",0],["7.03.001","IRPJ Corrente","7.03",3,"A","D","DRE","Resultado e Tributos","Tributos sobre o Lucro",1],["7.03.002","CSLL Corrente","7.03",3,"A","D","DRE","Resultado e Tributos","Tributos sobre o Lucro",1],["7.03.003","IRPJ Diferido","7.03",3,"A","D","DRE","Resultado e Tributos","Tributos sobre o Lucro",1],["7.03.004","CSLL Diferida","7.03",3,"A","D","DRE","Resultado e Tributos","Tributos sobre o Lucro",1],["7.03.005","Reversão de IRPJ / CSLL","7.03",3,"A","C","DRE","Resultado e Tributos","Tributos sobre o Lucro",1],["8","CONTAS DE CONTROLE / COMPENSAÇÃO","",1,"S","M","CT","Contas de Controle","",0],["8.01","Bens de Terceiros em Poder da Empresa","8",2,"S","M","CT","Contas de Controle","Bens de Terceiros em Poder da Empresa",0],["8.01.001","Bens Recebidos em Comodato","8.01",3,"A","M","CT","Contas de Controle","Bens de Terceiros em Poder da Empresa",1],["8.01.002","Bens Recebidos em Locação","8.01",3,"A","M","CT","Contas de Controle","Bens de Terceiros em Poder da Empresa",1],["8.01.003","Mercadorias de Terceiros","8.01",3,"A","M","CT","Contas de Controle","Bens de Terceiros em Poder da Empresa",1],["8.01.004","Outros Bens de Terceiros","8.01",3,"A","M","CT","Contas de Controle","Bens de Terceiros em Poder da Empresa",1],["8.02","Bens da Empresa em Poder de Terceiros","8",2,"S","M","CT","Contas de Controle","Bens da Empresa em Poder de Terceiros",0],["8.02.001","Bens em Comodato","8.02",3,"A","M","CT","Contas de Controle","Bens da Empresa em Poder de Terceiros",1],["8.02.002","Bens em Manutenção","8.02",3,"A","M","CT","Contas de Controle","Bens da Empresa em Poder de Terceiros",1],["8.02.003","Mercadorias em Consignação","8.02",3,"A","M","CT","Contas de Controle","Bens da Empresa em Poder de Terceiros",1],["8.02.004","Outros Bens com Terceiros","8.02",3,"A","M","CT","Contas de Controle","Bens da Empresa em Poder de Terceiros",1],["8.03","Garantias e Responsabilidades","8",2,"S","M","CT","Contas de Controle","Garantias e Responsabilidades",0],["8.03.001","Avais e Fianças Prestadas","8.03",3,"A","M","CT","Contas de Controle","Garantias e Responsabilidades",1],["8.03.002","Garantias Prestadas","8.03",3,"A","M","CT","Contas de Controle","Garantias e Responsabilidades",1],["8.03.003","Garantias Recebidas","8.03",3,"A","M","CT","Contas de Controle","Garantias e Responsabilidades",1],["8.03.004","Contratos a Executar","8.03",3,"A","M","CT","Contas de Controle","Garantias e Responsabilidades",1],["8.03.005","Seguros Contratados","8.03",3,"A","M","CT","Contas de Controle","Garantias e Responsabilidades",1],["8.04","Controles Fiscais e Gerenciais","8",2,"S","M","CT","Contas de Controle","Controles Fiscais e Gerenciais",0],["8.04.001","Prejuízos Fiscais a Compensar","8.04",3,"A","M","CT","Contas de Controle","Controles Fiscais e Gerenciais",1],["8.04.002","Base Negativa de CSLL","8.04",3,"A","M","CT","Contas de Controle","Controles Fiscais e Gerenciais",1],["8.04.003","Créditos Fiscais em Controle","8.04",3,"A","M","CT","Contas de Controle","Controles Fiscais e Gerenciais",1],["8.04.004","Orçamentos Aprovados","8.04",3,"A","M","CT","Contas de Controle","Controles Fiscais e Gerenciais",1],["8.04.005","Pedidos de Compra em Aberto","8.04",3,"A","M","CT","Contas de Controle","Controles Fiscais e Gerenciais",1],["8.04.006","Contratos Futuros / Compromissos","8.04",3,"A","M","CT","Contas de Controle","Controles Fiscais e Gerenciais",1]];
+</script>
 <script>
 /* ================================================================
    SECTION: DATA
@@ -1886,8 +1916,46 @@ function catTipo(c){
   return 'Despesa';
 }
 function catAtiva(c){ try{ const m = CATEGORY_META.find(x=>x.nome===c); return !m || m.status!=='Inativo'; }catch(e){ return true; } }
-function catsPagar(){ return CATEGORIES.filter(c=>catTipo(c)!=='Receita' && catAtiva(c)); }
-function catsReceber(){ return CATEGORIES.filter(c=>catTipo(c)!=='Despesa' && catAtiva(c)); }
+
+/* ---- Plano de contas: cada lançamento guarda o CÓDIGO da conta contábil em `categoria`. ----
+   Contas de DRE com natureza devedora alimentam Contas a Pagar; credoras, Contas a Receber.
+   PAG-AC / REC-AC = "A classificar" (para reclassificar depois, inclusive em lote). */
+const PLANO_KEY = 'bpo_financeiro_plano_contas_v2';
+const PLANO = loadOrSeedArray(PLANO_KEY, ()=>PLANO_SEED.map(r=>({cod:r[0], nome:r[1], pai:r[2], nivel:r[3], tipo:r[4], nat:r[5], dem:r[6], grupo:r[7], sub:r[8], aceita:r[9]===1, status:'Ativa'})));
+function savePlano(){ persist(PLANO_KEY, PLANO); }
+const CONTAS_AC = [
+  {cod:'PAG-AC', nome:'A classificar (despesa)', tipo:'A', nat:'D', dem:'DRE', grupo:'A classificar', sub:'', aceita:true, status:'Ativa', sistema:true},
+  {cod:'REC-AC', nome:'A classificar (receita)', tipo:'A', nat:'C', dem:'DRE', grupo:'A classificar', sub:'', aceita:true, status:'Ativa', sistema:true},
+];
+let _planoIdx = null;
+function planoIdx(){ if(!_planoIdx){ _planoIdx = new Map(); CONTAS_AC.concat(PLANO).forEach(a=>_planoIdx.set(a.cod, a)); } return _planoIdx; }
+function planoInvalidate(){ _planoIdx = null; }
+function contaByCod(c){ return planoIdx().get(c); }
+function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
+function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : `${a.cod} · ${a.nome}`; }
+function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
+function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
+function contasPagar(){ return [CONTAS_AC[0]].concat(PLANO.filter(a=>a.tipo==='A' && a.aceita && a.status==='Ativa' && a.dem==='DRE' && a.nat==='D')); }
+function contasReceber(){ return [CONTAS_AC[1]].concat(PLANO.filter(a=>a.tipo==='A' && a.aceita && a.status==='Ativa' && a.dem==='DRE' && a.nat==='C')); }
+function catsPagar(){ return contasPagar().map(a=>a.cod); }
+function catsReceber(){ return contasReceber().map(a=>a.cod); }
+function contaOptionsHTML(list, sel){ return list.map(a=>`<option value="${a.cod}" data-g="${a.sistema?'':(contaGrupoNome(a.cod))}" ${a.cod===sel?'selected':''}>${a.sistema?'A classificar':a.cod+' · '+a.nome}</option>`).join(''); }
+// migra categorias antigas (nomes) para códigos do plano; o que não for reconhecido vira "A classificar"
+const CONTA_LEGACY = {
+  'Pessoal - Salários e Encargos':'6.01.001','Pessoal - Benefícios':'6.01.020','Ocupação - Aluguel e Condomínio':'6.02.001','Utilidades - Energia Elétrica':'6.02.004',
+  'Utilidades - Água e Esgoto':'6.02.005','Utilidades - Telefone e Internet':'6.02.009','Administrativo - Material de Escritório':'6.02.011','Tecnologia - Software e Sistemas':'6.05.003',
+  'Serviços de Terceiros - Prestadores':'6.03.021','Comercial - Comissões':'6.04.011','Marketing - Publicidade':'6.04.001','Tributos - Impostos e Taxas':'6.09.011',
+  'Financeiras - Juros e Tarifas':'6.10.001','Outros - Despesas Diversas':'6.02.029',
+  'Vendas de Produtos':'4.01.002','Prestação de Serviços':'4.01.003','Comissões Recebidas':'4.01.007','Aluguéis Recebidos':'4.01.009','Receitas Financeiras':'4.04.002','Outras Receitas':'4.01.024',
+};
+function contaMigrar(valor, tipo){
+  if(!valor) return tipo==='receber' ? 'REC-AC' : 'PAG-AC';
+  if(contaByCod(valor)) return valor;
+  const ac = tipo==='receber' ? 'REC-AC' : 'PAG-AC';
+  const cand = CONTA_LEGACY[valor] || (CAT_LEGACY && CAT_LEGACY[valor] && CONTA_LEGACY[CAT_LEGACY[valor]]);
+  const acc = cand && contaByCod(cand);
+  return (acc && acc.nat === (tipo==='receber' ? 'C' : 'D')) ? cand : ac;
+}
 const COST_CENTERS = ['Administrativo','Comercial','Financeiro','Tecnologia','Operações','Marketing','Recursos Humanos'];
 const PAYMENT_METHODS = loadOrSeedArray('bpo_financeiro_payment_methods_v1', ()=>['PIX','Boleto','Transferência Bancária','Débito Automático','Cartão','Dinheiro','Outros']);
 const BANK_ACCOUNTS = loadOrSeedArray('bpo_financeiro_bank_accounts_v1', ()=>['Sicredi (Conta Corrente)','Banco do Brasil (Conta Corrente)','Caixa (Conta Corrente)','Itaú (Conta Corrente)']);
@@ -1994,16 +2062,7 @@ function categoriaHistoricoPadrao(categoria){
 }
 
 const COMPANY_IDS = ['c1','c2','c3','c4','c5'];
-function contaPadraoDaCategoria(categoria){
-  if(CAT_RECEITA_SEED.includes(categoria)) return 'Receitas > Receita de Serviços';
-  categoria = catGroup(categoria);
-  const map = {
-    'Utilidades':'Despesas > Ocupação','Pessoal':'Despesas > Pessoal','Ocupação':'Despesas > Ocupação','Administrativo':'Despesas > Administrativo','Comercial':'Despesas > Comercial',
-    'Marketing':'Despesas > Marketing','Tecnologia':'Despesas > Tecnologia','Serviços de Terceiros':'Despesas > Serviços de Terceiros',
-    'Tributos':'Despesas > Tributos','Financeiras':'Despesas > Financeiras','Outros':'Despesas > Outras',
-  };
-  return map[categoria] || 'Despesas > Outras';
-}
+function contaPadraoDaCategoria(categoria){ return contaLabel(categoria); }
 function buildSuppliers(){
   const list = [];
   for(let i=0;i<30;i++){
@@ -2755,13 +2814,12 @@ const DOCUMENTS = loadOrSeedArray(DOCUMENTS_KEY, ()=>[]);
 const CHART_OF_ACCOUNTS = loadOrSeedArray(CHART_ACCOUNTS_KEY, buildChartOfAccounts);
 const COST_CENTER_RECORDS = loadOrSeedArray(COST_CENTER_RECORDS_KEY, buildCostCenterRecords);
 function saveReceivables(){ persist(RECEIVABLES_KEY, RECEIVABLES); }
-(function migrateLegacyCategories(){
-  const hash = id => String(id).split('').reduce((h,ch)=>h+ch.charCodeAt(0),0);
+(function migrateParaPlanoDeContas(){
   let a=false, r=false, sp=false, cl=false;
-  state.accounts.forEach(x=>{ if(CAT_LEGACY[x.categoria]){ x.categoria = CAT_LEGACY[x.categoria]; a=true; } });
-  RECEIVABLES.forEach(x=>{ if(CAT_LEGACY[x.categoria]){ x.categoria = CAT_RECEITA_SEED[hash(x.id)%CAT_RECEITA_SEED.length]; r=true; } });
-  SUPPLIERS.forEach(x=>{ if(CAT_LEGACY[x.categoria]){ x.categoria = CAT_LEGACY[x.categoria]; sp=true; } });
-  CLIENTS.forEach(x=>{ if(CAT_LEGACY[x.categoria]){ x.categoria = CAT_RECEITA_SEED[hash(x.id)%CAT_RECEITA_SEED.length]; cl=true; } });
+  state.accounts.forEach(x=>{ const n=contaMigrar(x.categoria,'pagar'); if(n!==x.categoria){ x.categoria=n; a=true; } });
+  RECEIVABLES.forEach(x=>{ const n=contaMigrar(x.categoria,'receber'); if(n!==x.categoria){ x.categoria=n; r=true; } });
+  SUPPLIERS.forEach(x=>{ const n=contaMigrar(x.categoria,'pagar'); if(n!==x.categoria){ x.categoria=n; sp=true; } });
+  CLIENTS.forEach(x=>{ const n=contaMigrar(x.categoria,'receber'); if(n!==x.categoria){ x.categoria=n; cl=true; } });
   if(a) saveAccounts(state.accounts);
   if(r) saveReceivables();
   if(sp) persist(SUPPLIERS_KEY, SUPPLIERS);
@@ -3221,7 +3279,7 @@ function clientsDaEmpresa(){ const emp=state.filters.empresaId; return CLIENTS.f
 function populateFormSelects(){
   document.getElementById('fEmpresa').innerHTML = COMPANIES.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
   document.getElementById('fFornecedor').innerHTML = suppliersDaEmpresa().sort((a,b)=>a.nome.localeCompare(b.nome)).map(s=>`<option value="${s.id}">${s.nome}</option>`).join('');
-  document.getElementById('fCategoria').innerHTML = catsPagar().map(c=>`<option value="${c}">${c}</option>`).join('');
+  document.getElementById('fCategoria').innerHTML = contaOptionsHTML(contasPagar());
   document.getElementById('fCentroCusto').innerHTML = COST_CENTERS.map(c=>`<option value="${c}">${c}</option>`).join('');
   document.getElementById('fContaBancaria').innerHTML = BANK_ACCOUNTS.map(c=>`<option value="${c}">${c}</option>`).join('');
   document.getElementById('fFormaPagamento').innerHTML = PAYMENT_METHODS.map(c=>`<option value="${c}">${c}</option>`).join('');
@@ -3277,30 +3335,29 @@ function anexoSetup(p, onFile){
 }
 /* Ícone da categoria (aparece dentro do campo, como no modelo) */
 const CAT_ICON = {
-  'Utilidades':'<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
-  'Pessoal':'<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>',
-  'Ocupação':'<rect x="4" y="2" width="16" height="20"/><line x1="9" y1="7" x2="9" y2="7.01"/><line x1="15" y1="7" x2="15" y2="7.01"/><line x1="9" y1="12" x2="9" y2="12.01"/><line x1="15" y1="12" x2="15" y2="12.01"/>',
-  'Aluguéis Recebidos':'<rect x="4" y="2" width="16" height="20"/><line x1="9" y1="7" x2="9" y2="7.01"/><line x1="15" y1="7" x2="15" y2="7.01"/><line x1="9" y1="12" x2="9" y2="12.01"/><line x1="15" y1="12" x2="15" y2="12.01"/>',
-  'Administrativo':'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/>',
-  'Prestação de Serviços':'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/>',
-  'Tecnologia':'<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
-  'Serviços de Terceiros':'<path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>',
-  'Tributos':'<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
-  'Comissões Recebidas':'<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
-  'Financeiras':'<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>',
-  'Receitas Financeiras':'<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>',
+  '6.01':'<path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>',
+  '6.02':'<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v16"/>',
+  '6.03':'<path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>',
+  '6.05':'<rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>',
+  '6.06':'<rect x="4" y="2" width="16" height="20"/><line x1="9" y1="7" x2="9" y2="7.01"/><line x1="15" y1="7" x2="15" y2="7.01"/><line x1="9" y1="12" x2="9" y2="12.01"/><line x1="15" y1="12" x2="15" y2="12.01"/>',
+  '6.09':'<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+  '4.02':'<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+  '7.03':'<line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
+  '6.10':'<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>',
+  '4.04':'<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/>',
 };
 function catIconSvg(cat){
-  const paths = CAT_ICON[cat] || CAT_ICON[catGroup(cat)] || '<path d="M20 12l-8 8-9-9V3h8l9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>';
+  const paths = CAT_ICON[contaGrupoCod(cat)] || '<path d="M20 12l-8 8-9-9V3h8l9 9z"/><circle cx="7.5" cy="7.5" r="1.5"/>';
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
 }
-function refreshCatIcon(selId, icoId){ const sel=document.getElementById(selId); document.getElementById(icoId).innerHTML = catIconSvg(sel.value); }
+function refreshCatIcon(selId, icoId){ const sel=document.getElementById(selId); document.getElementById(icoId).innerHTML = catIconSvg(sel.value); if(sel._cpRefresh) sel._cpRefresh(); }
 function refreshCatIcons(){ refreshCatIcon('fCategoria','fCatIco'); refreshCatIcon('rCategoria','rCatIco'); }
 function ensureOption(selId, value){
   const sel=document.getElementById(selId);
   if(value && ![...sel.options].some(o=>o.value===value)) sel.insertAdjacentHTML('beforeend', `<option value="${value}">${value}</option>`);
 }
 let lancAgainPref = false;
+setTimeout(()=>{ makeContaPicker('fCategoria'); makeContaPicker('rCategoria'); }, 0);
 function openEntryModal(mode, id){
   if(mode!=='view' && denyIfReadOnly()) return;
   if(mode!=='view' && mode!=='edit' && !suppliersDaEmpresa().length){
@@ -3409,7 +3466,7 @@ function openEntryModal(mode, id){
       document.getElementById('fEmissao').value = fmtDateISO(TODAY);
       document.getElementById('fVencimento').value = fmtDateISO(addDays(TODAY,10));
       document.getElementById('fValor').value = '';
-      document.getElementById('fCategoria').value = catsPagar()[0];
+      document.getElementById('fCategoria').value = 'PAG-AC';
       document.getElementById('fCentroCusto').value = COST_CENTERS[0];
       document.getElementById('fFormaPagamento').value = PAYMENT_METHODS[0];
       document.getElementById('fPixCodigo').value = '';
@@ -3911,19 +3968,20 @@ function renderVisaoGeral(){
 
   // ---- Pendências operacionais (sempre globais, independem do range) ----
   const pendSemComprovante = DOCUMENTS.filter(d=>(!state.filters.empresaId || d.empresaId===state.filters.empresaId) && ['erro','revisar'].includes(d.status));
-  const pendSemCategoria = [...allPayables, ...allReceivables].filter(x=>!x.categoria);
+  const pendSemCategoria = [...allPayables, ...allReceivables].filter(x=>(!x.categoria || x.categoria==='PAG-AC' || x.categoria==='REC-AC') && x.status!=='cancelado');
   const pendRows = [
     {icon:'alert-triangle', label:'Contas a pagar vencidas', count:vencidosPagar.length, value:sum(vencidosPagar), nav:'contas-pagar'},
     {icon:'alert-triangle', label:'Contas a receber vencidas', count:vencidosReceber.length, value:sum(vencidosReceber), nav:'contas-receber'},
     {icon:'clock', label:'Lançamentos aguardando conciliação', count:aConciliar.length, value:sum(aConciliar), nav:null},
     {icon:'help-circle', label:'Recebimentos sem identificação', count:0, value:0, nav:null},
     {icon:'file', label:'Pagamentos sem comprovante', count:pendSemComprovante.length, value:sum(pendSemComprovante), nav:'documentos'},
-    {icon:'tag', label:'Lançamentos sem categoria', count:pendSemCategoria.length, value:sum(pendSemCategoria), nav:null},
+    {icon:'tag', label:'Lançamentos a classificar', count:pendSemCategoria.length, value:sum(pendSemCategoria), nav:null},
   ];
 
   // ---- Despesas / Receitas por categoria (mês atual) ----
-  const despesasPorCategoria = catsPagar().map(cat=>({cat, valor:allPayables.filter(a=>a.status==='pago' && a.categoria===cat && monthOf(a.dataPagamento||a.vencimento)===curMonth).reduce((s,a)=>s+a.valor,0)})).filter(x=>x.valor>0).sort((a,b)=>b.valor-a.valor);
-  const receitasPorCategoria = catsReceber().map(cat=>({cat, valor:allReceivables.filter(r=>r.status==='recebido' && r.categoria===cat && monthOf(r.dataRecebimento||r.vencimento)===curMonth).reduce((s,r)=>s+(r.valorRecebido||r.valor),0)})).filter(x=>x.valor>0).sort((a,b)=>b.valor-a.valor);
+  const sumPor = (list, keyFn, valFn)=>{ const m={}; list.forEach(x=>{ const k=keyFn(x); m[k]=(m[k]||0)+valFn(x); }); return Object.entries(m).map(([cat,valor])=>({cat,valor})).filter(x=>x.valor>0).sort((a,b)=>b.valor-a.valor); };
+  const despesasPorCategoria = sumPor(allPayables.filter(a=>a.status==='pago' && monthOf(a.dataPagamento||a.vencimento)===curMonth), a=>contaGrupoNome(a.categoria), a=>a.valor);
+  const receitasPorCategoria = sumPor(allReceivables.filter(r=>r.status==='recebido' && monthOf(r.dataRecebimento||r.vencimento)===curMonth), r=>contaNome(r.categoria), r=>(r.valorRecebido||r.valor));
   const totalDespesas = despesasPorCategoria.reduce((s,x)=>s+x.valor,0);
   const totalReceitas = receitasPorCategoria.reduce((s,x)=>s+x.valor,0);
 
@@ -3931,9 +3989,9 @@ function renderVisaoGeral(){
   const in7Iso = fmtDateISO(addDays(TODAY,7));
   const upcoming = [
     ...allPayables.filter(a=>['a_vencer','vence_hoje','programado','aguardando','autorizado'].includes(a.status) && a.vencimento>=todayIso && a.vencimento<=in7Iso)
-      .map(a=>({data:a.vencimento, tipo:'Pagar', descricao:supplierById(a.fornecedorId).nome, categoria:a.categoria, valor:a.valor})),
+      .map(a=>({data:a.vencimento, tipo:'Pagar', descricao:(supplierById(a.fornecedorId)||{nome:'—'}).nome, categoria:a.categoria, valor:a.valor})),
     ...allReceivables.filter(r=>r.status==='a_vencer' && r.vencimento>=todayIso && r.vencimento<=in7Iso)
-      .map(r=>({data:r.vencimento, tipo:'Receber', descricao:clientById(r.clienteId).nome, categoria:r.categoria, valor:r.valor})),
+      .map(r=>({data:r.vencimento, tipo:'Receber', descricao:(clientById(r.clienteId)||{nome:'—'}).nome, categoria:r.categoria, valor:r.valor})),
   ].sort((a,b)=>a.data<b.data?-1:a.data>b.data?1:0);
   function vgDiasLabel(iso){
     const diff = Math.round((new Date(iso+'T00:00:00')-TODAY)/86400000);
@@ -4029,7 +4087,7 @@ function renderVisaoGeral(){
       <div class="table-scroll"><table class="data-table" style="min-width:0;table-layout:auto;">
         <thead><tr><th style="width:90px;">Data</th><th style="width:80px;">Tipo</th><th>Descrição</th><th style="width:130px;">Categoria</th><th style="width:100px;text-align:right;">Valor</th><th style="width:90px;">Status</th></tr></thead>
         <tbody>${upcoming.length? upcoming.map(u=>{ const d=vgDiasLabel(u.data); return `
-          <tr><td class="mono">${fmtDateBR(u.data)}</td><td>${u.tipo==='Pagar'?'Pagar':'Receber'}</td><td title="${u.descricao}">${u.descricao}</td><td>${u.categoria||'—'}</td><td class="col-valor mono">${fmtCurrency(u.valor)}</td><td><span class="badge ${d.cls}">${d.l}</span></td></tr>`;
+          <tr><td class="mono">${fmtDateBR(u.data)}</td><td>${u.tipo==='Pagar'?'Pagar':'Receber'}</td><td title="${u.descricao}">${u.descricao}</td><td>${contaLabel(u.categoria)}</td><td class="col-valor mono">${fmtCurrency(u.valor)}</td><td><span class="badge ${d.cls}">${d.l}</span></td></tr>`;
         }).join('') : `<tr><td colspan="6"><div class="empty-state">Nenhum compromisso nos próximos 7 dias.</div></td></tr>`}</tbody>
       </table></div>
     </div>
@@ -4165,7 +4223,7 @@ function openRecModal(mode, id){
   const footer=document.getElementById('recModalFooter');
   document.getElementById('rEmpresa').innerHTML = COMPANIES.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
   document.getElementById('rCliente').innerHTML = clientsDaEmpresa().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
-  document.getElementById('rCategoria').innerHTML = catsReceber().map(c=>`<option>${c}</option>`).join('');
+  document.getElementById('rCategoria').innerHTML = contaOptionsHTML(contasReceber());
   document.getElementById('rCentroCusto').innerHTML = COST_CENTERS.map(c=>`<option>${c}</option>`).join('');
   document.getElementById('rContaBancaria').innerHTML = BANK_ACCOUNTS.map(c=>`<option>${c}</option>`).join('');
   document.getElementById('rFormaRecebimento').innerHTML = RECEIVE_METHODS.map(c=>`<option>${c}</option>`).join('');
@@ -4241,7 +4299,7 @@ function openRecModal(mode, id){
       document.getElementById('rEmissao').value=fmtDateISO(TODAY);
       document.getElementById('rVencimento').value=fmtDateISO(addDays(TODAY,10));
       document.getElementById('rValor').value='';
-      document.getElementById('rCategoria').value=catsReceber()[0];
+      document.getElementById('rCategoria').value='REC-AC';
       document.getElementById('rCentroCusto').value=COST_CENTERS[0];
       document.getElementById('rFormaRecebimento').value='PIX';
       document.getElementById('rContaBancaria').value=BANK_ACCOUNTS[0];
@@ -4952,25 +5010,7 @@ const ENVIO_KEY = 'bpo_financeiro_envio_v1';
 function envioCfg(){ try{ return JSON.parse(localStorage.getItem(ENVIO_KEY)||'{}'); }catch(e){ return {}; } }
 function envioSave(c){ try{ localStorage.setItem(ENVIO_KEY, JSON.stringify(c)); }catch(e){} }
 const RP_BRAND = 'Bzandona Soluções Financeiras';
-const RP_APPS_SCRIPT = `const SENHA = 'COLE-AQUI-A-MESMA-SENHA-DO-SISTEMA';
-
-function doPost(e) {
-  try {
-    const d = JSON.parse(e.postData.contents);
-    if (d.token !== SENHA) return saida({ ok: false, erro: 'Senha inválida' });
-    const pdf = Utilities.newBlob(Utilities.base64Decode(d.pdfBase64), 'application/pdf', d.filename);
-    MailApp.sendEmail({
-      to: d.to, cc: d.cc || '', subject: d.subject, htmlBody: d.html,
-      attachments: [pdf], name: '${RP_BRAND}'
-    });
-    return saida({ ok: true });
-  } catch (err) {
-    return saida({ ok: false, erro: String(err) });
-  }
-}
-function saida(o) {
-  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
-}`;
+const RP_APPS_SCRIPT = "const SENHA = 'COLE-AQUI-A-MESMA-SENHA-DO-SISTEMA';\n\nfunction doPost(e) {\n  try {\n    const d = JSON.parse(e.postData.contents);\n    if (d.token !== SENHA) return saida({ ok: false, erro: 'Senha inválida' });\n    if (d.acao === 'ler_relatorio') return saida(lerRelatorio(d));\n    const pdf = Utilities.newBlob(Utilities.base64Decode(d.pdfBase64), 'application/pdf', d.filename);\n    MailApp.sendEmail({\n      to: d.to, cc: d.cc || '', subject: d.subject, htmlBody: d.html,\n      attachments: [pdf], name: 'Bzandona Soluções Financeiras'\n    });\n    return saida({ ok: true });\n  } catch (err) {\n    return saida({ ok: false, erro: String(err) });\n  }\n}\n\n// Leitura de relatório (PDF ou imagem) com a IA da Anthropic.\n// A chave fica em: Configurações do projeto > Propriedades do script > ANTHROPIC_KEY\nfunction lerRelatorio(d) {\n  const chave = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');\n  if (!chave) return { ok: false, erro: 'Falta a chave ANTHROPIC_KEY nas Propriedades do script' };\n  const arquivo = d.mime === 'application/pdf'\n    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: d.dataBase64 } }\n    : { type: 'image', source: { type: 'base64', media_type: d.mime, data: d.dataBase64 } };\n  const dica = d.dica === 'pagar' ? 'todas as linhas são contas a pagar'\n    : d.dica === 'receber' ? 'todas as linhas são contas a receber' : 'detecte pelo contexto';\n  const instrucoes = [\n    'Você lê relatórios financeiros brasileiros de contas a pagar e/ou a receber (podem ser escaneados ou fotos).',\n    'Extraia UMA linha para cada conta listada. Ignore totais, subtotais e cabeçalhos.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"fornecedor ou cliente\",\"descricao\":\"texto\",\"valor\":1234.56,\"forma\":\"PIX ou null\",\"documento\":\"número ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Regras: tipo é \"pagar\" ou \"receber\" (use as seções do relatório; sem seções, ' + dica + ').',\n    'Datas no formato AAAA-MM-DD (o relatório usa dia/mês/ano). Valor como número com ponto decimal, sem R$.',\n    'Não invente dados: campo ausente = null. Se algum nome ou número estiver ilegível ou duvidoso, inclua a linha e explique em \"observacoes\".'\n  ].join('\\n');\n  const resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {\n    method: 'post', contentType: 'application/json', muteHttpExceptions: true,\n    headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01' },\n    payload: JSON.stringify({\n      model: 'claude-sonnet-5-5', max_tokens: 8000,\n      messages: [{ role: 'user', content: [arquivo, { type: 'text', text: instrucoes }] }]\n    })\n  });\n  const corpo = JSON.parse(resp.getContentText());\n  if (resp.getResponseCode() !== 200) return { ok: false, erro: (corpo.error && corpo.error.message) || ('Erro ' + resp.getResponseCode()) };\n  const texto = corpo.content.map(function (c) { return c.text || ''; }).join('');\n  const ini = texto.indexOf('{'), fim = texto.lastIndexOf('}');\n  if (ini < 0 || fim < 0) return { ok: false, erro: 'A IA não devolveu dados legíveis' };\n  const dados = JSON.parse(texto.slice(ini, fim + 1));\n  return { ok: true, linhas: dados.linhas || [], observacoes: dados.observacoes || '' };\n}\n\nfunction saida(o) {\n  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);\n}";
 
 function rpData(){
   const emp = state.filters.empresaId;
@@ -5132,6 +5172,7 @@ function rpEnsureModals(){
         <li>Apague o que estiver lá, cole o código abaixo e troque a senha (primeira linha) por uma senha sua.</li>
         <li>Clique em <b>Implantar &gt; Nova implantação &gt; Tipo: App da Web</b>. Em "Executar como" escolha <b>Eu</b> e em "Quem tem acesso" escolha <b>Qualquer pessoa</b>. Autorize quando o Google pedir.</li>
         <li>Copie a <b>URL do app da Web</b> e cole abaixo, junto com a mesma senha.</li>
+        <li><i>Opcional, para <b>Importar relatório</b> (PDF/foto):</i> em <b>Configurações do projeto &gt; Propriedades do script</b>, adicione a propriedade <b>ANTHROPIC_KEY</b> com a sua chave de API da Anthropic. Ao atualizar o código depois, use <b>Implantar &gt; Gerenciar implantações &gt; editar &gt; Nova versão</b>.</li>
       </ol>
       <button class="cx-btn" id="rpCopyCode" style="margin-bottom:14px;">Copiar código do Apps Script</button>
       <div class="form-grid">
@@ -5284,7 +5325,6 @@ const CFG_TABS = [
   {key:'empresas', label:'Empresas'},
   {key:'fornecedores', label:'Fornecedores'},
   {key:'clientes', label:'Clientes'},
-  {key:'categorias', label:'Categorias'},
   {key:'plano-contas', label:'Plano de Contas'},
   {key:'centros-custo', label:'Centros de Custo'},
   {key:'formas-pagamento', label:'Formas de Pagamento'},
@@ -5431,7 +5471,7 @@ function openSupplierModal(id){
   supplierEditingId = id;
   document.getElementById('supplierModalTitle').textContent = id ? 'Editar Fornecedor' : 'Novo Fornecedor';
   document.getElementById('spEmpresa').innerHTML = COMPANIES.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
-  document.getElementById('spCategoria').innerHTML = catsPagar().map(c=>`<option>${c}</option>`).join('');
+  document.getElementById('spCategoria').innerHTML = contaOptionsHTML(contasPagar());
   document.getElementById('spCentroCusto').innerHTML = COST_CENTERS.map(c=>`<option>${c}</option>`).join('');
   document.getElementById('spFormaPagamento').innerHTML = PAYMENT_METHODS.map(c=>`<option>${c}</option>`).join('');
   populatePlanoContasSelect(document.getElementById('spPlanoContas'));
@@ -5468,7 +5508,7 @@ document.getElementById('spSaveBtn').addEventListener('click', ()=>{
     empresaId: document.getElementById('spEmpresa').value,
     nome, nomeFantasia: document.getElementById('spNomeFantasia').value.trim()||nome,
     cnpj: document.getElementById('spCnpj').value.trim(), status: document.getElementById('spStatus').value,
-    categoria: document.getElementById('spCategoria').value, planoContas: document.getElementById('spPlanoContas').value,
+    categoria: document.getElementById('spCategoria').value, planoContas: contaLabel(document.getElementById('spCategoria').value),
     centroCusto: document.getElementById('spCentroCusto').value,
     historicoPadrao: document.getElementById('spHistorico').value.trim(),
     formaPagamentoPadrao: document.getElementById('spFormaPagamento').value,
@@ -5530,7 +5570,7 @@ function openClientModal(id){
   clientEditingId = id;
   document.getElementById('clientModalTitle').textContent = id ? 'Editar Cliente' : 'Novo Cliente';
   document.getElementById('clEmpresa').innerHTML = COMPANIES.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
-  document.getElementById('clCategoria').innerHTML = catsReceber().map(c=>`<option>${c}</option>`).join('');
+  document.getElementById('clCategoria').innerHTML = contaOptionsHTML(contasReceber());
   document.getElementById('clCentroCusto').innerHTML = COST_CENTERS.map(c=>`<option>${c}</option>`).join('');
   populatePlanoContasSelect(document.getElementById('clPlanoContas'));
   if(id){
@@ -5566,7 +5606,7 @@ document.getElementById('clSaveBtn').addEventListener('click', ()=>{
     cnpj: document.getElementById('clCnpj').value.trim(),
     email: document.getElementById('clEmail').value.trim(), telefone: document.getElementById('clTelefone').value.trim(),
     status: document.getElementById('clStatus').value,
-    categoria: document.getElementById('clCategoria').value, planoContas: document.getElementById('clPlanoContas').value,
+    categoria: document.getElementById('clCategoria').value, planoContas: contaLabel(document.getElementById('clCategoria').value),
     centroCusto: document.getElementById('clCentroCusto').value,
     observacoes: document.getElementById('clObservacoes').value.trim(),
   };
@@ -5608,53 +5648,146 @@ function renderCfgCategorias(body){
 }
 
 /* ---------- Plano de Contas ---------- */
-function renderCfgPlanoContas(body){
-  body.innerHTML = `
-    <div class="filters-row" style="justify-content:space-between;">
-      <span style="font-size:12.5px;color:var(--text-secondary);font-weight:600;">Estrutura hierárquica de contas financeiras</span>
-      <button class="btn btn-dark" id="pcAddBtn">+ Adicionar conta</button>
-    </div>
-    <div id="pcTree"></div>
-  `;
-  renderChartTree();
-  body.querySelector('#pcAddBtn').addEventListener('click', ()=>{
-    const grupo = prompt('Adicionar a qual grupo? (1. RECEITAS / 2. CUSTOS / 3. DESPESAS)\nDigite 1, 2 ou 3:','3');
-    const g = CHART_OF_ACCOUNTS.find(x=>x.id===grupo);
-    if(!g){ showToast('Grupo inválido.'); return; }
-    const nome = prompt('Nome da nova conta:'); if(!nome) return;
-    const nextIdx = g.filhos.length+1;
-    g.filhos.push({id:`${g.id}.${nextIdx}`, nome, status:'Ativo'});
-    saveChartOfAccounts(); renderChartTree();
+/* ---------- Plano de Contas (contas contábeis que alimentam DRE, P&L e Balanço) ---------- */
+let pcFilter = {q:'', dem:'', soAnaliticas:true, status:''};
+const PC_NAT = {D:'Devedora', C:'Credora', M:'Mista'};
+const PC_DEM = {DRE:'DRE', BP:'Balanço', CT:'Controle'};
+function pcRows(){
+  const q = cxNormalizeText(pcFilter.q.trim());
+  return PLANO.filter(a=>{
+    if(pcFilter.dem && a.dem!==pcFilter.dem) return false;
+    if(pcFilter.soAnaliticas && a.tipo!=='A') return false;
+    if(pcFilter.status && a.status!==pcFilter.status) return false;
+    if(q && !cxNormalizeText(a.cod+' '+a.nome+' '+a.grupo+' '+a.sub).includes(q)) return false;
+    return true;
   });
 }
-function renderChartTree(){
-  const wrap = document.getElementById('pcTree');
-  if(!wrap) return;
-  wrap.innerHTML = CHART_OF_ACCOUNTS.map(g=>`
-    <div class="tree-node l1"><span>${g.id}. ${g.nome}</span></div>
-    ${g.filhos.map(f=>`
-      <div class="tree-node l2" data-gid="${g.id}" data-fid="${f.id}">
-        <span>${f.id} ${f.nome} ${f.status==='Inativo'?'<span class="badge badge-gray" style="margin-left:6px;">Inativa</span>':''}</span>
-        <span class="tn-actions">
-          <button class="tn-mini-btn" data-act="edit">Editar</button>
-          <button class="tn-mini-btn" data-act="toggle">${f.status==='Inativo'?'Ativar':'Inativar'}</button>
-        </span>
-      </div>`).join('')}
-  `).join('');
-  wrap.querySelectorAll('.tn-mini-btn').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const row = btn.closest('.tree-node');
-      const g = CHART_OF_ACCOUNTS.find(x=>x.id===row.dataset.gid);
-      const f = g.filhos.find(x=>x.id===row.dataset.fid);
-      if(btn.dataset.act==='edit'){
-        const novoNome = prompt('Novo nome da conta:', f.nome);
-        if(novoNome){ f.nome=novoNome; saveChartOfAccounts(); renderChartTree(); }
-      } else {
-        f.status = f.status==='Inativo' ? 'Ativo' : 'Inativo';
-        saveChartOfAccounts(); renderChartTree();
-      }
-    });
+function renderCfgPlanoContas(body){
+  const ativas = PLANO.filter(a=>a.tipo==='A' && a.status==='Ativa').length;
+  body.innerHTML = `
+    <div class="filters-row" style="justify-content:space-between;">
+      <span style="font-size:12.5px;color:var(--text-secondary);font-weight:600;">${PLANO.length} contas · ${ativas} analíticas ativas. Lance sempre em contas analíticas; as sintéticas só agrupam.</span>
+      <button class="btn btn-dark" id="pcAddBtn">+ Nova conta</button>
+    </div>
+    <div class="filters-row" style="gap:8px;flex-wrap:wrap;">
+      <input type="text" class="cx-input" id="pcQ" placeholder="Buscar por código, nome ou grupo..." value="${pcFilter.q.replace(/"/g,'&quot;')}" style="width:260px;height:30px;">
+      <select class="cx-select" id="pcDem"><option value="">Todas as demonstrações</option><option value="DRE" ${pcFilter.dem==='DRE'?'selected':''}>DRE</option><option value="BP" ${pcFilter.dem==='BP'?'selected':''}>Balanço Patrimonial</option><option value="CT" ${pcFilter.dem==='CT'?'selected':''}>Controle</option></select>
+      <select class="cx-select" id="pcStatus"><option value="">Ativas e inativas</option><option value="Ativa" ${pcFilter.status==='Ativa'?'selected':''}>Só ativas</option><option value="Inativa" ${pcFilter.status==='Inativa'?'selected':''}>Só inativas</option></select>
+      <label class="cx-check"><input type="checkbox" id="pcAn" ${pcFilter.soAnaliticas?'checked':''}> Só contas de lançamento (analíticas)</label>
+    </div>
+    <div class="table-scroll" id="pcTable"></div>`;
+  const draw = ()=>{
+    const rows = pcRows(), MAX = 200;
+    body.querySelector('#pcTable').innerHTML = `
+      <table class="data-table" style="min-width:0;table-layout:auto;">
+        <thead><tr><th style="width:120px;">Código</th><th>Conta</th><th style="width:90px;">Tipo</th><th style="width:90px;">Natureza</th><th style="width:100px;">Demonstração</th><th style="width:210px;">Grupo</th><th style="width:80px;">Status</th><th style="width:120px;text-align:center;">Ações</th></tr></thead>
+        <tbody>${rows.slice(0,MAX).map(a=>`
+          <tr><td class="mono">${a.cod}</td><td style="padding-left:${10+(a.nivel-1)*14}px;${a.tipo==='S'?'font-weight:700;':''}">${a.nome}</td><td>${a.tipo==='A'?'Analítica':'Sintética'}</td><td>${PC_NAT[a.nat]}</td><td>${PC_DEM[a.dem]}</td><td>${a.sub||a.grupo}</td>
+          <td><span class="badge ${a.status==='Ativa'?'badge-green':'badge-gray'}">${a.status}</span></td>
+          <td style="text-align:center;white-space:nowrap;"><button class="tn-mini-btn" data-act="edit" data-cod="${a.cod}">Editar</button> <button class="tn-mini-btn" data-act="toggle" data-cod="${a.cod}">${a.status==='Ativa'?'Inativar':'Ativar'}</button></td></tr>`).join('') || '<tr><td colspan="8"><div class="empty-inline">Nenhuma conta encontrada.</div></td></tr>'}</tbody>
+      </table>${rows.length>MAX?`<div class="empty-inline">Mostrando ${MAX} de ${rows.length} contas. Refine a busca para ver as demais.</div>`:''}`;
+    body.querySelectorAll('#pcTable .tn-mini-btn').forEach(btn=>btn.addEventListener('click', ()=>{
+      const a = PLANO.find(x=>x.cod===btn.dataset.cod);
+      if(btn.dataset.act==='toggle'){ a.status = a.status==='Ativa' ? 'Inativa' : 'Ativa'; savePlano(); planoInvalidate(); renderCfgPlanoContas(body); }
+      else pcOpenModal(a.cod);
+    }));
+  };
+  draw();
+  body.querySelector('#pcQ').addEventListener('input', cxDebounce(e=>{ pcFilter.q=e.target.value; draw(); }, 160));
+  body.querySelector('#pcDem').addEventListener('change', e=>{ pcFilter.dem=e.target.value; draw(); });
+  body.querySelector('#pcStatus').addEventListener('change', e=>{ pcFilter.status=e.target.value; draw(); });
+  body.querySelector('#pcAn').addEventListener('change', e=>{ pcFilter.soAnaliticas=e.target.checked; draw(); });
+  body.querySelector('#pcAddBtn').addEventListener('click', ()=>pcOpenModal(null));
+}
+let pcEditing = null;
+function pcEnsureModal(){
+  if(document.getElementById('pcModalOverlay')) return;
+  const d = document.createElement('div'); d.className='modal-overlay'; d.id='pcModalOverlay';
+  d.innerHTML = `
+    <div class="modal"><div class="modal-header"><div class="modal-title" id="pcModalTitle">Nova conta</div>
+      <button class="modal-close" id="pcmClose"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+      <div class="modal-body"><div class="form-grid">
+        <div class="form-field col-span-2" id="pcmPaiWrap"><label>Conta pai (sintética) <span class="req">*</span></label><select id="pcmPai"></select><span class="rp-hint" id="pcmPaiHint"></span></div>
+        <div class="form-field"><label>Código <span class="req">*</span></label><input type="text" id="pcmCod"></div>
+        <div class="form-field"><label>Natureza</label><select id="pcmNat"><option value="D">Devedora</option><option value="C">Credora</option></select></div>
+        <div class="form-field col-span-2"><label>Nome da conta <span class="req">*</span></label><input type="text" id="pcmNome"></div>
+      </div></div>
+      <div class="modal-footer"><button class="btn" id="pcmCancel">Cancelar</button><button class="btn btn-dark" id="pcmSave">Salvar</button></div></div>`;
+  document.body.appendChild(d);
+  const close = ()=>d.classList.remove('open');
+  d.querySelector('#pcmClose').addEventListener('click', close); d.querySelector('#pcmCancel').addEventListener('click', close);
+  d.addEventListener('click', e=>{ if(e.target===d) close(); });
+  d.querySelector('#pcmPai').addEventListener('change', pcSugerirCodigo);
+  d.querySelector('#pcmSave').addEventListener('click', pcSave);
+}
+function pcSugerirCodigo(){
+  const d = document.getElementById('pcModalOverlay');
+  const pai = PLANO.find(a=>a.cod===d.querySelector('#pcmPai').value); if(!pai) return;
+  const filhos = PLANO.filter(a=>a.pai===pai.cod);
+  const ult = filhos.map(a=>a.cod.slice(pai.cod.length+1)).filter(x=>/^\d+$/.test(x));
+  const largura = ult.length ? ult[0].length : 3, prox = (ult.length ? Math.max(...ult.map(Number)) : 0) + 1;
+  d.querySelector('#pcmCod').value = `${pai.cod}.${String(prox).padStart(largura,'0')}`;
+  d.querySelector('#pcmNat').value = pai.nat==='C' ? 'C' : 'D';
+  d.querySelector('#pcmPaiHint').textContent = `${PC_DEM[pai.dem]} · ${pai.sub||pai.grupo}`;
+}
+function pcOpenModal(cod){
+  pcEnsureModal(); pcEditing = cod;
+  const d = document.getElementById('pcModalOverlay');
+  const a = cod ? PLANO.find(x=>x.cod===cod) : null;
+  d.querySelector('#pcModalTitle').textContent = a ? 'Editar conta' : 'Nova conta';
+  d.querySelector('#pcmPaiWrap').style.display = a ? 'none' : '';
+  d.querySelector('#pcmCod').disabled = !!a;
+  d.querySelector('#pcmNat').disabled = !!a;
+  if(a){
+    d.querySelector('#pcmCod').value = a.cod; d.querySelector('#pcmNat').value = a.nat==='C'?'C':'D'; d.querySelector('#pcmNome').value = a.nome;
+  } else {
+    const sint = PLANO.filter(x=>x.tipo==='S' && x.nivel>=2 && x.status==='Ativa' && (x.dem==='DRE' || x.dem==='BP'));
+    d.querySelector('#pcmPai').innerHTML = sint.map(x=>`<option value="${x.cod}">${x.cod} · ${x.nome}</option>`).join('');
+    d.querySelector('#pcmNome').value = ''; pcSugerirCodigo();
+  }
+  d.classList.add('open');
+}
+function pcSave(){
+  const d = document.getElementById('pcModalOverlay');
+  const nome = d.querySelector('#pcmNome').value.trim();
+  if(!nome){ showToast('Informe o nome da conta.'); return; }
+  if(pcEditing){ const a = PLANO.find(x=>x.cod===pcEditing); a.nome = nome; }
+  else {
+    const paiCod = d.querySelector('#pcmPai').value, cod = d.querySelector('#pcmCod').value.trim();
+    const pai = PLANO.find(x=>x.cod===paiCod);
+    if(!/^\d+(\.\d+)+$/.test(cod) || !cod.startsWith(paiCod+'.')){ showToast('O código precisa começar com o código da conta pai, por exemplo '+paiCod+'.031.'); return; }
+    if(contaByCod(cod)){ showToast('Já existe uma conta com esse código.'); return; }
+    PLANO.push({cod, nome, pai:paiCod, nivel:cod.split('.').length, tipo:'A', nat:d.querySelector('#pcmNat').value, dem:pai.dem, grupo:pai.grupo, sub:pai.sub||pai.nome, aceita:true, status:'Ativa'});
+    PLANO.sort((x,y)=>x.cod.localeCompare(y.cod, undefined, {numeric:true}));
+  }
+  savePlano(); planoInvalidate(); d.classList.remove('open'); showToast('Conta salva.');
+  const body = document.getElementById('cfgTabBody'); if(body && cfgTab==='plano-contas') renderCfgPlanoContas(body);
+}
+
+/* ---------- Seletor de conta com busca (substitui o <select> longo) ---------- */
+function makeContaPicker(selId){
+  const sel = document.getElementById(selId); if(!sel || sel._cp) return; sel._cp = true;
+  const wrap = document.createElement('div'); wrap.className = 'cp';
+  const input = document.createElement('input'); input.type='text'; input.className='cp-input'; input.placeholder='Buscar por código ou nome...'; input.autocomplete='off';
+  const list = document.createElement('div'); list.className='cp-list';
+  wrap.appendChild(input); wrap.appendChild(list); sel.parentNode.insertBefore(wrap, sel); sel.style.display='none';
+  const cur = ()=>{ const o = sel.options[sel.selectedIndex]; return o ? o.text : ''; };
+  const render = q=>{
+    const n = cxNormalizeText(q||'');
+    const items = [...sel.options].filter(o=>!n || cxNormalizeText(o.text+' '+(o.dataset.g||'')).includes(n)).slice(0,60);
+    list.innerHTML = items.length ? items.map(o=>`<div class="cp-item" data-v="${o.value}"><span>${o.text}</span><em>${o.dataset.g||''}</em></div>`).join('') : '<div class="cp-none">Nenhuma conta encontrada.</div>';
+  };
+  const close = ()=>{ list.style.display='none'; input.value = cur(); };
+  input.addEventListener('focus', ()=>{ input.select(); render(''); list.style.display='block'; });
+  input.addEventListener('input', ()=>{ render(input.value); list.style.display='block'; });
+  input.addEventListener('blur', ()=>setTimeout(close, 120));
+  input.addEventListener('keydown', e=>{ if(e.key==='Escape'){ input.blur(); } if(e.key==='Enter'){ e.preventDefault(); const f=list.querySelector('.cp-item'); if(f) f.dispatchEvent(new MouseEvent('mousedown',{bubbles:true})); } });
+  list.addEventListener('mousedown', e=>{
+    const it = e.target.closest('.cp-item'); if(!it) return; e.preventDefault();
+    sel.value = it.dataset.v; sel.dispatchEvent(new Event('change')); input.value = cur(); list.style.display='none'; input.blur();
   });
+  sel._cpRefresh = ()=>{ input.value = cur(); };
+  sel._cpRefresh();
 }
 
 /* ---------- Centros de Custo ---------- */
@@ -5824,7 +5957,7 @@ function openQuickPartyModal(mode, callback){
   quickPartyMode = mode;
   quickPartyCallback = callback;
   document.getElementById('quickPartyModalTitle').textContent = mode==='fornecedor' ? 'Cadastrar novo fornecedor' : 'Cadastrar novo cliente';
-  document.getElementById('qpCategoria').innerHTML = (mode==='fornecedor' ? catsPagar() : catsReceber()).map(c=>`<option>${c}</option>`).join('');
+  document.getElementById('qpCategoria').innerHTML = contaOptionsHTML(mode==='fornecedor' ? contasPagar() : contasReceber());
   document.getElementById('qpCentroCusto').innerHTML = COST_CENTERS.map(c=>`<option>${c}</option>`).join('');
   document.getElementById('qpNome').value=''; document.getElementById('qpCnpj').value='';
   document.getElementById('quickPartyModalOverlay').classList.add('open');
@@ -6089,7 +6222,7 @@ function cxFilterRows(kind){
     if(S.party && r.partyId!==S.party) return false;
     if(S.comp && r.comp!==S.comp) return false;
     if(S.onlyOverdue && r.status!=='Vencido') return false;
-    if(q && !cxNormalizeText(`${r.party} ${r.desc} ${r.raw.documento||''} ${r.cat}`).includes(q)) return false;
+    if(q && !cxNormalizeText(`${r.party} ${r.desc} ${r.raw.documento||''} ${contaLabel(r.cat)}`).includes(q)) return false;
     return true;
   });
   rows.sort((a,b)=> a.venc<b.venc ? -S.dir : a.venc>b.venc ? S.dir : (a.party<b.party?-1:1));
@@ -6142,7 +6275,7 @@ function renderLedger(kind){
       <div class="cx-filters grid">
         <select class="cx-select" id="cxVenc"><option value="">Vencimento</option><option value="hoje" ${S.venc==='hoje'?'selected':''}>Hoje</option><option value="7d" ${S.venc==='7d'?'selected':''}>Próximos 7 dias</option><option value="30d" ${S.venc==='30d'?'selected':''}>Próximos 30 dias</option></select>
         <select class="cx-select" id="cxStatus"><option value="">Status</option>${LANC_STATUS_FILTERS.map(s=>`<option value="${s}" ${s===S.status?'selected':''}>${cxStatusOptionLabel(kind,s)}</option>`).join('')}</select>
-        <select class="cx-select" id="cxCat">${cxOpts(kind==='pagar'?catsPagar():catsReceber(),S.categoria,'Categoria')}</select>
+        <select class="cx-select" id="cxCat"><option value="">Conta contábil</option>${[...new Set(K.list().map(x=>x.categoria).filter(Boolean))].sort().map(c=>`<option value="${c}" ${c===S.categoria?'selected':''}>${contaLabel(c)}</option>`).join('')}</select>
         <select class="cx-select" id="cxCC">${cxOpts(COST_CENTERS,S.cc,'Centro de custo')}</select>
         <select class="cx-select" id="cxConta">${cxOpts(BANK_ACCOUNTS,S.conta,'Conta bancária')}</select>
         <select class="cx-select" id="cxForma">${cxOpts(K.methods(),S.forma,kind==='pagar'?'Forma de pagamento':'Forma de receb.')}</select>
@@ -6196,7 +6329,7 @@ function ledgerRefresh(kind){
       <thead><tr>
         <th><input type="checkbox" id="cxAll" ${allOnPage?'checked':''}></th>
         <th id="cxSortVenc" style="cursor:pointer;">Vencimento ${S.dir===1?'↑':'↓'}</th>
-        <th>${K.party}</th><th>Categoria</th><th>Competência</th>
+        <th>${K.party}</th><th>Conta contábil</th><th>Competência</th>
         <th class="num">Valor</th><th>Forma</th><th>Status</th><th>Descrição</th><th class="ctr">Ações</th>
       </tr></thead>
       <tbody>${pageRows.length ? pageRows.map(r=>`
@@ -6204,7 +6337,7 @@ function ledgerRefresh(kind){
           <td><input type="checkbox" class="cx-rowchk" data-id="${r.id}" ${S.selected.has(r.id)?'checked':''}></td>
           <td class="nw">${fmtDateBR(r.venc)}</td>
           <td class="c-party">${r.party}</td>
-          <td class="c-cat"><span class="cx-pill">${r.cat}</span></td>
+          <td class="c-cat"><span class="cx-pill">${contaLabel(r.cat)}</span></td>
           <td>${cxComp(r.comp)}</td>
           <td class="num">${fmtCurrency(r.valor)}</td>
           <td>${r.forma}</td>
@@ -6315,7 +6448,7 @@ function cxExport(kind, rows){
   const K = CX_KIND[kind];
   if(!rows.length){ showToast('Sem dados para exportar.'); return; }
   const data = rows.map(r=>({
-    'Vencimento':fmtDateBR(r.venc), [K.party]:r.party, 'Descrição':r.desc, 'Categoria':r.cat, 'Competência':cxComp(r.comp),
+    'Vencimento':fmtDateBR(r.venc), [K.party]:r.party, 'Descrição':r.desc, 'Conta contábil':contaLabel(r.cat), 'Competência':cxComp(r.comp),
     'Centro de custo':r.cc, 'Conta bancária':r.conta, [K.methodLabel]:r.forma, 'Valor':r.valor,
     'Status':r.status==='Pago/Recebido'?K.doneLabel:r.status,
   }));
@@ -6338,7 +6471,7 @@ function cxEnsureBatchModal(){
       <div class="modal-body">
         <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;" id="cxBatchInfo"></div>
         <div class="form-grid">
-          <div class="form-field"><label>Categoria</label><select id="cxbCat"></select></div>
+          <div class="form-field"><label>Conta contábil</label><select id="cxbCat"></select></div>
           <div class="form-field"><label>Centro de custo</label><select id="cxbCC"></select></div>
           <div class="form-field"><label id="cxbFormaLabel">Forma de pagamento</label><select id="cxbForma"></select></div>
           <div class="form-field"><label>Conta bancária</label><select id="cxbConta"></select></div>
@@ -6384,11 +6517,12 @@ function cxOpenBatchEdit(kind, selRows){
   const keep = '<option value="">— manter —</option>';
   d.querySelector('#cxBatchTitle').textContent = `Editar em lote — ${K.title}`;
   d.querySelector('#cxBatchInfo').textContent = `${selRows.length} conta(s) selecionada(s). Preencha só o que deseja alterar; o restante permanece como está.`;
-  d.querySelector('#cxbCat').innerHTML = keep + (kind==='pagar'?catsPagar():catsReceber()).map(c=>`<option>${c}</option>`).join('');
+  d.querySelector('#cxbCat').innerHTML = keep + contaOptionsHTML(kind==='pagar'?contasPagar():contasReceber());
   d.querySelector('#cxbCC').innerHTML = keep + COST_CENTERS.map(c=>`<option>${c}</option>`).join('');
   d.querySelector('#cxbForma').innerHTML = keep + K.methods().map(c=>`<option>${c}</option>`).join('');
   d.querySelector('#cxbFormaLabel').textContent = K.methodLabel;
   d.querySelector('#cxbConta').innerHTML = keep + BANK_ACCOUNTS.map(c=>`<option>${c}</option>`).join('');
+  makeContaPicker('cxbCat'); d.querySelector('#cxbCat').value=''; d.querySelector('#cxbCat')._cpRefresh();
   d.querySelector('#cxbVenc').value = ''; d.querySelector('#cxbComp').value = '';
   d.classList.add('open');
 }
@@ -6398,6 +6532,195 @@ function cxOpenBatchEdit(kind, selRows){
    Ao abrir a aba, já aparece a janela "O que você deseja lançar?".
    Tudo que for salvo alimenta Contas a Pagar / Contas a Receber.
    ================================================================ */
+/* ================================================================
+   Importar relatório (PDF escaneado / foto) → Contas a Pagar e a Receber
+   A leitura é feita pela IA da Anthropic através do Apps Script do próprio usuário
+   (a chave da IA fica só nas Propriedades do script, nunca neste arquivo).
+   Nada é salvo sem a conferência na prévia. Tudo entra como "A classificar".
+   ================================================================ */
+let impRows = [], impFile = null;
+function impNorm(s){ return cxNormalizeText(String(s||'')).replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim(); }
+function impMatchForma(txt, list){
+  const n = impNorm(txt); if(!n) return list[0];
+  if(/\bted\b|transfer/.test(n)){ const t = list.find(x=>impNorm(x).includes('transfer')); if(t) return t; }
+  const hit = list.find(x=>{ const m = impNorm(x); return m===n || m.includes(n) || n.includes(m.split(' ')[0]); });
+  return hit || list[0];
+}
+function impIsDup(r){
+  const emp = state.filters.empresaId, nome = impNorm(r.parte), v = parseMoney(r.valor);
+  if(!nome || !r.venc || isNaN(v)) return false;
+  if(r.tipo==='pagar') return state.accounts.some(a=>a.empresaId===emp && a.vencimento===r.venc && Math.abs(a.valor-v)<0.005 && impNorm((supplierById(a.fornecedorId)||{}).nome)===nome);
+  return RECEIVABLES.some(a=>a.empresaId===emp && a.vencimento===r.venc && Math.abs(a.valor-v)<0.005 && impNorm((clientById(a.clienteId)||{}).nome)===nome);
+}
+function impPartyExists(r){
+  const emp = state.filters.empresaId, nome = impNorm(r.parte);
+  const list = r.tipo==='pagar' ? SUPPLIERS : CLIENTS;
+  return list.some(x=>x.empresaId===emp && impNorm(x.nome)===nome);
+}
+function impEnsureModal(){
+  if(document.getElementById('impOverlay')) return;
+  const d = document.createElement('div'); d.className='modal-overlay'; d.id='impOverlay';
+  d.innerHTML = `
+    <div class="modal modal-xl">
+      <div class="modal-header"><div class="mt-wrap"><span class="mt-ico transfer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><line x1="5" y1="21" x2="19" y2="21"/></svg></span><div class="modal-title">Importar relatório</div></div>
+        <button class="modal-close" id="impClose"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+      <div class="modal-body" id="impBody"></div>
+      <div class="modal-footer split" id="impFooter"></div>
+    </div>`;
+  document.body.appendChild(d);
+  const close = ()=>d.classList.remove('open');
+  d.querySelector('#impClose').addEventListener('click', close);
+  d.addEventListener('click', e=>{ if(e.target===d) close(); });
+}
+function impOpen(){
+  if(denyIfReadOnly()) return;
+  if(!state.filters.empresaId){ showToast('Escolha uma empresa para importar lançamentos.'); return; }
+  if(!envioCfg().url){ showToast('Primeiro configure o Apps Script em Relatórios > Configurar envio.'); return; }
+  impEnsureModal(); impFile = null; impRows = [];
+  impStep1(); document.getElementById('impOverlay').classList.add('open');
+}
+function impStep1(msg){
+  const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
+  body.innerHTML = `
+    <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">Anexe o relatório de contas a pagar e/ou a receber (PDF, foto ou imagem). A IA lê as linhas e mostra uma <b>prévia para você conferir</b> antes de salvar. Os lançamentos entram como <b>A classificar</b>, e você reclassifica depois (em lote, se quiser).</div>
+    <div class="anexo-row"><div class="upload-drop" id="impDrop"><span class="up-clip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></span><span><b>Clique para anexar</b> ou arraste o arquivo aqui<br><span class="up-hint">PDF, JPG, PNG ou WEBP (máx. 10MB)</span></span><input type="file" id="impFileInput" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
+      <div class="anexo-chip" id="impChip" style="display:none;"><span class="ac-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><polyline points="15 2 15 7 20 7"/></svg></span><div class="ac-txt"><div class="ac-n" id="impChipN"></div><div class="ac-s" id="impChipS"></div></div></div></div>
+    <div class="form-grid" style="margin-top:14px;"><div class="form-field"><label>O relatório contém</label><select id="impTipo"><option value="">Detectar sozinho (pagar e receber)</option><option value="pagar">Só contas a pagar</option><option value="receber">Só contas a receber</option></select></div></div>
+    <div class="rp-hint" style="margin-top:10px;">Privacidade: o conteúdo do arquivo é enviado à Anthropic (IA) para ser lido, através do seu próprio Apps Script.</div>
+    ${msg?`<div class="imp-err">${msg}</div>`:''}`;
+  foot.innerHTML = `<span></span><div class="mt-btns"><button class="btn" id="impCancel">Cancelar</button><button class="btn btn-dark" id="impRead" disabled>Ler relatório</button></div>`;
+  const drop = body.querySelector('#impDrop'), input = body.querySelector('#impFileInput');
+  const setFile = f=>{
+    if(f && f.size>10*1024*1024){ showToast('Arquivo maior que 10MB.'); return; }
+    impFile = f || null;
+    body.querySelector('#impChip').style.display = f ? 'flex' : 'none';
+    if(f){ body.querySelector('#impChipN').textContent = f.name; body.querySelector('#impChipS').textContent = f.size>=1048576 ? (f.size/1048576).toFixed(1).replace('.',',')+' MB' : Math.max(1,Math.round(f.size/1024))+' KB'; }
+    foot.querySelector('#impRead').disabled = !f;
+  };
+  drop.addEventListener('click', ()=>input.click());
+  drop.addEventListener('dragover', e=>{ e.preventDefault(); drop.classList.add('drag'); });
+  drop.addEventListener('dragleave', ()=>drop.classList.remove('drag'));
+  drop.addEventListener('drop', e=>{ e.preventDefault(); drop.classList.remove('drag'); if(e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); });
+  input.addEventListener('change', e=>setFile(e.target.files[0]||null));
+  foot.querySelector('#impCancel').addEventListener('click', ()=>document.getElementById('impOverlay').classList.remove('open'));
+  foot.querySelector('#impRead').addEventListener('click', impRead);
+}
+function impFileToBase64(f){
+  return new Promise((res,rej)=>{ const r = new FileReader(); r.onload = ()=>res(String(r.result).split('base64,')[1]); r.onerror = ()=>rej(new Error('Não foi possível ler o arquivo.')); r.readAsDataURL(f); });
+}
+async function impRead(){
+  const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
+  const tipoDica = body.querySelector('#impTipo').value, f = impFile, cfg = envioCfg();
+  const mime = f.type || (/\.pdf$/i.test(f.name) ? 'application/pdf' : 'image/jpeg');
+  body.innerHTML = `<div class="imp-wait"><div class="imp-spin"></div><div><b>Lendo o relatório...</b><br><span class="rp-hint">Pode levar de 10 a 60 segundos. Não feche esta janela.</span></div></div>`;
+  foot.innerHTML = '<span></span><span></span>';
+  try{
+    const dataBase64 = await impFileToBase64(f);
+    const res = await fetch(cfg.url, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({token:cfg.token, acao:'ler_relatorio', mime, dataBase64, dica:tipoDica})});
+    const j = await res.json();
+    if(!j.ok){ impStep1('Não foi possível ler: '+(j.erro||'erro no Apps Script')+'.'); return; }
+    const today = fmtDateISO(TODAY);
+    impRows = (j.linhas||[]).map(l=>{
+      const tipo = l.tipo==='receber' ? 'receber' : (l.tipo==='pagar' ? 'pagar' : (tipoDica||'pagar'));
+      const venc = /^\d{4}-\d{2}-\d{2}$/.test(l.vencimento||'') ? l.vencimento : today;
+      return {sel:true, tipo, venc, parte:String(l.parte||'').trim(), desc:String(l.descricao||'').trim(), valor:fmtMoneyInput(Math.abs(Number(l.valor)||0)), forma:impMatchForma(l.forma, tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS), doc:String(l.documento||'').trim()};
+    });
+    impRows.forEach(r=>{ r.dup = impIsDup(r); if(r.dup) r.sel = false; });
+    impStep2(j.observacoes||'');
+  }catch(e){
+    impStep1('Não foi possível obter a resposta do Apps Script ('+e.message+'). Confira se a implantação está como "Qualquer pessoa" e se a URL e a senha estão certas.');
+  }
+}
+function impStep2(obs){
+  const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
+  if(!impRows.length){ impStep1('A IA não encontrou nenhuma conta nesse arquivo.'+(obs?' Observação: '+obs:'')); return; }
+  const parts = {pagar:[...new Set(SUPPLIERS.filter(x=>x.empresaId===state.filters.empresaId).map(x=>x.nome))], receber:[...new Set(CLIENTS.filter(x=>x.empresaId===state.filters.empresaId).map(x=>x.nome))]};
+  body.innerHTML = `
+    ${obs?`<div class="imp-obs"><b>Observações da leitura:</b> ${obs.replace(/</g,'&lt;')}</div>`:''}
+    <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:10px;">Confira cada linha, corrija o que for preciso e desmarque o que não deve entrar. Linhas marcadas como <b>Já existe</b> vêm desmarcadas.</div>
+    <datalist id="impDlP">${parts.pagar.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist><datalist id="impDlR">${parts.receber.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist>
+    <div class="table-scroll"><table class="cx-table imp-tbl"><thead><tr><th style="width:30px;"><input type="checkbox" id="impAll" checked></th><th style="width:100px;">Tipo</th><th style="width:128px;">Vencimento</th><th style="width:190px;">Fornecedor / Cliente</th><th>Descrição</th><th style="width:116px;" class="num">Valor</th><th style="width:140px;">Forma</th><th style="width:96px;">Situação</th><th style="width:30px;"></th></tr></thead><tbody id="impTbody"></tbody></table></div>
+    <div class="imp-total" id="impTotal"></div>`;
+  foot.innerHTML = `<span class="rp-hint" id="impCount"></span><div class="mt-btns"><button class="btn" id="impBack">Voltar</button><button class="btn btn-dark" id="impSave">Importar</button></div>`;
+  const draw = ()=>{
+    body.querySelector('#impTbody').innerHTML = impRows.map((r,i)=>`
+      <tr data-i="${i}" class="${r.sel?'':'imp-off'}">
+        <td><input type="checkbox" data-k="sel" ${r.sel?'checked':''}></td>
+        <td><select class="cx-select" data-k="tipo" style="width:100%;"><option value="pagar" ${r.tipo==='pagar'?'selected':''}>Pagar</option><option value="receber" ${r.tipo==='receber'?'selected':''}>Receber</option></select></td>
+        <td><input type="date" class="cx-input" data-k="venc" value="${r.venc}" style="width:100%;"></td>
+        <td><input type="text" class="cx-input" data-k="parte" list="${r.tipo==='pagar'?'impDlP':'impDlR'}" value="${r.parte.replace(/"/g,'&quot;')}" style="width:100%;"></td>
+        <td><input type="text" class="cx-input" data-k="desc" value="${r.desc.replace(/"/g,'&quot;')}" style="width:100%;"></td>
+        <td><input type="text" class="cx-input" data-k="valor" inputmode="numeric" value="${r.valor}" style="width:100%;text-align:right;"></td>
+        <td><select class="cx-select" data-k="forma" style="width:100%;">${(r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS).map(m=>`<option ${m===r.forma?'selected':''}>${m}</option>`).join('')}</select></td>
+        <td class="imp-sit">${r.dup?'<span class="imp-tag warn">Já existe</span>':(impPartyExists(r)?'<span class="imp-tag">Novo</span>':'<span class="imp-tag new">Novo + cadastro</span>')}</td>
+        <td><button class="ac-x" data-del="1" title="Remover linha">×</button></td>
+      </tr>`).join('');
+    totals();
+  };
+  const totals = ()=>{
+    const sel = impRows.filter(r=>r.sel);
+    const sum = t=>sel.filter(r=>r.tipo===t).reduce((s,r)=>s+(parseMoney(r.valor)||0),0);
+    body.querySelector('#impTotal').innerHTML = `A pagar: <b>${fmtCurrency(sum('pagar'))}</b> &nbsp;·&nbsp; A receber: <b>${fmtCurrency(sum('receber'))}</b>`;
+    foot.querySelector('#impCount').textContent = `${sel.length} de ${impRows.length} linhas selecionadas`;
+    foot.querySelector('#impSave').disabled = !sel.length;
+    foot.querySelector('#impSave').textContent = sel.length ? `Importar ${sel.length} lançamento(s)` : 'Importar';
+  };
+  draw();
+  const tb = body.querySelector('#impTbody');
+  tb.addEventListener('input', e=>{
+    const tr = e.target.closest('tr'); if(!tr) return; const r = impRows[+tr.dataset.i], k = e.target.dataset.k; if(!k) return;
+    if(k==='sel') { r.sel = e.target.checked; tr.classList.toggle('imp-off', !r.sel); }
+    else if(k==='valor'){ const dg = e.target.value.replace(/\D/g,''); r.valor = dg ? fmtMoneyInput(parseInt(dg,10)/100) : ''; e.target.value = r.valor; }
+    else r[k] = e.target.value;
+    if(k==='tipo'){ r.forma = impMatchForma('', r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS); draw(); return; }
+    if(['venc','parte','valor','tipo'].includes(k)){ r.dup = impIsDup(r); tr.querySelector('.imp-sit').innerHTML = r.dup?'<span class="imp-tag warn">Já existe</span>':(impPartyExists(r)?'<span class="imp-tag">Novo</span>':'<span class="imp-tag new">Novo + cadastro</span>'); }
+    totals();
+  });
+  tb.addEventListener('click', e=>{ const b = e.target.closest('[data-del]'); if(!b) return; impRows.splice(+b.closest('tr').dataset.i,1); if(!impRows.length){ impStep1(); return; } draw(); });
+  body.querySelector('#impAll').addEventListener('change', e=>{ impRows.forEach(r=>r.sel=e.target.checked); draw(); });
+  foot.querySelector('#impBack').addEventListener('click', ()=>impStep1());
+  foot.querySelector('#impSave').addEventListener('click', impSave);
+}
+function impFindOrCreateParty(tipo, nome){
+  const emp = state.filters.empresaId, list = tipo==='pagar' ? SUPPLIERS : CLIENTS, n = impNorm(nome);
+  let p = list.find(x=>x.empresaId===emp && impNorm(x.nome)===n);
+  if(p) return {p, created:false};
+  const ac = tipo==='pagar' ? 'PAG-AC' : 'REC-AC';
+  p = {id:(tipo==='pagar'?'f':'cl')+Date.now()+Math.floor(Math.random()*1000), empresaId:emp, nome:nome.trim(), nomeFantasia:nome.trim(), cnpj:'', categoria:ac, planoContas:'A classificar', centroCusto:COST_CENTERS[0], historicoPadrao:'', formaPagamentoPadrao:'', pix:'', banco:'', status:'Ativo', observacoes:'Cadastrado na importação de relatório.', createdAt:fmtDateISO(TODAY), email:'', telefone:''};
+  list.push(p); tipo==='pagar' ? persist(SUPPLIERS_KEY, SUPPLIERS) : persist(CLIENTS_KEY, CLIENTS);
+  return {p, created:true};
+}
+function impSave(){
+  const sel = impRows.filter(r=>r.sel);
+  const bad = sel.find(r=>!r.parte.trim() || isNaN(parseMoney(r.valor)) || parseMoney(r.valor)<=0 || !r.venc);
+  if(bad){ showToast('Há linhas sem fornecedor/cliente, vencimento ou valor. Corrija ou desmarque.'); return; }
+  const emp = state.filters.empresaId; let nP=0, nR=0, novas=0; const stamp = Date.now();
+  sel.forEach((r,i)=>{
+    const {p, created} = impFindOrCreateParty(r.tipo, r.parte); if(created) novas++;
+    const valor = parseMoney(r.valor), id = String(stamp).slice(-6)+String(i).padStart(3,'0');
+    const doc = r.doc || 'IMP-'+id, anexos = impFile ? [{tipo:'Relatório importado', nome:impFile.name}] : [];
+    if(r.tipo==='pagar'){
+      state.accounts.unshift({id:'AP'+id, empresaId:emp, fornecedorId:p.id, documento:doc, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), emissao:fmtDateISO(TODAY), vencimento:r.venc, valor,
+        categoria:'PAG-AC', centroCusto:COST_CENTERS[0], formaPagamento:r.forma, pixCodigo:'', contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.', status:computeStatusForDate(r.venc), dataPagamento:null, planoContas:'A classificar', anexos});
+      nP++;
+    } else {
+      RECEIVABLES.unshift({id:'AR'+id, empresaId:emp, clienteId:p.id, documento:doc, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), emissao:fmtDateISO(TODAY), vencimento:r.venc, valor,
+        categoria:'REC-AC', centroCusto:COST_CENTERS[0], formaRecebimento:r.forma, contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.', status:new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer', dataRecebimento:null, valorRecebido:null, planoContas:'A classificar', anexos});
+      nR++;
+    }
+  });
+  saveAccounts(state.accounts); saveReceivables();
+  const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
+  body.innerHTML = `<div class="imp-done"><div class="imp-ok">✓</div><div class="lc-empty-title">${nP+nR} lançamento(s) importado(s)</div>
+    <div class="lc-empty-text">${nP} conta(s) a pagar e ${nR} a receber${novas?`, com ${novas} novo(s) cadastro(s) de fornecedor/cliente`:''}. Todos estão como <b>A classificar</b>: use <b>Editar em lote</b> nas telas de Contas para reclassificar.</div></div>`;
+  foot.innerHTML = `<span></span><div class="mt-btns"><button class="btn" id="impGoPag">Ver Contas a Pagar</button><button class="btn" id="impGoRec">Ver Contas a Receber</button><button class="btn btn-dark" id="impEnd">Concluir</button></div>`;
+  const close = ()=>{ document.getElementById('impOverlay').classList.remove('open'); };
+  foot.querySelector('#impGoPag').addEventListener('click', ()=>{ close(); navigateTo('contas-pagar'); });
+  foot.querySelector('#impGoRec').addEventListener('click', ()=>{ close(); navigateTo('contas-receber'); });
+  foot.querySelector('#impEnd').addEventListener('click', close);
+  impRows = []; impFile = null;
+}
+
 function renderLancamentos(){
   const el = document.getElementById('page-lancamentos');
   const company = companyById(state.filters.empresaId);
@@ -6408,6 +6731,7 @@ function renderLancamentos(){
         <div class="cx-crumb">Financeiro &nbsp;/&nbsp; <b>Lançamentos</b>${company?` &nbsp;·&nbsp; ${company.nome}`:''}</div>
       </div>
       <div class="cx-head-actions">
+        <button class="cx-btn big" id="lcImpBtn">${cxSvg('down')} Importar relatório</button>
         <button class="cx-btn accent big" id="lcNewBtn">${cxSvg('plus')} Novo Lançamento</button>
       </div>
     </div>
@@ -6416,10 +6740,13 @@ function renderLancamentos(){
       <div class="lc-empty-title">Registre um novo lançamento</div>
       <div class="lc-empty-text">Escolha o tipo, preencha o formulário e salve. O lançamento alimenta automaticamente Contas a Pagar ou Contas a Receber.</div>
       <button class="cx-btn accent big" id="lcNewBtn2">${cxSvg('plus')} Novo Lançamento</button>
+      <button class="cx-btn" id="lcImpBtn2">${cxSvg('down')} Importar relatório (PDF ou foto)</button>
       <div class="lc-empty-links"><span class="cx-link" data-go="contas-pagar">Ver Contas a Pagar</span><span class="lc-dot">·</span><span class="cx-link" data-go="contas-receber">Ver Contas a Receber</span></div>
     </div>`;
   el.querySelector('#lcNewBtn').addEventListener('click', openLancTypeModal);
+  el.querySelector('#lcImpBtn').addEventListener('click', impOpen);
   el.querySelector('#lcNewBtn2').addEventListener('click', openLancTypeModal);
+  el.querySelector('#lcImpBtn2').addEventListener('click', impOpen);
   el.querySelectorAll('[data-go]').forEach(l=>l.addEventListener('click', ()=>navigateTo(l.dataset.go)));
 }
 
@@ -6445,54 +6772,51 @@ function cxMonthLabel(mk){
   const [y,m]=mk.split('-').map(Number); return `${names[m-1]}/${y}`;
 }
 const CX_CHART_GRAYS = ['#14161d','#374151','#6b7280','#9ca3af','#cbd0d8','#e5e7eb'];
-const DG_TAX_RATE = 0.34;
 let dgMonth = CUR_MONTH;
 let dgCharts = {};
 function destroyDgCharts(){ Object.values(dgCharts).forEach(c=>c&&c.destroy()); dgCharts = {}; }
 
-// Soma por competência no intervalo [from, to] (YYYY-MM)
+// Soma por competência no intervalo [from, to] (YYYY-MM), seguindo a "Estrutura DRE" do plano de contas:
+//   Receita Bruta 4.01 · Deduções 4.02 · Custos 5.01–5.06 · Comerciais 6.04 · Adm. e Gerais 6.01–6.03, 6.05–6.09, 6.11, 6.12
+//   Outras Rec. Operacionais 4.03 · Rec. Financeiras 4.04 · Desp. Financeiras 6.10 · Outros 4.05, 7.01, 7.02 · IRPJ/CSLL 7.03
+const DG_CUSTOS = ['5.01','5.02','5.03','5.04','5.05','5.06'];
+const DG_ADM = ['6.01','6.02','6.03','6.05','6.06','6.07','6.08','6.09','6.11','6.12','PAG-AC'];
 function dgPeriod(from, to){
   const emp = state.filters.empresaId;
   const inR = c => c>=from && c<=to;
   const pay = state.accounts.filter(a=>(!emp||a.empresaId===emp) && !['cancelado','reprovado'].includes(a.status) && inR(a.competencia));
   const rec = RECEIVABLES.filter(r=>(!emp||r.empresaId===emp) && r.status!=='cancelado' && inR(r.competencia));
-  const cat = cats => pay.filter(a=>cats.includes(catGroup(a.categoria))).reduce((s,a)=>s+a.valor,0);
-  const receita = rec.reduce((s,r)=>s+r.valor,0);
-  const deducoes = cat(['Tributos']);
-  const custos = cat(['Serviços de Terceiros']);
-  const pessoal = cat(['Pessoal']);
-  const adm = cat(['Administrativo','Ocupação','Utilidades','Tecnologia','Outros']);
-  const com = cat(['Comercial','Marketing']);
-  const fin = cat(['Financeiras']);
-  const receitaLiq = receita - deducoes;
-  const lucroBruto = receitaLiq - custos;
-  const despOp = pessoal + adm + com;
-  const ebitda = lucroBruto - despOp;
-  const da = 0;
-  const ebit = ebitda - da;
-  const lair = ebit - fin;
-  const ir = lair>0 ? lair*DG_TAX_RATE : 0;
-  const ll = lair - ir;
-  return {receita, deducoes, receitaLiq, custos, lucroBruto, pessoal, adm, com, despOp, ebitda, da, ebit, fin, lair, ir, ll,
-          despTotal: deducoes+custos+despOp+da+fin+ir};
+  const P = {}, R = {};
+  pay.forEach(a=>{ const g=contaGrupoCod(a.categoria); P[g]=(P[g]||0)+a.valor; });
+  rec.forEach(r=>{ const g=contaGrupoCod(r.categoria); R[g]=(R[g]||0)+r.valor; });
+  const sp = (...gs)=>gs.reduce((t,g)=>t+(P[g]||0),0), sr = (...gs)=>gs.reduce((t,g)=>t+(R[g]||0),0);
+  const receita = sr('4.01','REC-AC'), deducoes = sp('4.02'), custos = sp(...DG_CUSTOS);
+  const comercial = sp('6.04'), admTotal = sp(...DG_ADM), pessoal = sp('6.01'), da = sp('6.08');
+  const admOutras = admTotal - pessoal - da, outrasRecOp = sr('4.03');
+  const recFin = sr('4.04'), despFin = sp('6.10'), outros = sr('4.05','7.01','7.02') - sp('7.01','7.02'), ir = sp('7.03');
+  const receitaLiq = receita - deducoes, lucroBruto = receitaLiq - custos;
+  const despOp = pessoal + admOutras + comercial;
+  const ebitda = lucroBruto - despOp + outrasRecOp, ebit = ebitda - da;
+  const resFin = recFin - despFin, lair = ebit + resFin + outros, ll = lair - ir;
+  return {P, R, receita, deducoes, receitaLiq, custos, lucroBruto, comercial, admTotal, pessoal, da, admOutras, despOp, outrasRecOp,
+          ebitda, ebit, recFin, despFin, resFin, outros, lair, ir, ll, despTotal: deducoes+custos+comercial+admTotal+despFin+ir};
 }
 const DG_ROWS = [
-  {label:'Receita Bruta', key:'receita', style:'strong'},
-  {label:'(–) Deduções e Impostos', key:'deducoes', neg:true},
+  {label:'Receita Bruta', key:'receita', style:'strong', kids:{src:'R', groups:['REC-AC']}},
+  {label:'(–) Deduções da Receita Bruta', key:'deducoes', neg:true},
   {label:'= Receita Líquida', key:'receitaLiq', style:'total'},
-  {label:'(–) Custos dos Serviços', key:'custos', neg:true},
+  {label:'(–) CMV / CPV / CSP / Custos Diretos', key:'custos', neg:true, kids:{src:'P', groups:DG_CUSTOS}},
   {label:'= Lucro Bruto', key:'lucroBruto', style:'total'},
-  {label:'(–) Despesas Operacionais', key:'despOp', neg:true, style:'group'},
-  {label:'Pessoal', key:'pessoal', neg:true, indent:true},
-  {label:'Administrativas', key:'adm', neg:true, indent:true},
-  {label:'Comerciais e Marketing', key:'com', neg:true, indent:true},
-  {label:'= EBITDA', key:'ebitda', style:'total'},
-  {label:'(–) Depreciação e Amortização', key:'da', neg:true},
-  {label:'= EBIT (Resultado Operacional)', key:'ebit', style:'total'},
-  {label:'(–) Resultado Financeiro', key:'fin', neg:true},
-  {label:'= Resultado antes do IR/CSLL', key:'lair', style:'total'},
-  {label:'(–) IR/CSLL (estimado 34%)', key:'ir', neg:true},
-  {label:'= Lucro Líquido', key:'ll', style:'final'},
+  {label:'(–) Despesas Comerciais', key:'comercial', neg:true},
+  {label:'(–) Despesas Administrativas e Gerais', key:'admTotal', neg:true, kids:{src:'P', groups:DG_ADM}},
+  {label:'(+) Outras Receitas Operacionais', key:'outrasRecOp'},
+  {label:'= Resultado Operacional', key:'ebit', style:'total'},
+  {label:'(+) Receitas Financeiras', key:'recFin'},
+  {label:'(–) Despesas Financeiras', key:'despFin', neg:true},
+  {label:'(+/–) Outros Ganhos / Perdas e Equivalência', key:'outros'},
+  {label:'= Resultado antes dos Tributos', key:'lair', style:'total'},
+  {label:'(–) IRPJ e CSLL', key:'ir', neg:true},
+  {label:'= Resultado após Tributos', key:'ll', style:'final'},
 ];
 function dgVar(cur, pre){
   if(!pre) return '—';
@@ -6530,14 +6854,16 @@ const PL_ROWS = [
   {label:'Lucro Bruto', get:c=>c.lucroBruto, style:'bold'},
   {label:'Despesas Operacionais', get:c=>-c.despOp},
   {label:'Pessoal', get:c=>-c.pessoal, child:true},
-  {label:'Administrativas', get:c=>-c.adm, child:true},
-  {label:'Comerciais e Marketing', get:c=>-c.com, child:true},
+  {label:'Administrativas', get:c=>-c.admOutras, child:true},
+  {label:'Comerciais e Marketing', get:c=>-c.comercial, child:true},
+  {label:'Outras Receitas Operacionais', get:c=>c.outrasRecOp},
   {label:'EBITDA', get:c=>c.ebitda, style:'bold'},
   {label:'Depreciação e Amortização', get:c=>-c.da},
   {label:'EBIT (Lucro Operacional)', get:c=>c.ebit, style:'bold'},
-  {label:'Resultado Financeiro', get:c=>-c.fin},
+  {label:'Resultado Financeiro', get:c=>c.resFin},
+  {label:'Outros Ganhos / Perdas', get:c=>c.outros},
   {label:'Lucro antes do IR e CSLL', get:c=>c.lair, style:'bold'},
-  {label:'IR e CSLL (estimado)', get:c=>-c.ir},
+  {label:'IR e CSLL', get:c=>-c.ir},
   {label:'Lucro Líquido', get:c=>c.ll, style:'final'},
 ];
 function plRowHTML(r, cur, pre){
@@ -6594,16 +6920,24 @@ function renderDRE(){
     {t:'Despesas Totais', v:cur.despTotal, m:cur.receita>0?cur.despTotal/cur.receita:NaN, mLabel:'da receita bruta', icon:'arrow-down-circle'},
   ];
 
-  const rowsHTML = DG_ROWS.map(r=>{
-    const sign = r.neg ? -1 : 1;
-    const vC = cur[r.key]*sign, vP = pre[r.key]*sign;
+  const dgRow = (label, vC, vP, cls)=>{
     const pc = rl>0 ? vC/rl : NaN;
-    const cls = ['dg-row', r.style?('dg-'+r.style):'', r.indent?'dg-indent':''].join(' ');
     return `<tr class="${cls}">
-      <td class="dg-label">${r.label}</td>
+      <td class="dg-label">${label}</td>
       <td class="dg-num ${vC<0?'neg':''}">${cxMoney(vC)}</td>
       <td class="dg-pct">${cxPct(pc,true)}</td>
     </tr>`;
+  };
+  const rowsHTML = DG_ROWS.map(r=>{
+    const sign = r.neg ? -1 : 1;
+    let html = dgRow(r.label, cur[r.key]*sign, 0, ['dg-row', r.style?('dg-'+r.style):''].join(' '));
+    if(r.kids){
+      r.kids.groups.forEach(g=>{
+        const v = (cur[r.kids.src][g]||0)*sign;
+        if(Math.abs(v)>0.004) html += dgRow(contaGrupoNome(g), v, 0, 'dg-row dg-indent');
+      });
+    }
+    return html;
   }).join('');
 
   // P&L (tabela comparativa, só números)
@@ -6615,11 +6949,11 @@ function renderDRE(){
   const rr = dgCatRange(dgCatRecMode), dr = dgCatRange(dgCatDespMode);
   const emp = state.filters.empresaId;
   const recMap = {};
-  RECEIVABLES.filter(x=>(!emp||x.empresaId===emp) && x.status!=='cancelado' && x.competencia>=rr[0] && x.competencia<=rr[1]).forEach(x=>{ recMap[x.categoria||'Sem categoria'] = (recMap[x.categoria||'Sem categoria']||0)+x.valor; });
+  RECEIVABLES.filter(x=>(!emp||x.empresaId===emp) && x.status!=='cancelado' && x.competencia>=rr[0] && x.competencia<=rr[1]).forEach(x=>{ const k=contaNome(x.categoria); recMap[k]=(recMap[k]||0)+x.valor; });
   const recItems = Object.entries(recMap).map(([name,v])=>({name,v})).sort((a,b)=>b.v-a.v);
   const recTotal = recItems.reduce((s,x)=>s+x.v,0);
   const dp = dgPeriod(dr[0], dr[1]);
-  const despItems = [{name:'Administrativas',v:dp.adm},{name:'Pessoal',v:dp.pessoal},{name:'Comerciais e Marketing',v:dp.com},{name:'Custos dos Serviços',v:dp.custos},{name:'Tributos',v:dp.deducoes},{name:'Financeiras',v:dp.fin}].filter(x=>x.v>0).sort((a,b)=>b.v-a.v);
+  const despItems = Object.entries(dp.P).map(([g,v])=>({name:contaGrupoNome(g), v})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v);
   const despTotal = despItems.reduce((s,x)=>s+x.v,0);
 
   const months = (()=>{ const [y,m]=dgMonth.split('-').map(Number); const out=[]; for(let i=-5;i<=0;i++){ const d=new Date(y,m-1+i,1); out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`); } return out; })();
@@ -6686,7 +7020,7 @@ function renderDRE(){
         ${dgCatListHTML(despItems, despTotal)}
       </div>
     </div>
-    <div class="dg-foot-note">Premissas: no P&amp;L a receita líquida já desconta os tributos; custos = serviços de terceiros; depreciação não apurada (R$ 0,00); IR/CSLL estimado em 34% sobre o resultado positivo antes do imposto. Seta indica o sentido do valor; verde = favorável, vermelho = desfavorável.</div>`;
+    <div class="dg-foot-note">Os valores vêm das contas contábeis dos lançamentos (regime de competência), seguindo a estrutura DRE do seu plano de contas. Lançamentos "A classificar" entram em Receita Bruta (receitas) e Despesas Administrativas (despesas) até serem reclassificados. Seta indica o sentido do valor; verde = favorável, vermelho = desfavorável.</div>`;
   cxFitCards(el);
   el.querySelector('#dgMonth').addEventListener('change', e=>{ dgMonth=e.target.value; renderDRE(); });
   el.querySelectorAll('.pl-toggle button').forEach(b=>b.addEventListener('click', ()=>{ dgPlMode=b.dataset.mode; renderDRE(); }));
@@ -6712,7 +7046,7 @@ function renderDRE(){
       plugins:{legend:{position:'bottom', labels:{boxWidth:10, usePointStyle:true}}, tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${fmtCurrency(c.parsed.y)}`}}},
       scales:{ y:{grid:{color:'#f0f1f3'}, ticks:{callback:v=>fmtCurrencyCompact(v)}}, x:{grid:{display:false}} } }
   });
-  const comp = [['Custos',cur.custos],['Pessoal',cur.pessoal],['Administrativas',cur.adm],['Comerciais e Mkt',cur.com],['Tributos',cur.deducoes],['Financeiras',cur.fin]].filter(x=>x[1]>0);
+  const comp = [['Custos',cur.custos],['Pessoal',cur.pessoal],['Administrativas',cur.admOutras],['Comerciais e Mkt',cur.comercial],['Deprec. e Amort.',cur.da],['Deduções',cur.deducoes],['Financeiras',cur.despFin],['IRPJ e CSLL',cur.ir]].filter(x=>x[1]>0);
   const compTotal = comp.reduce((s,x)=>s+x[1],0);
   dgCharts.comp = new Chart(document.getElementById('dgChComp'), {
     type:'doughnut',
@@ -6762,13 +7096,13 @@ function bsCompute(mk){
   const outflow = pays.filter(paidBy).reduce((s,a)=>s+a.valor,0);
   const caixa = man.caixaInicial + inflow - outflow;
   const receber = recs.filter(r=>r.competencia<=mk).reduce((s,r)=>s+Math.max(0, r.valor-recAmtBy(r)),0);
-  const openPay = cats => pays.filter(a=>a.competencia<=mk && !paidBy(a) && (cats===null || cats.includes(catGroup(a.categoria))));
+  const openPay = cats => pays.filter(a=>a.competencia<=mk && !paidBy(a) && (cats===null || cats.includes(contaGrupoCod(a.categoria))));
   const sumV = arr => arr.reduce((s,a)=>s+a.valor,0);
-  const special = ['Pessoal','Tributos','Financeiras'];
-  const fornecedores = sumV(pays.filter(a=>a.competencia<=mk && !paidBy(a) && !special.includes(catGroup(a.categoria))));
-  const trabalhistas = sumV(openPay(['Pessoal']));
-  const tributarias = sumV(openPay(['Tributos']));
-  const emprestCP = sumV(openPay(['Financeiras']));
+  const special = ['6.01','6.09','4.02','7.03','6.10'];
+  const fornecedores = sumV(pays.filter(a=>a.competencia<=mk && !paidBy(a) && !special.includes(contaGrupoCod(a.categoria))));
+  const trabalhistas = sumV(openPay(['6.01']));
+  const tributarias = sumV(openPay(['6.09','4.02','7.03']));
+  const emprestCP = sumV(openPay(['6.10']));
   const ac = caixa + receber + man.adiantamentos;
   const anc = man.imobilizado + man.depreciacao;
   const ativo = ac + anc;
