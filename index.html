@@ -1077,6 +1077,9 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .imp-ok{width:46px;height:46px;border-radius:50%;background:#e9faf1;color:#0f8a55;font-size:24px;display:flex;align-items:center;justify-content:center;}
 .lc-empty .cx-btn{margin:0;}
 .imp-tbl td:nth-child(5){min-width:190px;}
+
+.doc-ai{display:none;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;}
+.doc-ai .rp-hint{flex:1 1 220px;line-height:1.4;}
 </style>
 </head>
 <body>
@@ -1415,6 +1418,7 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
               <button type="button" class="ac-x" id="fAnexoRemove" aria-label="Remover anexo">×</button>
             </div>
           </div>
+          <div class="doc-ai" id="fDocAi" style="display:none;"><button type="button" class="cx-btn" id="fDocAiBtn">Ler documento e preencher</button><span class="rp-hint" id="fDocAiMsg"></span></div>
         </div>
         <div class="form-field col-span-2">
           <label>Observações</label>
@@ -1533,6 +1537,7 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
               <button type="button" class="ac-x" id="rAnexoRemove" aria-label="Remover anexo">×</button>
             </div>
           </div>
+          <div class="doc-ai" id="rDocAi" style="display:none;"><button type="button" class="cx-btn" id="rDocAiBtn">Ler documento e preencher</button><span class="rp-hint" id="rDocAiMsg"></span></div>
         </div>
         <div class="form-field col-span-2"><label>Observações</label><textarea id="rObservacoes" placeholder="Observações internas (opcional)"></textarea></div>
       </div>
@@ -3319,6 +3324,52 @@ function anexoChipUpdate(p, file){
   document.getElementById(p+'AnexoTam').textContent = file.size>=1048576 ? (file.size/1048576).toFixed(1).replace('.',',')+' MB' : Math.max(1,Math.round(file.size/1024))+' KB';
   chip.style.display='flex';
 }
+/* ---- Ler boleto / nota fiscal anexados e preencher o lançamento (IA via Apps Script) ---- */
+function docAiToggle(p, file){
+  const box = document.getElementById(p+'DocAi'); if(!box) return;
+  const ok = !!file && (/pdf|image/.test(file.type) || /\.(pdf|jpe?g|png|webp)$/i.test(file.name));
+  box.style.display = ok ? 'flex' : 'none';
+  document.getElementById(p+'DocAiMsg').textContent = ok && !envioCfg().url ? 'Configure o Apps Script em Relatórios > Configurar envio para preencher automaticamente.' : '';
+}
+async function docAiRun(p){
+  const file = p==='f' ? fEntryAnexo : rEntryAnexo, msg = document.getElementById(p+'DocAiMsg'), btn = document.getElementById(p+'DocAiBtn');
+  const cfg = envioCfg();
+  if(!file) return;
+  if(!cfg.url){ msg.textContent = 'Configure o Apps Script em Relatórios > Configurar envio.'; return; }
+  btn.disabled = true; msg.textContent = 'Lendo o documento... (10 a 40 segundos)';
+  try{
+    const dataBase64 = await impFileToBase64(file);
+    const mime = file.type || (/\.pdf$/i.test(file.name) ? 'application/pdf' : 'image/jpeg');
+    const res = await fetch(cfg.url, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify({token:cfg.token, acao:'ler_relatorio', modo:'documento', mime, dataBase64, dica:p==='f'?'pagar':'receber'})});
+    const j = await res.json();
+    if(!j.ok){ msg.textContent = 'Não foi possível ler: '+(j.erro||'erro no Apps Script')+'.'; return; }
+    const l = (j.linhas||[])[0]; if(!l){ msg.textContent = 'Não encontrei dados nesse documento.'; return; }
+    docAiFill(p, l, j.observacoes||'');
+  }catch(e){ msg.textContent = 'Não foi possível obter a resposta do Apps Script ('+e.message+').'; }
+  finally{ btn.disabled = false; }
+}
+function docAiFill(p, l, obs){
+  const msg = document.getElementById(p+'DocAiMsg'), pre = p==='f';
+  const selId = pre ? 'fFornecedor' : 'rCliente', list = pre ? suppliersDaEmpresa() : clientsDaEmpresa();
+  const nome = String(l.parte||'').trim(), n = impNorm(nome);
+  const found = n ? list.find(x=>impNorm(x.nome)===n) || list.find(x=>impNorm(x.nome).includes(n) || n.includes(impNorm(x.nome))) : null;
+  const notes = [];
+  if(found){ document.getElementById(selId).value = found.id; document.getElementById(selId).dispatchEvent(new Event('change')); }
+  else if(nome) notes.push(`${pre?'Fornecedor':'Cliente'} "${nome}" não está cadastrado.`);
+  const set = (id, v)=>{ const el = document.getElementById(id); if(el && v) el.value = v; };
+  const desc = document.getElementById(p+'Descricao'); if(l.descricao && desc && !desc.value.trim()) desc.value = String(l.descricao).trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(l.vencimento||'')){ set(p+'Vencimento', l.vencimento); set(p+'Competencia', l.vencimento.slice(0,7)); }
+  const v = Number(l.valor); if(v>0) setMoney(p+'Valor', v);
+  const forma = document.getElementById(p+(pre?'FormaPagamento':'FormaRecebimento')); if(forma && l.forma){ const fn = impNorm(l.forma), opt = [...forma.options].map(o=>o.value).find(o=>impNorm(o).includes(fn) || fn.includes(impNorm(o).split(' ')[0])); if(opt) forma.value = opt; }
+  if(l.documento) set(p+'Documento', String(l.documento));
+  msg.innerHTML = 'Preenchido pela IA. <b>Confira os campos antes de salvar.</b> '+notes.join(' ')+(obs?' '+String(obs).replace(/</g,'&lt;'):'');
+  if(!found && nome){
+    const b = document.createElement('a'); b.className='subpanel-link'; b.textContent = ` Cadastrar "${nome}"`; b.style.cursor='pointer';
+    b.addEventListener('click', ()=>{ openQuickPartyModal(pre?'fornecedor':'cliente', (newId)=>{ if(pre) populateFormSelects(); else document.getElementById('rCliente').innerHTML = clientsDaEmpresa().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>`<option value="${c.id}">${c.nome}</option>`).join(''); document.getElementById(selId).value = newId; document.getElementById(selId).dispatchEvent(new Event('change')); }); document.getElementById('qpNome').value = nome; });
+    msg.appendChild(b);
+  }
+  if(typeof refreshCatIcons==='function') refreshCatIcons();
+}
 function anexoSetup(p, onFile){
   const drop=document.getElementById(p+'UploadDrop'), input=document.getElementById(p+'Anexo');
   drop.addEventListener('click', ()=>input.click());
@@ -3330,8 +3381,9 @@ function anexoSetup(p, onFile){
     try{ const dt=new DataTransfer(); dt.items.add(f); input.files=dt.files; }catch(err){}
     input.dispatchEvent(new Event('change'));
   });
-  input.addEventListener('change', e=>{ const f=e.target.files[0]||null; onFile(f); anexoChipUpdate(p,f); });
-  document.getElementById(p+'AnexoRemove').addEventListener('click', ()=>{ input.value=''; onFile(null); anexoChipUpdate(p,null); });
+  input.addEventListener('change', e=>{ const f=e.target.files[0]||null; onFile(f); anexoChipUpdate(p,f); docAiToggle(p,f); });
+  document.getElementById(p+'AnexoRemove').addEventListener('click', ()=>{ input.value=''; onFile(null); anexoChipUpdate(p,null); docAiToggle(p,null); });
+  document.getElementById(p+'DocAiBtn').addEventListener('click', ()=>docAiRun(p));
 }
 /* Ícone da categoria (aparece dentro do campo, como no modelo) */
 const CAT_ICON = {
@@ -3433,7 +3485,7 @@ function openEntryModal(mode, id){
     document.getElementById('fParcelado').checked = false;
     fEntryAnexo = null;
     document.getElementById('fAnexo').value = '';
-    anexoChipUpdate('f', null);
+    anexoChipUpdate('f', null); docAiToggle('f', null);
 
     if(mode==='edit'){
       title.textContent = 'Editar Conta a Pagar';
@@ -4270,7 +4322,7 @@ function openRecModal(mode, id){
     document.getElementById('rParcelado').checked = false;
     rEntryAnexo = null;
     document.getElementById('rAnexo').value = '';
-    anexoChipUpdate('r', null);
+    anexoChipUpdate('r', null); docAiToggle('r', null);
 
     if(mode==='edit'){
       const r = RECEIVABLES.find(x=>x.id===id);
@@ -5010,7 +5062,7 @@ const ENVIO_KEY = 'bpo_financeiro_envio_v1';
 function envioCfg(){ try{ return JSON.parse(localStorage.getItem(ENVIO_KEY)||'{}'); }catch(e){ return {}; } }
 function envioSave(c){ try{ localStorage.setItem(ENVIO_KEY, JSON.stringify(c)); }catch(e){} }
 const RP_BRAND = 'Bzandona Soluções Financeiras';
-const RP_APPS_SCRIPT = "const SENHA = 'COLE-AQUI-A-MESMA-SENHA-DO-SISTEMA';\n\nfunction doPost(e) {\n  try {\n    const d = JSON.parse(e.postData.contents);\n    if (d.token !== SENHA) return saida({ ok: false, erro: 'Senha inválida' });\n    if (d.acao === 'ler_relatorio') return saida(lerRelatorio(d));\n    const pdf = Utilities.newBlob(Utilities.base64Decode(d.pdfBase64), 'application/pdf', d.filename);\n    MailApp.sendEmail({\n      to: d.to, cc: d.cc || '', subject: d.subject, htmlBody: d.html,\n      attachments: [pdf], name: 'Bzandona Soluções Financeiras'\n    });\n    return saida({ ok: true });\n  } catch (err) {\n    return saida({ ok: false, erro: String(err) });\n  }\n}\n\n// Leitura de relatório (PDF ou imagem) com a IA da Anthropic.\n// A chave fica em: Configurações do projeto > Propriedades do script > ANTHROPIC_KEY\nfunction lerRelatorio(d) {\n  const chave = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');\n  if (!chave) return { ok: false, erro: 'Falta a chave ANTHROPIC_KEY nas Propriedades do script' };\n  const arquivo = d.mime === 'application/pdf'\n    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: d.dataBase64 } }\n    : { type: 'image', source: { type: 'base64', media_type: d.mime, data: d.dataBase64 } };\n  const dica = d.dica === 'pagar' ? 'todas as linhas são contas a pagar'\n    : d.dica === 'receber' ? 'todas as linhas são contas a receber' : 'detecte pelo contexto';\n  const instrucoes = [\n    'Você lê relatórios financeiros brasileiros de contas a pagar e/ou a receber (podem ser escaneados ou fotos).',\n    'Extraia UMA linha para cada conta listada. Ignore totais, subtotais e cabeçalhos.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"fornecedor ou cliente\",\"descricao\":\"texto\",\"valor\":1234.56,\"forma\":\"PIX ou null\",\"documento\":\"número ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Regras: tipo é \"pagar\" ou \"receber\" (use as seções do relatório; sem seções, ' + dica + ').',\n    'Datas no formato AAAA-MM-DD (o relatório usa dia/mês/ano). Valor como número com ponto decimal, sem R$.',\n    'Não invente dados: campo ausente = null. Se algum nome ou número estiver ilegível ou duvidoso, inclua a linha e explique em \"observacoes\".'\n  ].join('\\n');\n  const resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {\n    method: 'post', contentType: 'application/json', muteHttpExceptions: true,\n    headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01' },\n    payload: JSON.stringify({\n      model: 'claude-sonnet-5-5', max_tokens: 8000,\n      messages: [{ role: 'user', content: [arquivo, { type: 'text', text: instrucoes }] }]\n    })\n  });\n  const corpo = JSON.parse(resp.getContentText());\n  if (resp.getResponseCode() !== 200) return { ok: false, erro: (corpo.error && corpo.error.message) || ('Erro ' + resp.getResponseCode()) };\n  const texto = corpo.content.map(function (c) { return c.text || ''; }).join('');\n  const ini = texto.indexOf('{'), fim = texto.lastIndexOf('}');\n  if (ini < 0 || fim < 0) return { ok: false, erro: 'A IA não devolveu dados legíveis' };\n  const dados = JSON.parse(texto.slice(ini, fim + 1));\n  return { ok: true, linhas: dados.linhas || [], observacoes: dados.observacoes || '' };\n}\n\nfunction saida(o) {\n  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);\n}";
+const RP_APPS_SCRIPT = "const SENHA = 'COLE-AQUI-A-MESMA-SENHA-DO-SISTEMA';\n\nfunction doPost(e) {\n  try {\n    const d = JSON.parse(e.postData.contents);\n    if (d.token !== SENHA) return saida({ ok: false, erro: 'Senha inválida' });\n    if (d.acao === 'ler_relatorio') return saida(lerRelatorio(d));\n    const pdf = Utilities.newBlob(Utilities.base64Decode(d.pdfBase64), 'application/pdf', d.filename);\n    MailApp.sendEmail({\n      to: d.to, cc: d.cc || '', subject: d.subject, htmlBody: d.html,\n      attachments: [pdf], name: 'Bzandona Soluções Financeiras'\n    });\n    return saida({ ok: true });\n  } catch (err) {\n    return saida({ ok: false, erro: String(err) });\n  }\n}\n\n// Leitura de relatório (PDF ou imagem) com a IA da Anthropic.\n// A chave fica em: Configurações do projeto > Propriedades do script > ANTHROPIC_KEY\nfunction lerRelatorio(d) {\n  const chave = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');\n  if (!chave) return { ok: false, erro: 'Falta a chave ANTHROPIC_KEY nas Propriedades do script' };\n  const arquivo = d.mime === 'application/pdf'\n    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: d.dataBase64 } }\n    : { type: 'image', source: { type: 'base64', media_type: d.mime, data: d.dataBase64 } };\n  const dica = d.dica === 'pagar' ? 'todas as linhas são contas a pagar'\n    : d.dica === 'receber' ? 'todas as linhas são contas a receber' : 'detecte pelo contexto';\n  const instrucoes = d.modo === 'documento' ? instrucoesDocumento(dica) : [\n    'Você lê relatórios financeiros brasileiros de contas a pagar e/ou a receber (podem ser escaneados ou fotos).',\n    'Extraia UMA linha para cada conta listada. Ignore totais, subtotais e cabeçalhos.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"fornecedor ou cliente\",\"descricao\":\"texto\",\"valor\":1234.56,\"forma\":\"PIX ou null\",\"documento\":\"número ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Regras: tipo é \"pagar\" ou \"receber\" (use as seções do relatório; sem seções, ' + dica + ').',\n    'Datas no formato AAAA-MM-DD (o relatório usa dia/mês/ano). Valor como número com ponto decimal, sem R$.',\n    'Não invente dados: campo ausente = null. Se algum nome ou número estiver ilegível ou duvidoso, inclua a linha e explique em \"observacoes\".'\n  ].join('\\n');\n  const resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {\n    method: 'post', contentType: 'application/json', muteHttpExceptions: true,\n    headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01' },\n    payload: JSON.stringify({\n      model: 'claude-sonnet-5-5', max_tokens: 8000,\n      messages: [{ role: 'user', content: [arquivo, { type: 'text', text: instrucoes }] }]\n    })\n  });\n  const corpo = JSON.parse(resp.getContentText());\n  if (resp.getResponseCode() !== 200) return { ok: false, erro: (corpo.error && corpo.error.message) || ('Erro ' + resp.getResponseCode()) };\n  const texto = corpo.content.map(function (c) { return c.text || ''; }).join('');\n  const ini = texto.indexOf('{'), fim = texto.lastIndexOf('}');\n  if (ini < 0 || fim < 0) return { ok: false, erro: 'A IA não devolveu dados legíveis' };\n  const dados = JSON.parse(texto.slice(ini, fim + 1));\n  return { ok: true, linhas: dados.linhas || [], observacoes: dados.observacoes || '' };\n}\n\n// Um único documento (boleto, nota fiscal, fatura ou recibo) para preencher um lançamento.\nfunction instrucoesDocumento(dica) {\n  return [\n    'Você lê UM documento financeiro brasileiro (boleto bancário, nota fiscal, fatura ou recibo), digital, escaneado ou foto.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"nome\",\"descricao\":\"texto curto\",\"valor\":1234.56,\"forma\":\"Boleto ou null\",\"documento\":\"número ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Regras: devolva exatamente UMA linha. ' + dica + '.',\n    'parte = em conta a pagar, o beneficiário/cedente do boleto ou o prestador/emitente da nota; em conta a receber, o cliente/tomador/sacado.',\n    'vencimento = data de vencimento (na nota sem vencimento, use a data de emissão). Formato AAAA-MM-DD; o documento usa dia/mês/ano.',\n    'valor = valor total do documento, número com ponto decimal, sem R$. forma = \"Boleto\" se for boleto. documento = número da nota ou do documento.',\n    'descricao = o que está sendo cobrado, em poucas palavras. Não invente: campo ausente = null; se algo estiver duvidoso, explique em \"observacoes\".'\n  ].join('\\n');\n}\n\nfunction saida(o) {\n  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);\n}\n"
 
 function rpData(){
   const emp = state.filters.empresaId;
@@ -5172,7 +5224,7 @@ function rpEnsureModals(){
         <li>Apague o que estiver lá, cole o código abaixo e troque a senha (primeira linha) por uma senha sua.</li>
         <li>Clique em <b>Implantar &gt; Nova implantação &gt; Tipo: App da Web</b>. Em "Executar como" escolha <b>Eu</b> e em "Quem tem acesso" escolha <b>Qualquer pessoa</b>. Autorize quando o Google pedir.</li>
         <li>Copie a <b>URL do app da Web</b> e cole abaixo, junto com a mesma senha.</li>
-        <li><i>Opcional, para <b>Importar relatório</b> (PDF/foto):</i> em <b>Configurações do projeto &gt; Propriedades do script</b>, adicione a propriedade <b>ANTHROPIC_KEY</b> com a sua chave de API da Anthropic. Ao atualizar o código depois, use <b>Implantar &gt; Gerenciar implantações &gt; editar &gt; Nova versão</b>.</li>
+        <li><i>Opcional, para ler <b>PDF/foto</b> (importação em lote e boleto/nota fiscal):</i> em <b>Configurações do projeto &gt; Propriedades do script</b>, adicione a propriedade <b>ANTHROPIC_KEY</b> com a sua chave de API da Anthropic. Ao atualizar o código depois, use <b>Implantar &gt; Gerenciar implantações &gt; editar &gt; Nova versão</b>.</li>
       </ol>
       <button class="cx-btn" id="rpCopyCode" style="margin-bottom:14px;">Copiar código do Apps Script</button>
       <div class="form-grid">
@@ -6266,6 +6318,7 @@ function renderLedger(kind){
         <div class="cx-crumb">Financeiro &nbsp;/&nbsp; <b>${K.crumb}</b>${company?` &nbsp;·&nbsp; ${company.nome}`:''}</div>
       </div>
       <div class="cx-head-actions">
+        ${canEdit() ? `<button class="cx-btn" id="cxImpBtn">${cxSvg('down')} Importar lançamentos em lote</button>` : ''}
         <button class="cx-btn" id="cxMoreBtn">${cxSvg('filter')} Mais filtros</button>
         <select class="cx-select" id="cxMonth">${cxMonthOptions(S.month,'Todos os meses')}</select>
       </div>
@@ -6293,6 +6346,7 @@ function renderLedger(kind){
   const bind = (id, key, ev='change', conv=v=>v)=>{ el.querySelector('#'+id).addEventListener(ev, e=>{ S[key]=conv(e.target.type==='checkbox'?e.target.checked:e.target.value); S.page=1; rerender(); }); };
   bind('cxMonth','month'); bind('cxVenc','venc'); bind('cxStatus','status'); bind('cxCat','categoria'); bind('cxCC','cc');
   bind('cxConta','conta'); bind('cxForma','forma'); bind('cxOverdue','onlyOverdue'); bind('cxParty','party'); bind('cxComp','comp');
+  const ib = el.querySelector('#cxImpBtn'); if(ib) ib.addEventListener('click', ()=>impOpen(kind));
   el.querySelector('#cxMoreBtn').addEventListener('click', ()=>{ S.extra=!S.extra; el.querySelector('#cxExtra').classList.toggle('show', S.extra); });
   el.querySelector('#cxClear').addEventListener('click', ()=>{
     Object.assign(S, {venc:'', status:'', categoria:'', cc:'', conta:'', forma:'', party:'', comp:'', onlyOverdue:false, page:1});
@@ -6557,12 +6611,73 @@ function impPartyExists(r){
   const list = r.tipo==='pagar' ? SUPPLIERS : CLIENTS;
   return list.some(x=>x.empresaId===emp && impNorm(x.nome)===nome);
 }
+/* ---- Planilha (Excel/CSV): leitura local por títulos de coluna ---- */
+function impColKey(h){
+  const n = impNorm(h);
+  if(!n) return null;
+  if(/venc/.test(n)) return 'venc';
+  if(/^(forma|meio)|forma de/.test(n)) return 'forma';
+  if(/fornec|cliente|favorec|credor|devedor|sacado|cedente|benefici|^nome|^parte/.test(n)) return 'parte';
+  if(/descri|hist[oó]ric|referen|detalhe|^obs/.test(n)) return 'desc';
+  if(/^valor|^total|^montante/.test(n)) return 'valor';
+  if(/^doc|\bnf\b|nota fiscal|^numero|^n[ºo ] ?doc/.test(n)) return 'doc';
+  if(/^tipo|natureza|movimento|^pagar|^receber/.test(n)) return 'tipo';
+  return null;
+}
+function impCellDate(v){
+  if(v instanceof Date && !isNaN(v)) return fmtDateISO(v);
+  if(typeof v==='number' && v>20000 && v<80000){ const d = XLSX.SSF.parse_date_code(v); return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`; }
+  const t = String(v||'').trim(); let m;
+  if(/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0,10);
+  if((m = t.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/))){ const y = m[3].length===2 ? '20'+m[3] : m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  return '';
+}
+function impCellNumber(v){
+  if(typeof v==='number') return v;
+  let t = String(v||'').replace(/R\$/gi,'').replace(/\s/g,'');
+  if(!t) return NaN;
+  if(t.includes(',') && t.includes('.')) t = t.replace(/\./g,'').replace(',','.');
+  else if(t.includes(',')) t = t.replace(',','.');
+  return parseFloat(t);
+}
+function impSheetRows(buf, dica){
+  const wb = XLSX.read(buf, {type:'array', cellDates:true});
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const aoa = XLSX.utils.sheet_to_json(ws, {header:1, raw:true, defval:''});
+  let hi = -1, map = {};
+  for(let i=0;i<Math.min(aoa.length,12);i++){
+    const m = {}; aoa[i].forEach((h,c)=>{ const k = impColKey(h); if(k && m[k]===undefined) m[k] = c; });
+    if(m.valor!==undefined && (m.venc!==undefined || m.parte!==undefined)){ hi = i; map = m; break; }
+  }
+  if(hi<0) return [];
+  const out = [];
+  aoa.slice(hi+1).forEach(row=>{
+    const get = k=>map[k]===undefined ? '' : row[map[k]];
+    const valor = impCellNumber(get('valor')), parte = String(get('parte')||'').trim();
+    if(!parte && (isNaN(valor) || !valor)) return;
+    const tn = impNorm(get('tipo'));
+    const tipo = /^(r|e|c)/.test(tn) && tn ? 'receber' : (/^(p|d|s)/.test(tn) && tn ? 'pagar' : (dica || 'pagar'));
+    out.push({sel:true, tipo, venc:impCellDate(get('venc')) || fmtDateISO(TODAY), parte, desc:String(get('desc')||'').trim(), valor:fmtMoneyInput(Math.abs(isNaN(valor)?0:valor)),
+      forma:impMatchForma(get('forma'), tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS), doc:String(get('doc')||'').trim()});
+  });
+  return out;
+}
+function impDownloadModelo(){
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['Tipo','Vencimento','Fornecedor / Cliente','Descrição','Valor','Forma','Documento'],
+    ['Pagar','10/10/2026','Energia S.A.','Energia elétrica',1450,'Boleto',''],
+    ['Receber','12/10/2026','Cliente Alpha','Mensalidade',4800,'PIX','NF 1548'],
+  ]);
+  ws['!cols'] = [{wch:10},{wch:13},{wch:28},{wch:30},{wch:12},{wch:14},{wch:14}];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Lançamentos');
+  XLSX.writeFile(wb, 'modelo_importacao_lancamentos.xlsx');
+}
 function impEnsureModal(){
   if(document.getElementById('impOverlay')) return;
   const d = document.createElement('div'); d.className='modal-overlay'; d.id='impOverlay';
   d.innerHTML = `
     <div class="modal modal-xl">
-      <div class="modal-header"><div class="mt-wrap"><span class="mt-ico transfer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><line x1="5" y1="21" x2="19" y2="21"/></svg></span><div class="modal-title">Importar relatório</div></div>
+      <div class="modal-header"><div class="mt-wrap"><span class="mt-ico transfer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><polyline points="7 10 12 15 17 10"/><line x1="5" y1="21" x2="19" y2="21"/></svg></span><div class="modal-title">Importar lançamentos em lote</div></div>
         <button class="modal-close" id="impClose"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
       <div class="modal-body" id="impBody"></div>
       <div class="modal-footer split" id="impFooter"></div>
@@ -6572,21 +6687,22 @@ function impEnsureModal(){
   d.querySelector('#impClose').addEventListener('click', close);
   d.addEventListener('click', e=>{ if(e.target===d) close(); });
 }
-function impOpen(){
+let impPreset = '';
+function impOpen(preset){
   if(denyIfReadOnly()) return;
   if(!state.filters.empresaId){ showToast('Escolha uma empresa para importar lançamentos.'); return; }
-  if(!envioCfg().url){ showToast('Primeiro configure o Apps Script em Relatórios > Configurar envio.'); return; }
+  impPreset = (preset==='pagar' || preset==='receber') ? preset : '';
   impEnsureModal(); impFile = null; impRows = [];
   impStep1(); document.getElementById('impOverlay').classList.add('open');
 }
 function impStep1(msg){
   const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
   body.innerHTML = `
-    <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">Anexe o relatório de contas a pagar e/ou a receber (PDF, foto ou imagem). A IA lê as linhas e mostra uma <b>prévia para você conferir</b> antes de salvar. Os lançamentos entram como <b>A classificar</b>, e você reclassifica depois (em lote, se quiser).</div>
-    <div class="anexo-row"><div class="upload-drop" id="impDrop"><span class="up-clip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></span><span><b>Clique para anexar</b> ou arraste o arquivo aqui<br><span class="up-hint">PDF, JPG, PNG ou WEBP (máx. 10MB)</span></span><input type="file" id="impFileInput" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
+    <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">Anexe um relatório de contas a pagar e/ou a receber: <b>planilha Excel/CSV</b> (lida direto, sem IA) ou <b>PDF/foto</b> (lido pela IA). Você vê uma <b>prévia para conferir</b> antes de salvar. Tudo entra como <b>A classificar</b>, e você reclassifica depois, em lote. <a class="subpanel-link" id="impModelo">Baixar modelo de planilha</a></div>
+    <div class="anexo-row"><div class="upload-drop" id="impDrop"><span class="up-clip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></span><span><b>Clique para anexar</b> ou arraste o arquivo aqui<br><span class="up-hint">Excel, CSV, PDF, JPG, PNG ou WEBP (máx. 10MB)</span></span><input type="file" id="impFileInput" accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
       <div class="anexo-chip" id="impChip" style="display:none;"><span class="ac-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><polyline points="15 2 15 7 20 7"/></svg></span><div class="ac-txt"><div class="ac-n" id="impChipN"></div><div class="ac-s" id="impChipS"></div></div></div></div>
-    <div class="form-grid" style="margin-top:14px;"><div class="form-field"><label>O relatório contém</label><select id="impTipo"><option value="">Detectar sozinho (pagar e receber)</option><option value="pagar">Só contas a pagar</option><option value="receber">Só contas a receber</option></select></div></div>
-    <div class="rp-hint" style="margin-top:10px;">Privacidade: o conteúdo do arquivo é enviado à Anthropic (IA) para ser lido, através do seu próprio Apps Script.</div>
+    <div class="form-grid" style="margin-top:14px;"><div class="form-field"><label>O relatório contém</label><select id="impTipo"><option value="">Detectar sozinho (pagar e receber)</option><option value="pagar" ${impPreset==='pagar'?'selected':''}>Só contas a pagar</option><option value="receber" ${impPreset==='receber'?'selected':''}>Só contas a receber</option></select></div></div>
+    <div class="rp-hint" style="margin-top:10px;">Privacidade: planilhas são lidas aqui no seu navegador. PDF e fotos são enviados à Anthropic (IA) para leitura, através do seu próprio Apps Script.</div>
     ${msg?`<div class="imp-err">${msg}</div>`:''}`;
   foot.innerHTML = `<span></span><div class="mt-btns"><button class="btn" id="impCancel">Cancelar</button><button class="btn btn-dark" id="impRead" disabled>Ler relatório</button></div>`;
   const drop = body.querySelector('#impDrop'), input = body.querySelector('#impFileInput');
@@ -6604,6 +6720,7 @@ function impStep1(msg){
   input.addEventListener('change', e=>setFile(e.target.files[0]||null));
   foot.querySelector('#impCancel').addEventListener('click', ()=>document.getElementById('impOverlay').classList.remove('open'));
   foot.querySelector('#impRead').addEventListener('click', impRead);
+  body.querySelector('#impModelo').addEventListener('click', impDownloadModelo);
 }
 function impFileToBase64(f){
   return new Promise((res,rej)=>{ const r = new FileReader(); r.onload = ()=>res(String(r.result).split('base64,')[1]); r.onerror = ()=>rej(new Error('Não foi possível ler o arquivo.')); r.readAsDataURL(f); });
@@ -6611,7 +6728,17 @@ function impFileToBase64(f){
 async function impRead(){
   const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
   const tipoDica = body.querySelector('#impTipo').value, f = impFile, cfg = envioCfg();
+  impPreset = tipoDica;
   const mime = f.type || (/\.pdf$/i.test(f.name) ? 'application/pdf' : 'image/jpeg');
+  if(/\.(xlsx|xls|csv)$/i.test(f.name)){
+    try{
+      const rows = impSheetRows(await f.arrayBuffer(), tipoDica);
+      if(!rows.length){ impStep1('Não encontrei linhas nessa planilha. Confira se a primeira linha tem os títulos (Vencimento, Fornecedor/Cliente, Descrição, Valor...) ou use o modelo.'); return; }
+      impRows = rows; impRows.forEach(r=>{ r.dup = impIsDup(r); if(r.dup) r.sel = false; });
+      impStep2('Planilha lida direto no navegador, sem IA.'); return;
+    }catch(e){ impStep1('Não foi possível ler a planilha: '+e.message); return; }
+  }
+  if(!cfg.url){ impStep1('Para ler PDF ou foto é preciso configurar o Apps Script em Relatórios > Configurar envio. Planilhas Excel/CSV não precisam disso.'); return; }
   body.innerHTML = `<div class="imp-wait"><div class="imp-spin"></div><div><b>Lendo o relatório...</b><br><span class="rp-hint">Pode levar de 10 a 60 segundos. Não feche esta janela.</span></div></div>`;
   foot.innerHTML = '<span></span><span></span>';
   try{
@@ -6731,7 +6858,7 @@ function renderLancamentos(){
         <div class="cx-crumb">Financeiro &nbsp;/&nbsp; <b>Lançamentos</b>${company?` &nbsp;·&nbsp; ${company.nome}`:''}</div>
       </div>
       <div class="cx-head-actions">
-        <button class="cx-btn big" id="lcImpBtn">${cxSvg('down')} Importar relatório</button>
+        <button class="cx-btn big" id="lcImpBtn">${cxSvg('down')} Importar lançamentos em lote</button>
         <button class="cx-btn accent big" id="lcNewBtn">${cxSvg('plus')} Novo Lançamento</button>
       </div>
     </div>
@@ -6740,13 +6867,13 @@ function renderLancamentos(){
       <div class="lc-empty-title">Registre um novo lançamento</div>
       <div class="lc-empty-text">Escolha o tipo, preencha o formulário e salve. O lançamento alimenta automaticamente Contas a Pagar ou Contas a Receber.</div>
       <button class="cx-btn accent big" id="lcNewBtn2">${cxSvg('plus')} Novo Lançamento</button>
-      <button class="cx-btn" id="lcImpBtn2">${cxSvg('down')} Importar relatório (PDF ou foto)</button>
+      <button class="cx-btn" id="lcImpBtn2">${cxSvg('down')} Importar lançamentos em lote</button>
       <div class="lc-empty-links"><span class="cx-link" data-go="contas-pagar">Ver Contas a Pagar</span><span class="lc-dot">·</span><span class="cx-link" data-go="contas-receber">Ver Contas a Receber</span></div>
     </div>`;
   el.querySelector('#lcNewBtn').addEventListener('click', openLancTypeModal);
-  el.querySelector('#lcImpBtn').addEventListener('click', impOpen);
+  el.querySelector('#lcImpBtn').addEventListener('click', ()=>impOpen(''));
   el.querySelector('#lcNewBtn2').addEventListener('click', openLancTypeModal);
-  el.querySelector('#lcImpBtn2').addEventListener('click', impOpen);
+  el.querySelector('#lcImpBtn2').addEventListener('click', ()=>impOpen(''));
   el.querySelectorAll('[data-go]').forEach(l=>l.addEventListener('click', ()=>navigateTo(l.dataset.go)));
 }
 
