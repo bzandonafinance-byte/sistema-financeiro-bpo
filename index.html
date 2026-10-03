@@ -5070,17 +5070,26 @@ function rpData(){
   const emp = state.filters.empresaId;
   const company = companyById(emp);
   const today = fmtDateISO(TODAY);
-  const pagar = state.accounts.filter(a=>(!emp||a.empresaId===emp) && a.vencimento===today && cxEffStatus(a)==='Em aberto')
-    .map(a=>({venc:a.vencimento, party:(supplierById(a.fornecedorId)||{}).nome||'—', desc:a.descricao, forma:a.formaPagamento||'—', valor:a.valor}));
-  const receber = RECEIVABLES.filter(r=>(!emp||r.empresaId===emp) && r.vencimento===today && cxEffStatus(r)==='Em aberto')
-    .map(r=>({venc:r.vencimento, party:(clientById(r.clienteId)||{}).nome||'—', desc:r.descricao, forma:r.formaRecebimento||'—', valor:r.valor}));
-  const tp = pagar.reduce((s,x)=>s+x.valor,0), tr = receber.reduce((s,x)=>s+x.valor,0);
+  // Em aberto ou vencido (ainda não baixado/conciliado) com vencimento hoje ou antes: o que caiu no fim de semana aparece na segunda
+  const aberto = x=>{ const st = cxEffStatus(x); return st==='Em aberto' || st==='Vencido'; };
+  const mapP = a=>({venc:a.vencimento, party:(supplierById(a.fornecedorId)||{}).nome||'—', desc:a.descricao, forma:a.formaPagamento||'—', valor:a.valor});
+  const mapR = r=>({venc:r.vencimento, party:(clientById(r.clienteId)||{}).nome||'—', desc:r.descricao, forma:r.formaRecebimento||'—', valor:r.valor});
+  const byVenc = (x,y)=> x.venc<y.venc ? -1 : x.venc>y.venc ? 1 : (x.party<y.party?-1:1);
+  const pA = state.accounts.filter(a=>(!emp||a.empresaId===emp) && a.vencimento<=today && aberto(a));
+  const rA = RECEIVABLES.filter(r=>(!emp||r.empresaId===emp) && r.vencimento<=today && aberto(r));
+  const pagar = pA.filter(a=>a.vencimento===today).map(mapP).sort(byVenc), pagarVenc = pA.filter(a=>a.vencimento<today).map(mapP).sort(byVenc);
+  const receber = rA.filter(r=>r.vencimento===today).map(mapR).sort(byVenc), receberVenc = rA.filter(r=>r.vencimento<today).map(mapR).sort(byVenc);
+  const sum = l=>l.reduce((s,x)=>s+x.valor,0);
+  const tpHoje = sum(pagar), tpVenc = sum(pagarVenc), trHoje = sum(receber), trVenc = sum(receberVenc);
+  const tp = tpHoje + tpVenc, tr = trHoje + trVenc;
   const mon = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
   const hh = String(new Date().getHours()).padStart(2,'0')+':'+String(new Date().getMinutes()).padStart(2,'0');
   return {company, nome:(company?company.nome:'TODAS AS EMPRESAS').toUpperCase(), today,
     dateLabel:`${String(TODAY.getDate()).padStart(2,'0')} ${mon[TODAY.getMonth()]} ${TODAY.getFullYear()}`,
-    dateBR:fmtDateBR(today), hora:hh, pagar, receber, tp, tr, liquido:tr-tp};
+    dateBR:fmtDateBR(today), hora:hh, pagar, pagarVenc, receber, receberVenc, tpHoje, tpVenc, trHoje, trVenc, tp, tr, liquido:tr-tp};
 }
+function rpSubCount(hoje, venc){ return `${hoje.length} hoje` + (venc.length ? ` · ${venc.length} vencida${venc.length===1?'':'s'}` : ''); }
+const RP_NOTA_VENCIDAS = 'Contas vencidas são as com vencimento anterior à data do relatório que ainda não foram baixadas (pagas ou recebidas) no sistema.';
 function rpMoneySigned(v){ return (v<0?'-':'')+fmtCurrency(Math.abs(v)); }
 function rpCount(n){ return `${n} ${n===1?'conta':'contas'}`; }
 function rpTableHTML(title, rows, total){
@@ -5096,17 +5105,19 @@ function rpPreviewHTML(d){
       <div class="r"><div class="rp-date">${d.dateLabel}</div><div class="rp-muted">Emitido às ${d.hora}</div></div></div>
     <div class="rp-sec first">RESUMO DO DIA</div>
     <div class="rp-sum">
-      <div><span>CONTAS A PAGAR</span><b>${fmtCurrency(d.tp)}</b><em>${rpCount(d.pagar.length)}</em></div>
-      <div><span>CONTAS A RECEBER</span><b>${fmtCurrency(d.tr)}</b><em>${rpCount(d.receber.length)}</em></div>
-      <div><span>MOVIMENTO LÍQUIDO PREVISTO</span><b>${rpMoneySigned(d.liquido)}</b><em>Entradas menos saídas do dia</em></div>
+      <div><span>CONTAS A PAGAR</span><b>${fmtCurrency(d.tp)}</b><em>${rpSubCount(d.pagar, d.pagarVenc)}</em></div>
+      <div><span>CONTAS A RECEBER</span><b>${fmtCurrency(d.tr)}</b><em>${rpSubCount(d.receber, d.receberVenc)}</em></div>
+      <div><span>MOVIMENTO LÍQUIDO PREVISTO</span><b>${rpMoneySigned(d.liquido)}</b><em>Entradas menos saídas (hoje e vencidas)</em></div>
     </div>
-    ${rpTableHTML('CONTAS A PAGAR - HOJE', d.pagar, d.tp)}
-    ${rpTableHTML('CONTAS A RECEBER - HOJE', d.receber, d.tr)}
+    ${rpTableHTML('CONTAS A PAGAR - HOJE', d.pagar, d.tpHoje)}
+    ${d.pagarVenc.length ? rpTableHTML('CONTAS A PAGAR - VENCIDAS (NÃO BAIXADAS)', d.pagarVenc, d.tpVenc) : ''}
+    ${rpTableHTML('CONTAS A RECEBER - HOJE', d.receber, d.trHoje)}
+    ${d.receberVenc.length ? rpTableHTML('CONTAS A RECEBER - VENCIDAS (NÃO BAIXADAS)', d.receberVenc, d.trVenc) : ''}
     <div class="rp-fin"><div class="rp-fin-h">RESUMO FINANCEIRO</div>
-      <div class="rp-fin-r"><span>Total previsto de entradas</span><span>${fmtCurrency(d.tr)}</span></div>
-      <div class="rp-fin-r"><span>Total previsto de saídas</span><span>(${fmtCurrency(d.tp)})</span></div>
+      <div class="rp-fin-r"><span>Total previsto de entradas${d.trVenc?` (inclui ${fmtCurrency(d.trVenc)} vencidas)`:''}</span><span>${fmtCurrency(d.tr)}</span></div>
+      <div class="rp-fin-r"><span>Total previsto de saídas${d.tpVenc?` (inclui ${fmtCurrency(d.tpVenc)} vencidas)`:''}</span><span>(${fmtCurrency(d.tp)})</span></div>
       <div class="rp-fin-r bold"><span>Movimento líquido previsto</span><span>${d.liquido<0?'-':''}${fmtCurrency(Math.abs(d.liquido))}</span></div></div>
-    <div class="rp-note">Relatório gerado em ${d.dateBR} às ${d.hora}. As informações refletem os lançamentos registrados no sistema até o momento da emissão. Valores previstos podem sofrer alterações após pagamentos, recebimentos, baixas ou conciliações.</div>
+    <div class="rp-note">Relatório gerado em ${d.dateBR} às ${d.hora}. As informações refletem os lançamentos registrados no sistema até o momento da emissão. Valores previstos podem sofrer alterações após pagamentos, recebimentos, baixas ou conciliações. ${RP_NOTA_VENCIDAS}</div>
   </div>`;
 }
 
@@ -5133,7 +5144,7 @@ function rpBuildPDF(d){
   y += 10;
   const bw = CW/3, bh = 62;
   doc.setFillColor(...PALE); doc.setDrawColor(...LINE); doc.rect(M, y, CW, bh, 'FD');
-  const boxes = [['CONTAS A PAGAR', fmtCurrency(d.tp), rpCount(d.pagar.length)], ['CONTAS A RECEBER', fmtCurrency(d.tr), rpCount(d.receber.length)], ['MOVIMENTO LÍQUIDO PREVISTO', rpMoneySigned(d.liquido), 'Entradas menos saídas do dia']];
+  const boxes = [['CONTAS A PAGAR', fmtCurrency(d.tp), rpSubCount(d.pagar, d.pagarVenc)], ['CONTAS A RECEBER', fmtCurrency(d.tr), rpSubCount(d.receber, d.receberVenc)], ['MOVIMENTO LÍQUIDO PREVISTO', rpMoneySigned(d.liquido), 'Entradas menos saídas']];
   boxes.forEach((b,i)=>{
     const x = M + i*bw;
     if(i>0) doc.line(x, y, x, y+bh);
@@ -5160,13 +5171,15 @@ function rpBuildPDF(d){
     });
     y = doc.lastAutoTable.finalY + 28;
   };
-  table('CONTAS A PAGAR - HOJE', d.pagar, d.tp);
-  table('CONTAS A RECEBER - HOJE', d.receber, d.tr);
+  table('CONTAS A PAGAR - HOJE', d.pagar, d.tpHoje);
+  if(d.pagarVenc.length) table('CONTAS A PAGAR - VENCIDAS (NÃO BAIXADAS)', d.pagarVenc, d.tpVenc);
+  table('CONTAS A RECEBER - HOJE', d.receber, d.trHoje);
+  if(d.receberVenc.length) table('CONTAS A RECEBER - VENCIDAS (NÃO BAIXADAS)', d.receberVenc, d.trVenc);
   if(y > 690){ doc.addPage(); y = 50; }
   doc.setFillColor(...NAVY); doc.rect(M, y, CW, 24, 'F');
   doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(255,255,255); doc.text('RESUMO FINANCEIRO', M+10, y+16);
   y += 24;
-  const fin = [['Total previsto de entradas', fmtCurrency(d.tr), false], ['Total previsto de saídas', `(${fmtCurrency(d.tp)})`, false], ['Movimento líquido previsto', (d.liquido<0?'-':'')+fmtCurrency(Math.abs(d.liquido)), true]];
+  const fin = [['Total previsto de entradas'+(d.trVenc?` (inclui ${fmtCurrency(d.trVenc)} vencidas)`:''), fmtCurrency(d.tr), false], ['Total previsto de saídas'+(d.tpVenc?` (inclui ${fmtCurrency(d.tpVenc)} vencidas)`:''), `(${fmtCurrency(d.tp)})`, false], ['Movimento líquido previsto', (d.liquido<0?'-':'')+fmtCurrency(Math.abs(d.liquido)), true]];
   fin.forEach(f=>{
     doc.setFont('helvetica', f[2]?'bold':'normal'); doc.setFontSize(10); doc.setTextColor(20,28,40);
     doc.text(f[0], M+10, y+21); doc.text(f[1], W-M-10, y+21, {align:'right'});
@@ -5175,7 +5188,7 @@ function rpBuildPDF(d){
   });
   y += 18;
   doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...GRAY);
-  doc.text(doc.splitTextToSize(`Relatório gerado em ${d.dateBR} às ${d.hora}. As informações refletem os lançamentos registrados no sistema até o momento da emissão. Valores previstos podem sofrer alterações após pagamentos, recebimentos, baixas ou conciliações.`, CW), M, y);
+  doc.text(doc.splitTextToSize(`Relatório gerado em ${d.dateBR} às ${d.hora}. As informações refletem os lançamentos registrados no sistema até o momento da emissão. Valores previstos podem sofrer alterações após pagamentos, recebimentos, baixas ou conciliações. ${RP_NOTA_VENCIDAS}`, CW), M, y);
   return doc;
 }
 function rpFilename(d){ return `relatorio_financeiro_diario_${(d.company?d.company.nome:'empresa').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_')}_${d.today}.pdf`; }
@@ -5198,7 +5211,7 @@ function rpEmailHTML(d, msg){
     <tr><td colspan="3" style="padding:6px;text-align:right;font-weight:bold;">TOTAL</td><td style="padding:6px;text-align:right;font-weight:bold;">${fmtCurrency(total)}</td></tr></table>`;
   return `<div style="font-family:Arial,sans-serif;max-width:640px;color:#1e2632;">
     <p style="white-space:pre-line;font-size:14px;">${msg.replace(/</g,'&lt;')}</p>
-    ${tbl('Contas a pagar — hoje', d.pagar, d.tp)}${tbl('Contas a receber — hoje', d.receber, d.tr)}
+    ${tbl('Contas a pagar — hoje', d.pagar, d.tpHoje)}${d.pagarVenc.length?tbl('Contas a pagar — vencidas (não baixadas)', d.pagarVenc, d.tpVenc):''}${tbl('Contas a receber — hoje', d.receber, d.trHoje)}${d.receberVenc.length?tbl('Contas a receber — vencidas (não baixadas)', d.receberVenc, d.trVenc):''}
     <p style="font-size:14px;margin-top:16px;"><b>Movimento líquido previsto: ${d.liquido<0?'-':''}${fmtCurrency(Math.abs(d.liquido))}</b></p>
     <p style="font-size:12px;color:#6b7a90;">O relatório completo segue em anexo (PDF).<br>${RP_BRAND}</p></div>`;
 }
@@ -5281,9 +5294,9 @@ function rpPlainBody(d, msg){
   const line = r=>`- ${fmtDateBR(r.venc)} | ${r.party} | ${r.desc} | ${fmtCurrency(r.valor)}`;
   const block = (title, rows, total)=>`${title}\n${rows.length ? rows.map(line).join('\n') : '(nenhuma conta para hoje)'}\nTotal: ${fmtCurrency(total)}`;
   const tail = `Movimento líquido previsto: ${rpMoneySigned(d.liquido)}\n\n(O relatório completo em PDF está anexado.)\n\n${RP_BRAND}`;
-  let body = `${msg}\n\n${block('CONTAS A PAGAR - HOJE', d.pagar, d.tp)}\n\n${block('CONTAS A RECEBER - HOJE', d.receber, d.tr)}\n\n${tail}`;
+  let body = `${msg}\n\n${block('CONTAS A PAGAR - HOJE', d.pagar, d.tpHoje)}${d.pagarVenc.length?'\n\n'+block('CONTAS A PAGAR - VENCIDAS (NÃO BAIXADAS)', d.pagarVenc, d.tpVenc):''}\n\n${block('CONTAS A RECEBER - HOJE', d.receber, d.trHoje)}${d.receberVenc.length?'\n\n'+block('CONTAS A RECEBER - VENCIDAS (NÃO BAIXADAS)', d.receberVenc, d.trVenc):''}\n\n${tail}`;
   if(encodeURIComponent(body).length > 5500){
-    body = `${msg}\n\nContas a pagar hoje: ${d.pagar.length} (${fmtCurrency(d.tp)})\nContas a receber hoje: ${d.receber.length} (${fmtCurrency(d.tr)})\n\n${tail}`;
+    body = `${msg}\n\nContas a pagar (hoje + vencidas): ${d.pagar.length+d.pagarVenc.length} (${fmtCurrency(d.tp)})\nContas a receber (hoje + vencidas): ${d.receber.length+d.receberVenc.length} (${fmtCurrency(d.tr)})\n\n${tail}`;
   }
   return body;
 }
