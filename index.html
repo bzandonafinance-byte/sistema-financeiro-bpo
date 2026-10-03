@@ -7032,6 +7032,20 @@ function impSave(){
   const bad = sel.find(r=>!r.parte.trim() || isNaN(parseMoney(r.valor)) || parseMoney(r.valor)<=0 || !r.venc);
   if(bad){ showToast('Há linhas sem fornecedor/cliente, vencimento ou valor. Corrija ou desmarque.'); return; }
   const emp = state.filters.empresaId; let nP=0, nR=0, novas=0, learned=false; const stamp = Date.now();
+  /* Repasses importados sem o aluguel no mesmo arquivo: liga aos aluguéis que já estão no sistema (mesmo contrato, vencimento até 10 dias) */
+  let nLig = 0; const dias10 = (a,b)=>Math.abs((new Date(a+'T00:00:00')-new Date(b+'T00:00:00'))/864e5)<=10;
+  const repPend = sel.filter(r=>r.tipo==='pagar' && r.contrato && !r._used && (r.conta||'')===CONTA_REPASSE);
+  if(repPend.length){
+    RECEIVABLES.filter(a=>a.empresaId===emp && !(a.repasse>0) && /^Contrato \d+$/.test(a.documento||'')).forEach(a=>{
+      const n = a.documento.replace(/\D/g,''), pool = repPend.filter(x=>x.contrato===n && !x._used && dias10(x.venc, a.vencimento));
+      if(!pool.length) return;
+      pool.forEach(x=>x._used = true);
+      const rep = Math.min(a.valor, pool.reduce((t,x)=>t+(parseMoney(x.valor)||0),0));
+      a.repasse = rep; nLig++;
+      if(a.categoria===impAcOf('receber')){ a.categoria = CONTA_TAXA_ADM; a.planoContas = contaLabel(CONTA_TAXA_ADM); }
+      a.observacoes = ((a.observacoes||'')+` Repasse ${fmtCurrency(rep)} · taxa de administração ${fmtCurrency(a.valor-rep)}`).trim();
+    });
+  }
   sel.forEach((r,i)=>{
     const {p, created} = impFindOrCreateParty(r.tipo, r.parte); if(created) novas++;
     const conta = r.conta || impAcOf(r.tipo), cc = r.cc || COST_CENTERS[0];
@@ -7052,7 +7066,7 @@ function impSave(){
   const nAC = sel.filter(r=>(r.conta||impAcOf(r.tipo))===impAcOf(r.tipo)).length;
   const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
   body.innerHTML = `<div class="imp-done"><div class="imp-ok">✓</div><div class="lc-empty-title">${nP+nR} lançamento(s) importado(s)</div>
-    <div class="lc-empty-text">${nP} conta(s) a pagar e ${nR} a receber${novas?`, com ${novas} novo(s) cadastro(s) de fornecedor/cliente`:''}. ${nAC ? `<b>${nAC}</b> ficaram como <b>A classificar</b>: use <b>Editar em lote</b> nas telas de Contas para reclassificar.` : 'Todos já entraram classificados.'}</div></div>`;
+    <div class="lc-empty-text">${nP} conta(s) a pagar e ${nR} a receber${nLig?`, e <b>${nLig}</b> aluguel(is) que já estavam no sistema foram ligados ao repasse (Repasse (R$) preenchido e conta 4.01.008)`:''}${novas?`, com ${novas} novo(s) cadastro(s) de fornecedor/cliente`:''}. ${nAC ? `<b>${nAC}</b> ficaram como <b>A classificar</b>: use <b>Editar em lote</b> nas telas de Contas para reclassificar.` : 'Todos já entraram classificados.'}</div></div>`;
   foot.innerHTML = `<span></span><div class="mt-btns"><button class="btn" id="impGoPag">Ver Contas a Pagar</button><button class="btn" id="impGoRec">Ver Contas a Receber</button><button class="btn btn-dark" id="impEnd">Concluir</button></div>`;
   const close = ()=>{ document.getElementById('impOverlay').classList.remove('open'); };
   foot.querySelector('#impGoPag').addEventListener('click', ()=>{ close(); navigateTo('contas-pagar'); });
