@@ -1082,6 +1082,9 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .doc-ai{display:none;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;}
 .doc-ai .rp-hint{flex:1 1 220px;line-height:1.4;}
 .imp-tag.proj{background:#eef0f3;color:#4b5563;}
+.cx-btn.danger{color:#b42318;border-color:#f1b8b3;background:#fff;}
+.cx-btn.danger:hover{background:#fdecec;}
+.cx-btn.danger[disabled]{color:var(--text-tertiary);border-color:var(--border-color-strong);}
 </style>
 </head>
 <body>
@@ -6211,6 +6214,7 @@ const CX_ICO = {
   arrowDown:'<line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>',
   arrowUp:'<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>',
   swap:'<polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/>',
+  trash:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>',
   kebab:'<circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>',
 };
 function cxSvg(name){ return `<svg viewBox="0 0 24 24">${CX_ICO[name]}</svg>`; }
@@ -6427,9 +6431,12 @@ function ledgerRefresh(kind){
       <span class="cx-foot-sel">${nSel} ${nSel===1?'conta selecionada':'contas selecionadas'}</span>
       <span class="cx-foot-sep"></span>
       <span class="cx-foot-sel">Total&nbsp; ${fmtCurrency(selTotal)}</span>
+      ${rows.length>pageRows.length && nSel<rows.length ? `<a class="cx-link" id="cxSelAll" style="margin-left:0;">Selecionar todas as ${rows.length}</a>` : ''}
+      ${nSel ? `<a class="cx-link" id="cxSelNone" style="margin-left:0;">Limpar seleção</a>` : ''}
       <button class="cx-btn dark" id="cxMarkBtn" ${dis}>${cxSvg('check')} ${K.markLabel}</button>
       <button class="cx-btn" id="cxBatchBtn" ${dis}>${cxSvg('edit')} Editar em lote</button>
       <button class="cx-btn" id="cxExportBtn">${cxSvg('down')} Exportar</button>
+      ${canEdit() ? `<button class="cx-btn danger" id="cxDelBtn" ${dis}>${cxSvg('trash')} Excluir</button>` : ''}
       <button class="cx-btn" id="cxReportBtn">${cxSvg('file')} Gerar relatório</button>
     </div>
     <div class="cx-foot-right">
@@ -6458,6 +6465,9 @@ function ledgerRefresh(kind){
     const row = rows.find(r=>r.id===btn.dataset.id);
     openActionMenu(btn, cxMenuItems(kind,row), act=>cxRowAction(kind, act, row.id));
   }));
+  const sa = el.querySelector('#cxSelAll'); if(sa) sa.addEventListener('click', ()=>{ rows.forEach(r=>S.selected.add(r.id)); ledgerRefresh(kind); });
+  const sn = el.querySelector('#cxSelNone'); if(sn) sn.addEventListener('click', ()=>{ S.selected.clear(); ledgerRefresh(kind); });
+  const del = el.querySelector('#cxDelBtn'); if(del) del.addEventListener('click', ()=>cxBatchDelete(kind, selRows));
   el.querySelector('#cxMarkBtn').addEventListener('click', ()=>cxBatchMark(kind, selRows));
   el.querySelector('#cxBatchBtn').addEventListener('click', ()=>cxOpenBatchEdit(kind, selRows));
   el.querySelector('#cxExportBtn').addEventListener('click', ()=>cxExport(kind, nSel ? selRows : rows));
@@ -6501,6 +6511,20 @@ function cxRowAction(kind, act, id){
     return;
   }
   handleReceivableAction(act, id);
+}
+function cxBatchDelete(kind, selRows){
+  if(denyIfReadOnly()) return;
+  if(!selRows.length) return;
+  const K = CX_KIND[kind], total = selRows.reduce((s,r)=>s+r.valor,0);
+  const baixadas = selRows.filter(r=>['Pago/Recebido','Conciliado','Aguardando conciliação'].includes(r.status)).length;
+  const aviso = baixadas ? `\n\nAtenção: ${baixadas} já está(ão) baixada(s) (${kind==='pagar'?'paga':'recebida'}). Excluir remove o registro e altera os totais, a DRE e o Balanço.` : '';
+  if(!confirm(`Excluir ${selRows.length} ${selRows.length===1?'conta':'contas'} de ${K.title} (${fmtCurrency(total)})?\n\nEsta ação não pode ser desfeita.${aviso}`)) return;
+  const ids = new Set(selRows.map(r=>r.id));
+  if(kind==='pagar'){ state.accounts = state.accounts.filter(a=>!ids.has(a.id)); saveAccounts(state.accounts); }
+  else { for(let i=RECEIVABLES.length-1;i>=0;i--) if(ids.has(RECEIVABLES[i].id)) RECEIVABLES.splice(i,1); saveReceivables(); }
+  cxState[kind].selected.clear();
+  showToast(`${selRows.length} ${selRows.length===1?'conta excluída':'contas excluídas'}.`);
+  rerenderCurrentPage();
 }
 function cxBatchMark(kind, selRows){
   if(denyIfReadOnly()) return;
