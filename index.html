@@ -6643,8 +6643,16 @@ function impParseImobzi(lines){
   const toIso = t=>{ const m = String(t).match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? `${m[3]}-${m[2]}-${m[1]}` : ''; };
   const rows = []; let sec = 0;
   lines.forEach(cells=>{
-    const head = String(cells[0]||'').match(/^(\d)\.\s+(A Receber|A Pagar|Já recebidas)/i);
-    if(head){ sec = +head[1]; return; }
+    const head = String(cells[0]||'').match(/^(\d)\.\s+(.{6,})/);
+    if(head && !toIso(cells[0])){
+      const t = head[2].toLowerCase();
+      if(/repasse|a pagar/.test(t)) sec = /estimativa|n[ãa]o lan[cç]ad/.test(t) ? 5 : 4;
+      else if(/proje[cç][ãa]o|n[ãa]o gerad/.test(t)) sec = 2;
+      else if(/pagas|pago|recebid|antecipad/.test(t)) sec = 3;
+      else if(/receber|fatura|pendente|emitid/.test(t)) sec = 1;
+      else sec = 0;
+      return;
+    }
     if(!sec || !toIso(cells[0]) || !/R\$/.test(cells[cells.length-1])) return;
     const venc = toIso(cells[0]), valor = money(cells[cells.length-1]);
     if(sec===1 || sec===2 || sec===3){
@@ -6657,6 +6665,17 @@ function impParseImobzi(lines){
       rows.push({sel:false, flag:'Estimativa', tipo:'pagar', venc, parte:cells[2]||'', desc:`Repasse estimado contrato ${cells[1]||''} (inquilino ${cells[3]||''})`, valor:fmtMoneyInput(valor), forma:PAYMENT_METHODS[0], doc:''});
     }
   });
+  // Linhas que o próprio relatório avisa como "destacadas em amarelo" (possível duplicidade): contrato + valor
+  const all = lines.map(c=>c.join(' ')).join(' ');
+  const ix = all.search(/destacadas em amarelo\s*:/i);
+  if(ix>=0){
+    const re = /contrato\s+(\d+)\s*\((?:fatura de\s+)?R\$\s*([\d.,]+)/gi; let m;
+    const seg = all.slice(ix);
+    while((m = re.exec(seg))){
+      const v = impCellNumber(m[2]);
+      rows.forEach(r=>{ if(r.tipo==='receber' && r.doc==='Contrato '+m[1] && Math.abs((parseMoney(r.valor)||0)-v)<0.005 && !r.flag){ r.flag = 'Possível duplicidade'; r.sel = false; } });
+    }
+  }
   return rows;
 }
 
@@ -6792,8 +6811,8 @@ async function impRead(){
       const lines = await pdfTextLines(f); let rows = impParseImobzi(lines); if(tipoDica) rows = rows.filter(r=>r.tipo===tipoDica);
       if(rows.length){
         impRows = rows; impRows.forEach(r=>{ r.dup = impIsDup(r); if(r.dup) r.sel = false; });
-        const cnt = fl=>rows.filter(r=>r.flag===fl).length;
-        impStep2(`Relatório do Imobzi reconhecido e lido direto do PDF (sem IA): ${rows.filter(r=>!r.flag && r.tipo==='receber').length} a receber emitidas e ${rows.filter(r=>!r.flag && r.tipo==='pagar').length} repasses a pagar vêm marcadas. Ficaram desmarcadas, para você decidir: ${cnt('Projeção')} projeções de faturas, ${cnt('Estimativa')} estimativas de repasse e ${cnt('Já recebida')} faturas já recebidas.`);
+        const cnt = fl=>rows.filter(r=>r.flag===fl).length; const dups = cnt('Possível duplicidade');
+        impStep2(`Relatório do Imobzi reconhecido e lido direto do PDF (sem IA): ${rows.filter(r=>!r.flag && r.tipo==='receber').length} a receber e ${rows.filter(r=>!r.flag && r.tipo==='pagar').length} a pagar vêm marcadas. Ficaram desmarcadas, para você decidir: ${cnt('Projeção')} projeções, ${cnt('Estimativa')} estimativas de repasse, ${cnt('Já recebida')} faturas já recebidas e ${dups} possíveis duplicidades avisadas pelo próprio relatório.`);
         return;
       }
     }catch(e){ /* PDF sem texto ou formato desconhecido: segue para a leitura por IA */ }
