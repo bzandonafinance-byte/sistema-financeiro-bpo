@@ -1062,14 +1062,21 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .cp-item em{font-style:normal;color:var(--text-tertiary);font-size:11px;white-space:nowrap;}
 .cp-none{padding:12px;color:var(--text-tertiary);font-size:12px;}
 
-.modal.modal-xl{max-width:98vw;width:98vw;}
+.modal.modal-xl{max-width:1500px;width:96vw;}
 .imp-tbl{width:max-content;min-width:100%;}
-.imp-tbl{font-size:12px;}
-.imp-tbl th,.imp-tbl td{padding:6px 6px;white-space:nowrap;}
-.imp-tbl .imp-c0{width:58px;position:sticky;left:0;z-index:2;background:#fff;}
-.imp-tbl th.imp-c0{background:#fafafb;}
-.imp-tbl .cx-input,.imp-tbl .cx-select{height:28px;font-size:12px;}
-.imp-tbl tbody tr:hover .imp-c0{background:#f8f9fb;}
+.imp-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.imp-tbl td{padding:10px 4px 12px;border-bottom:1px solid var(--border-color);}
+.imp-l1,.imp-l2{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:flex-end;}
+.imp-l2{margin-top:8px;padding-left:2px;}
+.imp-f{display:flex;flex-direction:column;gap:3px;min-width:0;}
+.imp-f>span{font-size:10.5px;font-weight:600;color:var(--text-tertiary);white-space:nowrap;}
+.imp-f .cx-input,.imp-f .cx-select{width:100%;height:30px;font-size:12.5px;}
+.imp-chk{width:54px;} .imp-chk-in{display:flex;align-items:center;gap:6px;height:30px;}
+.imp-sit-w{width:128px;} .imp-sit-w .imp-sit{min-height:30px;display:flex;flex-direction:column;justify-content:center;gap:2px;}
+.imp-sit .imp-tag{display:table;white-space:nowrap;}
+.w-tipo{width:104px;} .w-venc{width:146px;} .w-parte{flex:1 1 280px;min-width:260px;} .w-valor{width:130px;} .w-forma{width:180px;}
+.w-conta{flex:1 1 360px;min-width:330px;} .w-cc{width:180px;} .w-desc{flex:2 1 380px;min-width:340px;}
+.imp-tbl tbody tr:hover{background:#fafbfc;}
 .imp-off{opacity:.5;}
 .imp-tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;background:#f3f4f6;color:#374151;white-space:nowrap;}
 .imp-tag.warn{background:#fff6df;color:#8a5a00;} .imp-tag.new{background:#eaf1ff;color:#2f5bd7;}
@@ -6918,30 +6925,35 @@ function impStep2(obs){
   body.innerHTML = `
     ${obs?`<div class="imp-obs"><b>Observações da leitura:</b> ${obs.replace(/</g,'&lt;')}</div>`:''}
     <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:10px;">Confira cada linha, corrija o que for preciso e desmarque o que não deve entrar. Linhas marcadas como <b>Já existe</b> vêm desmarcadas.</div>
-    <div class="imp-bulk"><b>Aplicar às linhas marcadas:</b>
+    <div class="imp-bulk"><label class="lanc-check" style="margin-right:6px;"><input type="checkbox" id="impAll" checked> Marcar todas</label><b>Aplicar às linhas marcadas:</b>
       <div class="imp-bulk-f" style="min-width:260px;flex:1 1 260px;"><select id="impBulkConta" style="display:none;"></select></div>
       <select class="cx-select" id="impBulkCC" style="width:160px;"><option value="">Centro de custo</option>${COST_CENTERS.map(c=>`<option>${c}</option>`).join('')}</select>
       <button class="btn" id="impBulkApply">Aplicar</button><span class="rp-hint" id="impBulkMsg"></span></div>
     <datalist id="impDlP">${parts.pagar.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist><datalist id="impDlR">${parts.receber.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist>
-    <div class="table-scroll"><table class="cx-table imp-tbl"><thead><tr><th class="imp-c0"><input type="checkbox" id="impAll" checked></th><th>Situação</th><th>Tipo</th><th>Vencimento</th><th>Fornecedor / Cliente</th><th class="num">Valor</th>${showRep?'<th class="num">Repasse (R$)</th>':''}<th>Forma de pagamento</th><th>Conta contábil</th><th>Centro de custo</th><th>Descrição</th></tr></thead><tbody id="impTbody"></tbody></table></div>
+    <table class="imp-tbl"><tbody id="impTbody"></tbody></table>
     <div class="imp-total" id="impTotal"></div>`;
   foot.innerHTML = `<span class="rp-hint" id="impCount"></span><div class="mt-btns"><button class="btn" id="impBack">Voltar</button><button class="btn btn-dark" id="impSave">Importar</button></div>`;
   const draw = ()=>{
-    const chw = (t,min,max)=> Math.round(Math.min(max, Math.max(min, String(t||'').length*6.3+32)))+'px';
+    const f = (label, inner, cls)=>`<label class="imp-f ${cls||''}"><span>${label}</span>${inner}</label>`;
+    const esc = t=>String(t||'').replace(/"/g,'&quot;');
     body.querySelector('#impTbody').innerHTML = impRows.map((r,i)=>`
-      <tr data-i="${i}" class="${r.sel?'':'imp-off'}">
-        <td class="imp-c0"><input type="checkbox" data-k="sel" ${r.sel?'checked':''}> <button class="ac-x" data-del="1" title="Remover linha">×</button></td>
-        <td class="imp-sit">${impSitHTML(r)}</td>
-        <td><select class="cx-select" data-k="tipo" style="width:96px;"><option value="pagar" ${r.tipo==='pagar'?'selected':''}>Pagar</option><option value="receber" ${r.tipo==='receber'?'selected':''}>Receber</option></select></td>
-        <td><input type="date" class="cx-input" data-k="venc" value="${r.venc}" style="width:136px;"></td>
-        <td><input type="text" class="cx-input" data-k="parte" list="${r.tipo==='pagar'?'impDlP':'impDlR'}" value="${r.parte.replace(/"/g,'&quot;')}" style="width:${chw(r.parte,150,330)};"></td>
-        <td><input type="text" class="cx-input" data-k="valor" inputmode="numeric" value="${r.valor}" style="width:118px;text-align:right;"></td>
-        ${showRep?`<td>${r.tipo==='receber'?`<input type="text" class="cx-input" data-k="repasse" inputmode="numeric" value="${r.repasse||''}" placeholder="R$ 0,00" style="width:118px;text-align:right;">`:''}</td>`:''}
-        <td><select class="cx-select" data-k="forma" style="width:${chw(r.forma,112,190)};">${(r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS).map(m=>`<option ${m===r.forma?'selected':''}>${m}</option>`).join('')}</select></td>
-        <td><select class="cx-select imp-conta" data-k="conta" style="width:${chw(contaLabel(r.conta),180,420)};"><option value="${r.conta}">${contaLabel(r.conta)}</option></select></td>
-        <td><select class="cx-select" data-k="cc" style="width:${chw(r.cc,112,170)};">${COST_CENTERS.map(c=>`<option ${c===r.cc?'selected':''}>${c}</option>`).join('')}</select></td>
-        <td><input type="text" class="cx-input" data-k="desc" value="${r.desc.replace(/"/g,'&quot;')}" style="width:${chw(r.desc,260,760)};"></td>
-      </tr>`).join('');
+      <tr data-i="${i}" class="${r.sel?'':'imp-off'}"><td>
+        <div class="imp-l1">
+          <div class="imp-f imp-chk"><span>&nbsp;</span><div class="imp-chk-in"><input type="checkbox" data-k="sel" ${r.sel?'checked':''}> <button class="ac-x" data-del="1" title="Remover linha">×</button></div></div>
+          <div class="imp-f imp-sit-w"><span>Situação</span><div class="imp-sit">${impSitHTML(r)}</div></div>
+          ${f('Tipo', `<select class="cx-select" data-k="tipo"><option value="pagar" ${r.tipo==='pagar'?'selected':''}>Pagar</option><option value="receber" ${r.tipo==='receber'?'selected':''}>Receber</option></select>`, 'w-tipo')}
+          ${f('Vencimento', `<input type="date" class="cx-input" data-k="venc" value="${r.venc}">`, 'w-venc')}
+          ${f('Fornecedor / Cliente', `<input type="text" class="cx-input" data-k="parte" list="${r.tipo==='pagar'?'impDlP':'impDlR'}" value="${esc(r.parte)}">`, 'w-parte')}
+          ${f('Valor', `<input type="text" class="cx-input" data-k="valor" inputmode="numeric" value="${r.valor}" style="text-align:right;">`, 'w-valor')}
+          ${showRep ? f('Repasse (R$)', r.tipo==='receber' ? `<input type="text" class="cx-input" data-k="repasse" inputmode="numeric" value="${r.repasse||''}" placeholder="R$ 0,00" style="text-align:right;">` : '<div style="height:30px;"></div>', 'w-valor') : ''}
+        </div>
+        <div class="imp-l2">
+          ${f('Forma de pagamento', `<select class="cx-select" data-k="forma">${(r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS).map(m=>`<option ${m===r.forma?'selected':''}>${m}</option>`).join('')}</select>`, 'w-forma')}
+          ${f('Conta contábil', `<select class="cx-select imp-conta" data-k="conta"><option value="${r.conta}">${contaLabel(r.conta)}</option></select>`, 'w-conta')}
+          ${f('Centro de custo', `<select class="cx-select" data-k="cc">${COST_CENTERS.map(c=>`<option ${c===r.cc?'selected':''}>${c}</option>`).join('')}</select>`, 'w-cc')}
+          ${f('Descrição', `<input type="text" class="cx-input" data-k="desc" value="${esc(r.desc)}">`, 'w-desc')}
+        </div>
+      </td></tr>`).join('');
     totals();
   };
   const totals = ()=>{
@@ -6960,8 +6972,6 @@ function impStep2(obs){
     if(k==='sel') { r.sel = e.target.checked; tr.classList.toggle('imp-off', !r.sel); }
     else if(k==='valor' || k==='repasse'){ const dg = e.target.value.replace(/\D/g,''); r[k] = dg ? fmtMoneyInput(parseInt(dg,10)/100) : ''; e.target.value = r[k]; }
     else r[k] = e.target.value;
-    if(k==='parte' || k==='desc') e.target.style.width = Math.round(Math.min(k==='desc'?760:330, Math.max(k==='desc'?260:150, String(r[k]).length*6.3+32)))+'px';
-    if(k==='conta'){ const t = e.target.selectedOptions[0]; if(t) e.target.style.width = Math.round(Math.min(420, Math.max(180, t.text.length*6.3+32)))+'px'; }
     if(k==='tipo'){ r.forma = impMatchForma('', r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS); impDefaults(r); draw(); return; }
     if(k==='parte' && impAcOf(r.tipo)===r.conta){ const c0 = r.conta; impDefaults(r); if(r.conta!==c0){ tr.querySelector('[data-k=conta]').innerHTML = `<option value="${r.conta}">${contaLabel(r.conta)}</option>`; tr.querySelector('[data-k=cc]').value = r.cc; } }
     if(['venc','parte','valor','tipo'].includes(k)){ r.dup = impIsDup(r); tr.querySelector('.imp-sit').innerHTML = impSitHTML(r); }
