@@ -6,6 +6,7 @@
 <title>BPO Financeiro — Contas a Pagar</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
@@ -1080,6 +1081,7 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 
 .doc-ai{display:none;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;}
 .doc-ai .rp-hint{flex:1 1 220px;line-height:1.4;}
+.imp-tag.proj{background:#eef0f3;color:#4b5563;}
 </style>
 </head>
 <body>
@@ -5062,7 +5064,7 @@ const ENVIO_KEY = 'bpo_financeiro_envio_v1';
 function envioCfg(){ try{ return JSON.parse(localStorage.getItem(ENVIO_KEY)||'{}'); }catch(e){ return {}; } }
 function envioSave(c){ try{ localStorage.setItem(ENVIO_KEY, JSON.stringify(c)); }catch(e){} }
 const RP_BRAND = 'Bzandona Soluções Financeiras';
-const RP_APPS_SCRIPT = "const SENHA = 'COLE-AQUI-A-MESMA-SENHA-DO-SISTEMA';\n\nfunction doPost(e) {\n  try {\n    const d = JSON.parse(e.postData.contents);\n    if (d.token !== SENHA) return saida({ ok: false, erro: 'Senha inválida' });\n    if (d.acao === 'ler_relatorio') return saida(lerRelatorio(d));\n    const pdf = Utilities.newBlob(Utilities.base64Decode(d.pdfBase64), 'application/pdf', d.filename);\n    MailApp.sendEmail({\n      to: d.to, cc: d.cc || '', subject: d.subject, htmlBody: d.html,\n      attachments: [pdf], name: 'Bzandona Soluções Financeiras'\n    });\n    return saida({ ok: true });\n  } catch (err) {\n    return saida({ ok: false, erro: String(err) });\n  }\n}\n\n// Leitura de relatório (PDF ou imagem) com a IA da Anthropic.\n// A chave fica em: Configurações do projeto > Propriedades do script > ANTHROPIC_KEY\nfunction lerRelatorio(d) {\n  const chave = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');\n  if (!chave) return { ok: false, erro: 'Falta a chave ANTHROPIC_KEY nas Propriedades do script' };\n  const arquivo = d.mime === 'application/pdf'\n    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: d.dataBase64 } }\n    : { type: 'image', source: { type: 'base64', media_type: d.mime, data: d.dataBase64 } };\n  const dica = d.dica === 'pagar' ? 'todas as linhas são contas a pagar'\n    : d.dica === 'receber' ? 'todas as linhas são contas a receber' : 'detecte pelo contexto';\n  const instrucoes = d.modo === 'documento' ? instrucoesDocumento(dica) : [\n    'Você lê relatórios financeiros brasileiros de contas a pagar e/ou a receber (podem ser escaneados ou fotos).',\n    'Extraia UMA linha para cada conta listada. Ignore totais, subtotais e cabeçalhos.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"fornecedor ou cliente\",\"descricao\":\"texto\",\"valor\":1234.56,\"forma\":\"PIX ou null\",\"documento\":\"número ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Regras: tipo é \"pagar\" ou \"receber\" (use as seções do relatório; sem seções, ' + dica + ').',\n    'Datas no formato AAAA-MM-DD (o relatório usa dia/mês/ano). Valor como número com ponto decimal, sem R$.',\n    'Não invente dados: campo ausente = null. Se algum nome ou número estiver ilegível ou duvidoso, inclua a linha e explique em \"observacoes\".'\n  ].join('\\n');\n  const resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {\n    method: 'post', contentType: 'application/json', muteHttpExceptions: true,\n    headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01' },\n    payload: JSON.stringify({\n      model: 'claude-sonnet-5-5', max_tokens: 8000,\n      messages: [{ role: 'user', content: [arquivo, { type: 'text', text: instrucoes }] }]\n    })\n  });\n  const corpo = JSON.parse(resp.getContentText());\n  if (resp.getResponseCode() !== 200) return { ok: false, erro: (corpo.error && corpo.error.message) || ('Erro ' + resp.getResponseCode()) };\n  const texto = corpo.content.map(function (c) { return c.text || ''; }).join('');\n  const ini = texto.indexOf('{'), fim = texto.lastIndexOf('}');\n  if (ini < 0 || fim < 0) return { ok: false, erro: 'A IA não devolveu dados legíveis' };\n  const dados = JSON.parse(texto.slice(ini, fim + 1));\n  return { ok: true, linhas: dados.linhas || [], observacoes: dados.observacoes || '' };\n}\n\n// Um único documento (boleto, nota fiscal, fatura ou recibo) para preencher um lançamento.\nfunction instrucoesDocumento(dica) {\n  return [\n    'Você lê UM documento financeiro brasileiro (boleto bancário, nota fiscal, fatura ou recibo), digital, escaneado ou foto.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"nome\",\"descricao\":\"texto curto\",\"valor\":1234.56,\"forma\":\"Boleto ou null\",\"documento\":\"número ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Regras: devolva exatamente UMA linha. ' + dica + '.',\n    'parte = em conta a pagar, o beneficiário/cedente do boleto ou o prestador/emitente da nota; em conta a receber, o cliente/tomador/sacado.',\n    'vencimento = data de vencimento (na nota sem vencimento, use a data de emissão). Formato AAAA-MM-DD; o documento usa dia/mês/ano.',\n    'valor = valor total do documento, número com ponto decimal, sem R$. forma = \"Boleto\" se for boleto. documento = número da nota ou do documento.',\n    'descricao = o que está sendo cobrado, em poucas palavras. Não invente: campo ausente = null; se algo estiver duvidoso, explique em \"observacoes\".'\n  ].join('\\n');\n}\n\nfunction saida(o) {\n  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);\n}\n"
+const RP_APPS_SCRIPT = "const SENHA = 'COLE-AQUI-A-MESMA-SENHA-DO-SISTEMA';\n\nfunction doPost(e) {\n  try {\n    const d = JSON.parse(e.postData.contents);\n    if (d.token !== SENHA) return saida({ ok: false, erro: 'Senha inválida' });\n    if (d.acao === 'ler_relatorio') return saida(lerRelatorio(d));\n    const pdf = Utilities.newBlob(Utilities.base64Decode(d.pdfBase64), 'application/pdf', d.filename);\n    MailApp.sendEmail({\n      to: d.to, cc: d.cc || '', subject: d.subject, htmlBody: d.html,\n      attachments: [pdf], name: 'Bzandona Soluções Financeiras'\n    });\n    return saida({ ok: true });\n  } catch (err) {\n    return saida({ ok: false, erro: String(err) });\n  }\n}\n\n// Leitura de relatório (PDF ou imagem) com a IA da Anthropic.\n// A chave fica em: Configurações do projeto > Propriedades do script > ANTHROPIC_KEY\nfunction lerRelatorio(d) {\n  const chave = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');\n  if (!chave) return { ok: false, erro: 'Falta a chave ANTHROPIC_KEY nas Propriedades do script' };\n  const arquivo = d.mime === 'application/pdf'\n    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: d.dataBase64 } }\n    : { type: 'image', source: { type: 'base64', media_type: d.mime, data: d.dataBase64 } };\n  const dica = d.dica === 'pagar' ? 'todas as linhas são contas a pagar'\n    : d.dica === 'receber' ? 'todas as linhas são contas a receber' : 'detecte pelo contexto';\n  const instrucoes = d.modo === 'documento' ? instrucoesDocumento(dica) : [\n    'Você lê relatórios financeiros brasileiros de contas a pagar e/ou a receber (podem ser escaneados ou fotos).',\n    'Extraia UMA linha para cada conta listada. Ignore resumos, totais, subtotais, cabeçalhos e quadros de divergências.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"fornecedor ou cliente\",\"descricao\":\"texto\",\"valor\":1234.56,\"forma\":\"PIX ou null\",\"documento\":\"número ou null\",\"situacao\":\"projecao, paga ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Se a linha for apenas projeção/estimativa (ainda não é uma conta real) use situacao \"projecao\"; se já estiver paga/recebida use \"paga\"; senão null.',\n    'Regras: tipo é \"pagar\" ou \"receber\" (use as seções do relatório; sem seções, ' + dica + ').',\n    'Datas no formato AAAA-MM-DD (o relatório usa dia/mês/ano). Valor como número com ponto decimal, sem R$.',\n    'Não invente dados: campo ausente = null. Se algum nome ou número estiver ilegível ou duvidoso, inclua a linha e explique em \"observacoes\".'\n  ].join('\\n');\n  const resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {\n    method: 'post', contentType: 'application/json', muteHttpExceptions: true,\n    headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01' },\n    payload: JSON.stringify({\n      model: 'claude-sonnet-5-5', max_tokens: 32000,\n      messages: [{ role: 'user', content: [arquivo, { type: 'text', text: instrucoes }] }]\n    })\n  });\n  const corpo = JSON.parse(resp.getContentText());\n  if (resp.getResponseCode() !== 200) return { ok: false, erro: (corpo.error && corpo.error.message) || ('Erro ' + resp.getResponseCode()) };\n  const texto = corpo.content.map(function (c) { return c.text || ''; }).join('');\n  const ini = texto.indexOf('{'), fim = texto.lastIndexOf('}');\n  if (ini < 0 || fim < 0) return { ok: false, erro: 'A IA não devolveu dados legíveis' };\n  const dados = JSON.parse(texto.slice(ini, fim + 1));\n  return { ok: true, linhas: dados.linhas || [], observacoes: dados.observacoes || '' };\n}\n\n// Um único documento (boleto, nota fiscal, fatura ou recibo) para preencher um lançamento.\nfunction instrucoesDocumento(dica) {\n  return [\n    'Você lê UM documento financeiro brasileiro (boleto bancário, nota fiscal, fatura ou recibo), digital, escaneado ou foto.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"nome\",\"descricao\":\"texto curto\",\"valor\":1234.56,\"forma\":\"Boleto ou null\",\"documento\":\"número ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Regras: devolva exatamente UMA linha. ' + dica + '.',\n    'parte = em conta a pagar, o beneficiário/cedente do boleto ou o prestador/emitente da nota; em conta a receber, o cliente/tomador/sacado.',\n    'vencimento = data de vencimento (na nota sem vencimento, use a data de emissão). Formato AAAA-MM-DD; o documento usa dia/mês/ano.',\n    'valor = valor total do documento, número com ponto decimal, sem R$. forma = \"Boleto\" se for boleto. documento = número da nota ou do documento.',\n    'descricao = o que está sendo cobrado, em poucas palavras. Não invente: campo ausente = null; se algo estiver duvidoso, explique em \"observacoes\".'\n  ].join('\\n');\n}\n\nfunction saida(o) {\n  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);\n}\n";
 
 function rpData(){
   const emp = state.filters.empresaId;
@@ -6606,11 +6608,58 @@ function impIsDup(r){
   if(r.tipo==='pagar') return state.accounts.some(a=>a.empresaId===emp && a.vencimento===r.venc && Math.abs(a.valor-v)<0.005 && impNorm((supplierById(a.fornecedorId)||{}).nome)===nome);
   return RECEIVABLES.some(a=>a.empresaId===emp && a.vencimento===r.venc && Math.abs(a.valor-v)<0.005 && impNorm((clientById(a.clienteId)||{}).nome)===nome);
 }
+function impSitHTML(r){
+  const flag = r.flag ? `<span class="imp-tag proj">${r.flag}</span> ` : '';
+  return flag + (r.dup ? '<span class="imp-tag warn">Já existe</span>' : (impPartyExists(r) ? '<span class="imp-tag">Novo</span>' : '<span class="imp-tag new">Novo + cadastro</span>'));
+}
 function impPartyExists(r){
   const emp = state.filters.empresaId, nome = impNorm(r.parte);
   const list = r.tipo==='pagar' ? SUPPLIERS : CLIENTS;
   return list.some(x=>x.empresaId===emp && impNorm(x.nome)===nome);
 }
+/* ---- PDF com texto (ex.: relatório do Imobzi): lido direto no navegador, sem IA ---- */
+async function pdfTextLines(file){
+  const lib = window.pdfjsLib;
+  if(!lib) throw new Error('o leitor de PDF não carregou (verifique a internet)');
+  if(!lib.GlobalWorkerOptions.workerSrc){
+    const code = await fetch('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js').then(r=>r.text());
+    lib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(new Blob([code], {type:'text/javascript'}));
+  }
+  const doc = await lib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+  const out = [];
+  for(let pg=1; pg<=doc.numPages; pg++){
+    const tc = await (await doc.getPage(pg)).getTextContent();
+    const items = tc.items.filter(it=>it.str && it.str.trim()).map(it=>({s:it.str.trim(), x:it.transform[4], y:it.transform[5], w:it.width||0}));
+    items.sort((a,b)=> b.y-a.y || a.x-b.x);
+    let line = [], ly = null;
+    const flush = ()=>{ if(!line.length) return; line.sort((a,b)=>a.x-b.x); const cells=[]; line.forEach(it=>{ const last=cells[cells.length-1]; if(last && it.x-(last.x+last.w) < 3) { last.s += ' '+it.s; last.w = it.x+it.w-last.x; } else cells.push({s:it.s, x:it.x, w:it.w}); }); out.push(cells.map(c=>c.s)); line = []; };
+    items.forEach(it=>{ if(ly!==null && Math.abs(it.y-ly) > 3) flush(); if(!line.length) ly = it.y; line.push(it); });
+    flush();
+  }
+  return out;
+}
+function impParseImobzi(lines){
+  const money = t=>{ const n = impCellNumber(t); return isNaN(n) ? 0 : Math.abs(n); };
+  const toIso = t=>{ const m = String(t).match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? `${m[3]}-${m[2]}-${m[1]}` : ''; };
+  const rows = []; let sec = 0;
+  lines.forEach(cells=>{
+    const head = String(cells[0]||'').match(/^(\d)\.\s+(A Receber|A Pagar|Já recebidas)/i);
+    if(head){ sec = +head[1]; return; }
+    if(!sec || !toIso(cells[0]) || !/R\$/.test(cells[cells.length-1])) return;
+    const venc = toIso(cells[0]), valor = money(cells[cells.length-1]);
+    if(sec===1 || sec===2 || sec===3){
+      const contrato = cells[1]||'', inquilino = cells[2]||'', ref = cells[4]||'', prop = sec===3 ? '' : (cells[3]||'');
+      const desc = `Aluguel contrato ${contrato}${ref?' — ref. '+ref:''}${prop?' (proprietário '+prop+')':''}${sec===3?' (paga em '+(cells[3]||'')+')':''}`;
+      rows.push({sel:sec===1, flag:sec===2?'Projeção':sec===3?'Já recebida':'', tipo:'receber', venc, parte:inquilino, desc, valor:fmtMoneyInput(valor), forma:RECEIVE_METHODS[0], doc:'Contrato '+contrato});
+    } else if(sec===4){
+      rows.push({sel:true, flag:'', tipo:'pagar', venc, parte:cells[1]||'', desc:cells[2]||'Repasse', valor:fmtMoneyInput(valor), forma:impMatchForma(cells[3], PAYMENT_METHODS), doc:''});
+    } else if(sec===5){
+      rows.push({sel:false, flag:'Estimativa', tipo:'pagar', venc, parte:cells[2]||'', desc:`Repasse estimado contrato ${cells[1]||''} (inquilino ${cells[3]||''})`, valor:fmtMoneyInput(valor), forma:PAYMENT_METHODS[0], doc:''});
+    }
+  });
+  return rows;
+}
+
 /* ---- Planilha (Excel/CSV): leitura local por títulos de coluna ---- */
 function impColKey(h){
   const n = impNorm(h);
@@ -6738,7 +6787,18 @@ async function impRead(){
       impStep2('Planilha lida direto no navegador, sem IA.'); return;
     }catch(e){ impStep1('Não foi possível ler a planilha: '+e.message); return; }
   }
-  if(!cfg.url){ impStep1('Para ler PDF ou foto é preciso configurar o Apps Script em Relatórios > Configurar envio. Planilhas Excel/CSV não precisam disso.'); return; }
+  if(mime==='application/pdf'){
+    try{
+      const lines = await pdfTextLines(f), rows = impParseImobzi(lines);
+      if(rows.length){
+        impRows = rows; impRows.forEach(r=>{ r.dup = impIsDup(r); if(r.dup) r.sel = false; });
+        const cnt = fl=>rows.filter(r=>r.flag===fl).length;
+        impStep2(`Relatório do Imobzi reconhecido e lido direto do PDF (sem IA): ${rows.filter(r=>!r.flag && r.tipo==='receber').length} a receber emitidas e ${rows.filter(r=>!r.flag && r.tipo==='pagar').length} repasses a pagar vêm marcadas. Ficaram desmarcadas, para você decidir: ${cnt('Projeção')} projeções de faturas, ${cnt('Estimativa')} estimativas de repasse e ${cnt('Já recebida')} faturas já recebidas.`);
+        return;
+      }
+    }catch(e){ /* PDF sem texto ou formato desconhecido: segue para a leitura por IA */ }
+  }
+  if(!cfg.url){ impStep1('Não consegui ler esse arquivo direto. Para PDF escaneado, foto ou formato desconhecido é preciso configurar o Apps Script em Relatórios > Configurar envio. Planilhas Excel/CSV e o relatório do Imobzi não precisam disso.'); return; }
   body.innerHTML = `<div class="imp-wait"><div class="imp-spin"></div><div><b>Lendo o relatório...</b><br><span class="rp-hint">Pode levar de 10 a 60 segundos. Não feche esta janela.</span></div></div>`;
   foot.innerHTML = '<span></span><span></span>';
   try{
@@ -6750,9 +6810,9 @@ async function impRead(){
     impRows = (j.linhas||[]).map(l=>{
       const tipo = l.tipo==='receber' ? 'receber' : (l.tipo==='pagar' ? 'pagar' : (tipoDica||'pagar'));
       const venc = /^\d{4}-\d{2}-\d{2}$/.test(l.vencimento||'') ? l.vencimento : today;
-      return {sel:true, tipo, venc, parte:String(l.parte||'').trim(), desc:String(l.descricao||'').trim(), valor:fmtMoneyInput(Math.abs(Number(l.valor)||0)), forma:impMatchForma(l.forma, tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS), doc:String(l.documento||'').trim()};
+      return {sel:true, tipo, venc, parte:String(l.parte||'').trim(), desc:String(l.descricao||'').trim(), valor:fmtMoneyInput(Math.abs(Number(l.valor)||0)), forma:impMatchForma(l.forma, tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS), doc:String(l.documento||'').trim(), flag:l.situacao==='projecao'?'Projeção':(l.situacao==='paga'?'Já paga/recebida':'')};
     });
-    impRows.forEach(r=>{ r.dup = impIsDup(r); if(r.dup) r.sel = false; });
+    impRows.forEach(r=>{ r.dup = impIsDup(r); if(r.dup || r.flag) r.sel = false; });
     impStep2(j.observacoes||'');
   }catch(e){
     impStep1('Não foi possível obter a resposta do Apps Script ('+e.message+'). Confira se a implantação está como "Qualquer pessoa" e se a URL e a senha estão certas.');
@@ -6766,7 +6826,7 @@ function impStep2(obs){
     ${obs?`<div class="imp-obs"><b>Observações da leitura:</b> ${obs.replace(/</g,'&lt;')}</div>`:''}
     <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:10px;">Confira cada linha, corrija o que for preciso e desmarque o que não deve entrar. Linhas marcadas como <b>Já existe</b> vêm desmarcadas.</div>
     <datalist id="impDlP">${parts.pagar.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist><datalist id="impDlR">${parts.receber.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist>
-    <div class="table-scroll"><table class="cx-table imp-tbl"><thead><tr><th style="width:30px;"><input type="checkbox" id="impAll" checked></th><th style="width:100px;">Tipo</th><th style="width:128px;">Vencimento</th><th style="width:190px;">Fornecedor / Cliente</th><th>Descrição</th><th style="width:116px;" class="num">Valor</th><th style="width:140px;">Forma</th><th style="width:96px;">Situação</th><th style="width:30px;"></th></tr></thead><tbody id="impTbody"></tbody></table></div>
+    <div class="table-scroll"><table class="cx-table imp-tbl"><thead><tr><th style="width:30px;"><input type="checkbox" id="impAll" checked></th><th style="width:100px;">Tipo</th><th style="width:128px;">Vencimento</th><th style="width:190px;">Fornecedor / Cliente</th><th>Descrição</th><th style="width:116px;" class="num">Valor</th><th style="width:140px;">Forma</th><th style="width:170px;">Situação</th><th style="width:30px;"></th></tr></thead><tbody id="impTbody"></tbody></table></div>
     <div class="imp-total" id="impTotal"></div>`;
   foot.innerHTML = `<span class="rp-hint" id="impCount"></span><div class="mt-btns"><button class="btn" id="impBack">Voltar</button><button class="btn btn-dark" id="impSave">Importar</button></div>`;
   const draw = ()=>{
@@ -6779,7 +6839,7 @@ function impStep2(obs){
         <td><input type="text" class="cx-input" data-k="desc" value="${r.desc.replace(/"/g,'&quot;')}" style="width:100%;"></td>
         <td><input type="text" class="cx-input" data-k="valor" inputmode="numeric" value="${r.valor}" style="width:100%;text-align:right;"></td>
         <td><select class="cx-select" data-k="forma" style="width:100%;">${(r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS).map(m=>`<option ${m===r.forma?'selected':''}>${m}</option>`).join('')}</select></td>
-        <td class="imp-sit">${r.dup?'<span class="imp-tag warn">Já existe</span>':(impPartyExists(r)?'<span class="imp-tag">Novo</span>':'<span class="imp-tag new">Novo + cadastro</span>')}</td>
+        <td class="imp-sit">${impSitHTML(r)}</td>
         <td><button class="ac-x" data-del="1" title="Remover linha">×</button></td>
       </tr>`).join('');
     totals();
@@ -6800,7 +6860,7 @@ function impStep2(obs){
     else if(k==='valor'){ const dg = e.target.value.replace(/\D/g,''); r.valor = dg ? fmtMoneyInput(parseInt(dg,10)/100) : ''; e.target.value = r.valor; }
     else r[k] = e.target.value;
     if(k==='tipo'){ r.forma = impMatchForma('', r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS); draw(); return; }
-    if(['venc','parte','valor','tipo'].includes(k)){ r.dup = impIsDup(r); tr.querySelector('.imp-sit').innerHTML = r.dup?'<span class="imp-tag warn">Já existe</span>':(impPartyExists(r)?'<span class="imp-tag">Novo</span>':'<span class="imp-tag new">Novo + cadastro</span>'); }
+    if(['venc','parte','valor','tipo'].includes(k)){ r.dup = impIsDup(r); tr.querySelector('.imp-sit').innerHTML = impSitHTML(r); }
     totals();
   });
   tb.addEventListener('click', e=>{ const b = e.target.closest('[data-del]'); if(!b) return; impRows.splice(+b.closest('tr').dataset.i,1); if(!impRows.length){ impStep1(); return; } draw(); });
@@ -6810,7 +6870,8 @@ function impStep2(obs){
 }
 function impFindOrCreateParty(tipo, nome){
   const emp = state.filters.empresaId, list = tipo==='pagar' ? SUPPLIERS : CLIENTS, n = impNorm(nome);
-  let p = list.find(x=>x.empresaId===emp && impNorm(x.nome)===n);
+  let p = list.find(x=>x.empresaId===emp && impNorm(x.nome)===n)
+    || list.find(x=>x.empresaId===emp && n.length>=12 && impNorm(x.nome).length>=12 && (impNorm(x.nome).startsWith(n) || n.startsWith(impNorm(x.nome))));
   if(p) return {p, created:false};
   const ac = tipo==='pagar' ? 'PAG-AC' : 'REC-AC';
   p = {id:(tipo==='pagar'?'f':'cl')+Date.now()+Math.floor(Math.random()*1000), empresaId:emp, nome:nome.trim(), nomeFantasia:nome.trim(), cnpj:'', categoria:ac, planoContas:'A classificar', centroCusto:COST_CENTERS[0], historicoPadrao:'', formaPagamentoPadrao:'', pix:'', banco:'', status:'Ativo', observacoes:'Cadastrado na importação de relatório.', createdAt:fmtDateISO(TODAY), email:'', telefone:''};
