@@ -1062,9 +1062,14 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .cp-item em{font-style:normal;color:var(--text-tertiary);font-size:11px;white-space:nowrap;}
 .cp-none{padding:12px;color:var(--text-tertiary);font-size:12px;}
 
-.modal.modal-xl{max-width:1380px;width:97vw;}
-.imp-tbl th,.imp-tbl td{padding:7px 6px;white-space:nowrap;}
-.imp-tbl .cx-input,.imp-tbl .cx-select{height:30px;}
+.modal.modal-xl{max-width:98vw;width:98vw;}
+.imp-tbl{width:max-content;min-width:100%;}
+.imp-tbl{font-size:12px;}
+.imp-tbl th,.imp-tbl td{padding:6px 6px;white-space:nowrap;}
+.imp-tbl .imp-c0{width:58px;position:sticky;left:0;z-index:2;background:#fff;}
+.imp-tbl th.imp-c0{background:#fafafb;}
+.imp-tbl .cx-input,.imp-tbl .cx-select{height:28px;font-size:12px;}
+.imp-tbl tbody tr:hover .imp-c0{background:#f8f9fb;}
 .imp-off{opacity:.5;}
 .imp-tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px;background:#f3f4f6;color:#374151;white-space:nowrap;}
 .imp-tag.warn{background:#fff6df;color:#8a5a00;} .imp-tag.new{background:#eaf1ff;color:#2f5bd7;}
@@ -1077,7 +1082,6 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .imp-done{text-align:center;padding:30px 10px;display:flex;flex-direction:column;align-items:center;gap:8px;}
 .imp-ok{width:46px;height:46px;border-radius:50%;background:#e9faf1;color:#0f8a55;font-size:24px;display:flex;align-items:center;justify-content:center;}
 .lc-empty .cx-btn{margin:0;}
-.imp-tbl td:nth-child(5){min-width:190px;}
 
 .doc-ai{display:none;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px;}
 .doc-ai .rp-hint{flex:1 1 220px;line-height:1.4;}
@@ -1087,6 +1091,8 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .cx-btn.danger[disabled]{color:var(--text-tertiary);border-color:var(--border-color-strong);}
 .imp-bulk{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#f6f7f9;border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;}
 .imp-bulk .cp{width:100%;} .imp-bulk-f{position:relative;}
+.imp-tbl td.imp-sit{white-space:normal;line-height:1.7;}
+.imp-tbl td.imp-sit .imp-tag{display:table;margin:1px 0;}
 </style>
 </head>
 <body>
@@ -6662,8 +6668,8 @@ function impIsDup(r){
   return RECEIVABLES.some(a=>a.empresaId===emp && a.vencimento===r.venc && Math.abs(a.valor-v)<0.005 && impNorm((clientById(a.clienteId)||{}).nome)===nome);
 }
 function impSitHTML(r){
-  const flag = (r.flag ? `<span class="imp-tag proj">${r.flag}</span> ` : '') + (r.note ? `<span class="imp-tag warn">${r.note}</span> ` : '');
-  return flag + (r.dup ? '<span class="imp-tag warn">Já existe</span>' : (impPartyExists(r) ? '<span class="imp-tag">Novo</span>' : '<span class="imp-tag new">Novo + cadastro</span>'));
+  const flag = (r.flag ? `<span class="imp-tag proj">${r.flag}</span> ` : '') + (r.note ? `<span class="imp-tag warn">⚠ ${r.note}</span> ` : '');
+  return flag + (r.dup ? '<span class="imp-tag warn">Já existe</span>' : (impPartyExists(r) ? '<span class="imp-tag">Novo</span>' : '<span class="imp-tag new">Novo cadastro</span>'));
 }
 function impPartyExists(r){
   const emp = state.filters.empresaId, nome = impNorm(r.parte);
@@ -6710,12 +6716,13 @@ function impParseImobzi(lines){
     const venc = toIso(cells[0]), valor = money(cells[cells.length-1]);
     if(sec===1 || sec===2 || sec===3){
       const contrato = cells[1]||'', inquilino = cells[2]||'', ref = cells[4]||'', prop = sec===3 ? '' : (cells[3]||'');
-      const desc = `Aluguel contrato ${contrato}${ref?' — ref. '+ref:''}${prop?' (proprietário '+prop+')':''}${sec===3?' (paga em '+(cells[3]||'')+')':''}`;
-      rows.push({sel:sec===1, flag:sec===2?'Projeção':sec===3?'Já recebida':'', tipo:'receber', venc, parte:inquilino, desc, valor:fmtMoneyInput(valor), forma:RECEIVE_METHODS[0], doc:'Contrato '+contrato, contrato, _sec:sec});
+      const desc = `Aluguel contrato ${contrato}${ref?' — ref. '+ref:''}`;
+      const obs = [prop?'Proprietário: '+prop:'', sec===3?'Paga em '+(cells[3]||''):''].filter(Boolean).join(' · ');
+      rows.push({sel:sec===1, flag:sec===2?'Projeção':sec===3?'Já recebida':'', tipo:'receber', venc, parte:inquilino, desc, obs, valor:fmtMoneyInput(valor), forma:RECEIVE_METHODS[0], doc:'Contrato '+contrato, contrato, _sec:sec});
     } else if(sec===4){
       rows.push({sel:true, flag:'', tipo:'pagar', venc, parte:cells[1]||'', desc:cells[2]||'Repasse', valor:fmtMoneyInput(valor), forma:impMatchForma(cells[3], PAYMENT_METHODS), doc:'', contrato:((cells[2]||'').match(/(\d+)\s*$/)||[])[1]||'', _sec:4});
     } else if(sec===5){
-      rows.push({sel:false, flag:'Estimativa', tipo:'pagar', venc, parte:cells[2]||'', desc:`Repasse estimado contrato ${cells[1]||''} (inquilino ${cells[3]||''})`, valor:fmtMoneyInput(valor), forma:PAYMENT_METHODS[0], doc:'', contrato:cells[1]||'', _sec:5});
+      rows.push({sel:false, flag:'Estimativa', tipo:'pagar', venc, parte:cells[2]||'', desc:`Repasse estimado contrato ${cells[1]||''}`, obs:`Inquilino: ${cells[3]||''}`, valor:fmtMoneyInput(valor), forma:PAYMENT_METHODS[0], doc:'', contrato:cells[1]||'', _sec:5});
     }
   });
   // Aluguel x repasse por contrato (vencimentos até 10 dias de distância): o repasse é valor de terceiros; a diferença é a taxa de administração
@@ -6727,7 +6734,7 @@ function impParseImobzi(lines){
       pool.forEach(x=>x._used = true);
       const v = parseMoney(r.valor), rep = Math.min(v, pool.reduce((t,x)=>t+(parseMoney(x.valor)||0),0));
       r.repasse = fmtMoneyInput(rep); r.conta = CONTA_TAXA_ADM;
-      r.desc += ` — repasse ${fmtCurrency(rep)} · taxa adm. ${fmtCurrency(v-rep)}`;
+      r.obs = [r.obs, `Repasse ${fmtCurrency(rep)} · taxa de administração ${fmtCurrency(v-rep)}`].filter(Boolean).join(' · ');
     } else { r.conta = 'REC-AC'; r.note = 'Sem repasse'; }
   });
   // Linhas que o próprio relatório avisa como "destacadas em amarelo" (possível duplicidade): contrato + valor
@@ -6916,24 +6923,24 @@ function impStep2(obs){
       <select class="cx-select" id="impBulkCC" style="width:160px;"><option value="">Centro de custo</option>${COST_CENTERS.map(c=>`<option>${c}</option>`).join('')}</select>
       <button class="btn" id="impBulkApply">Aplicar</button><span class="rp-hint" id="impBulkMsg"></span></div>
     <datalist id="impDlP">${parts.pagar.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist><datalist id="impDlR">${parts.receber.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist>
-    <div class="table-scroll"><table class="cx-table imp-tbl"><thead><tr><th style="width:30px;"><input type="checkbox" id="impAll" checked></th><th style="width:100px;">Tipo</th><th style="width:128px;">Vencimento</th><th style="width:190px;">Fornecedor / Cliente</th><th>Descrição</th><th style="width:112px;" class="num">Valor</th><th style="width:112px;">Forma</th>${showRep?'<th style="width:112px;" class="num">Repasse (R$)</th>':''}<th style="width:210px;">Conta contábil</th><th style="width:130px;">Centro de custo</th><th style="width:170px;">Situação</th><th style="width:30px;"></th></tr></thead><tbody id="impTbody"></tbody></table></div>
+    <div class="table-scroll"><table class="cx-table imp-tbl"><thead><tr><th class="imp-c0"><input type="checkbox" id="impAll" checked></th><th>Situação</th><th>Tipo</th><th>Vencimento</th><th>Fornecedor / Cliente</th><th class="num">Valor</th>${showRep?'<th class="num">Repasse (R$)</th>':''}<th>Forma de pagamento</th><th>Conta contábil</th><th>Centro de custo</th><th>Descrição</th></tr></thead><tbody id="impTbody"></tbody></table></div>
     <div class="imp-total" id="impTotal"></div>`;
   foot.innerHTML = `<span class="rp-hint" id="impCount"></span><div class="mt-btns"><button class="btn" id="impBack">Voltar</button><button class="btn btn-dark" id="impSave">Importar</button></div>`;
   const draw = ()=>{
+    const chw = (t,min,max)=> Math.round(Math.min(max, Math.max(min, String(t||'').length*6.3+32)))+'px';
     body.querySelector('#impTbody').innerHTML = impRows.map((r,i)=>`
       <tr data-i="${i}" class="${r.sel?'':'imp-off'}">
-        <td><input type="checkbox" data-k="sel" ${r.sel?'checked':''}></td>
-        <td><select class="cx-select" data-k="tipo" style="width:100%;"><option value="pagar" ${r.tipo==='pagar'?'selected':''}>Pagar</option><option value="receber" ${r.tipo==='receber'?'selected':''}>Receber</option></select></td>
-        <td><input type="date" class="cx-input" data-k="venc" value="${r.venc}" style="width:100%;"></td>
-        <td><input type="text" class="cx-input" data-k="parte" list="${r.tipo==='pagar'?'impDlP':'impDlR'}" value="${r.parte.replace(/"/g,'&quot;')}" style="width:100%;"></td>
-        <td><input type="text" class="cx-input" data-k="desc" value="${r.desc.replace(/"/g,'&quot;')}" style="width:100%;"></td>
-        <td><input type="text" class="cx-input" data-k="valor" inputmode="numeric" value="${r.valor}" style="width:100%;text-align:right;"></td>
-        <td><select class="cx-select" data-k="forma" style="width:100%;">${(r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS).map(m=>`<option ${m===r.forma?'selected':''}>${m}</option>`).join('')}</select></td>
-        ${showRep?`<td>${r.tipo==='receber'?`<input type="text" class="cx-input" data-k="repasse" inputmode="numeric" value="${r.repasse||''}" placeholder="R$ 0,00" style="width:100%;text-align:right;">`:''}</td>`:''}
-        <td><select class="cx-select imp-conta" data-k="conta" style="width:100%;"><option value="${r.conta}">${contaLabel(r.conta)}</option></select></td>
-        <td><select class="cx-select" data-k="cc" style="width:100%;">${COST_CENTERS.map(c=>`<option ${c===r.cc?'selected':''}>${c}</option>`).join('')}</select></td>
+        <td class="imp-c0"><input type="checkbox" data-k="sel" ${r.sel?'checked':''}> <button class="ac-x" data-del="1" title="Remover linha">×</button></td>
         <td class="imp-sit">${impSitHTML(r)}</td>
-        <td><button class="ac-x" data-del="1" title="Remover linha">×</button></td>
+        <td><select class="cx-select" data-k="tipo" style="width:96px;"><option value="pagar" ${r.tipo==='pagar'?'selected':''}>Pagar</option><option value="receber" ${r.tipo==='receber'?'selected':''}>Receber</option></select></td>
+        <td><input type="date" class="cx-input" data-k="venc" value="${r.venc}" style="width:136px;"></td>
+        <td><input type="text" class="cx-input" data-k="parte" list="${r.tipo==='pagar'?'impDlP':'impDlR'}" value="${r.parte.replace(/"/g,'&quot;')}" style="width:${chw(r.parte,150,330)};"></td>
+        <td><input type="text" class="cx-input" data-k="valor" inputmode="numeric" value="${r.valor}" style="width:118px;text-align:right;"></td>
+        ${showRep?`<td>${r.tipo==='receber'?`<input type="text" class="cx-input" data-k="repasse" inputmode="numeric" value="${r.repasse||''}" placeholder="R$ 0,00" style="width:118px;text-align:right;">`:''}</td>`:''}
+        <td><select class="cx-select" data-k="forma" style="width:${chw(r.forma,112,190)};">${(r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS).map(m=>`<option ${m===r.forma?'selected':''}>${m}</option>`).join('')}</select></td>
+        <td><select class="cx-select imp-conta" data-k="conta" style="width:${chw(contaLabel(r.conta),180,420)};"><option value="${r.conta}">${contaLabel(r.conta)}</option></select></td>
+        <td><select class="cx-select" data-k="cc" style="width:${chw(r.cc,112,170)};">${COST_CENTERS.map(c=>`<option ${c===r.cc?'selected':''}>${c}</option>`).join('')}</select></td>
+        <td><input type="text" class="cx-input" data-k="desc" value="${r.desc.replace(/"/g,'&quot;')}" style="width:${chw(r.desc,260,760)};"></td>
       </tr>`).join('');
     totals();
   };
@@ -6953,6 +6960,8 @@ function impStep2(obs){
     if(k==='sel') { r.sel = e.target.checked; tr.classList.toggle('imp-off', !r.sel); }
     else if(k==='valor' || k==='repasse'){ const dg = e.target.value.replace(/\D/g,''); r[k] = dg ? fmtMoneyInput(parseInt(dg,10)/100) : ''; e.target.value = r[k]; }
     else r[k] = e.target.value;
+    if(k==='parte' || k==='desc') e.target.style.width = Math.round(Math.min(k==='desc'?760:330, Math.max(k==='desc'?260:150, String(r[k]).length*6.3+32)))+'px';
+    if(k==='conta'){ const t = e.target.selectedOptions[0]; if(t) e.target.style.width = Math.round(Math.min(420, Math.max(180, t.text.length*6.3+32)))+'px'; }
     if(k==='tipo'){ r.forma = impMatchForma('', r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS); impDefaults(r); draw(); return; }
     if(k==='parte' && impAcOf(r.tipo)===r.conta){ const c0 = r.conta; impDefaults(r); if(r.conta!==c0){ tr.querySelector('[data-k=conta]').innerHTML = `<option value="${r.conta}">${contaLabel(r.conta)}</option>`; tr.querySelector('[data-k=cc]').value = r.cc; } }
     if(['venc','parte','valor','tipo'].includes(k)){ r.dup = impIsDup(r); tr.querySelector('.imp-sit').innerHTML = impSitHTML(r); }
@@ -7018,11 +7027,11 @@ function impSave(){
     const doc = r.doc || 'IMP-'+id, anexos = impFile ? [{tipo:'Relatório importado', nome:impFile.name}] : [];
     if(r.tipo==='pagar'){
       state.accounts.unshift({id:'AP'+id, empresaId:emp, fornecedorId:p.id, documento:doc, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), emissao:fmtDateISO(TODAY), vencimento:r.venc, valor,
-        categoria:conta, centroCusto:cc, formaPagamento:r.forma, pixCodigo:'', contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.', status:computeStatusForDate(r.venc), dataPagamento:null, planoContas:contaLabel(conta), anexos});
+        categoria:conta, centroCusto:cc, formaPagamento:r.forma, pixCodigo:'', contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.'+(r.obs?' '+r.obs:''), status:computeStatusForDate(r.venc), dataPagamento:null, planoContas:contaLabel(conta), anexos});
       nP++;
     } else {
       RECEIVABLES.unshift({id:'AR'+id, empresaId:emp, clienteId:p.id, documento:doc, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), emissao:fmtDateISO(TODAY), vencimento:r.venc, valor,
-        repasse:(parseMoney(r.repasse)||0), categoria:conta, centroCusto:cc, formaRecebimento:r.forma, contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.', status:new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer', dataRecebimento:null, valorRecebido:null, planoContas:contaLabel(conta), anexos});
+        repasse:(parseMoney(r.repasse)||0), categoria:conta, centroCusto:cc, formaRecebimento:r.forma, contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.'+(r.obs?' '+r.obs:''), status:new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer', dataRecebimento:null, valorRecebido:null, planoContas:contaLabel(conta), anexos});
       nR++;
     }
   });
