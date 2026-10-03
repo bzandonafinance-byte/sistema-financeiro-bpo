@@ -1062,7 +1062,7 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .cp-item em{font-style:normal;color:var(--text-tertiary);font-size:11px;white-space:nowrap;}
 .cp-none{padding:12px;color:var(--text-tertiary);font-size:12px;}
 
-.modal.modal-xl{max-width:1180px;width:96vw;}
+.modal.modal-xl{max-width:1380px;width:97vw;}
 .imp-tbl th,.imp-tbl td{padding:7px 6px;white-space:nowrap;}
 .imp-tbl .cx-input,.imp-tbl .cx-select{height:30px;}
 .imp-off{opacity:.5;}
@@ -1085,6 +1085,8 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .cx-btn.danger{color:#b42318;border-color:#f1b8b3;background:#fff;}
 .cx-btn.danger:hover{background:#fdecec;}
 .cx-btn.danger[disabled]{color:var(--text-tertiary);border-color:var(--border-color-strong);}
+.imp-bulk{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#f6f7f9;border:1px solid var(--border-color);border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;}
+.imp-bulk .cp{width:100%;} .imp-bulk-f{position:relative;}
 </style>
 </head>
 <body>
@@ -6803,7 +6805,7 @@ function impOpen(preset){
 function impStep1(msg){
   const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
   body.innerHTML = `
-    <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">Anexe um relatório de contas a pagar e/ou a receber: <b>planilha Excel/CSV</b> (lida direto, sem IA) ou <b>PDF/foto</b> (lido pela IA). Você vê uma <b>prévia para conferir</b> antes de salvar. Tudo entra como <b>A classificar</b>, e você reclassifica depois, em lote. <a class="subpanel-link" id="impModelo">Baixar modelo de planilha</a></div>
+    <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">Anexe um relatório de contas a pagar e/ou a receber: <b>planilha Excel/CSV</b> (lida direto, sem IA) ou <b>PDF/foto</b> (lido pela IA). Você vê uma <b>prévia para conferir</b> antes de salvar. Cada linha entra com a <b>conta contábil e o centro de custo</b> que você escolher na prévia (ou <b>A classificar</b>, para reclassificar depois, em lote). <a class="subpanel-link" id="impModelo">Baixar modelo de planilha</a></div>
     <div class="anexo-row"><div class="upload-drop" id="impDrop"><span class="up-clip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></span><span><b>Clique para anexar</b> ou arraste o arquivo aqui<br><span class="up-hint">Excel, CSV, PDF, JPG, PNG ou WEBP (máx. 10MB)</span></span><input type="file" id="impFileInput" accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
       <div class="anexo-chip" id="impChip" style="display:none;"><span class="ac-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><polyline points="15 2 15 7 20 7"/></svg></span><div class="ac-txt"><div class="ac-n" id="impChipN"></div><div class="ac-s" id="impChipS"></div></div></div></div>
     <div class="form-grid" style="margin-top:14px;"><div class="form-field"><label>O relatório contém</label><select id="impTipo"><option value="">Detectar sozinho (pagar e receber)</option><option value="pagar" ${impPreset==='pagar'?'selected':''}>Só contas a pagar</option><option value="receber" ${impPreset==='receber'?'selected':''}>Só contas a receber</option></select></div></div>
@@ -6877,12 +6879,17 @@ async function impRead(){
 function impStep2(obs){
   const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
   if(!impRows.length){ impStep1('A IA não encontrou nenhuma conta nesse arquivo.'+(obs?' Observação: '+obs:'')); return; }
+  impRows.forEach(r=>{ if(!r.conta) impDefaults(r); });
   const parts = {pagar:[...new Set(SUPPLIERS.filter(x=>x.empresaId===state.filters.empresaId).map(x=>x.nome))], receber:[...new Set(CLIENTS.filter(x=>x.empresaId===state.filters.empresaId).map(x=>x.nome))]};
   body.innerHTML = `
     ${obs?`<div class="imp-obs"><b>Observações da leitura:</b> ${obs.replace(/</g,'&lt;')}</div>`:''}
     <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:10px;">Confira cada linha, corrija o que for preciso e desmarque o que não deve entrar. Linhas marcadas como <b>Já existe</b> vêm desmarcadas.</div>
+    <div class="imp-bulk"><b>Aplicar às linhas marcadas:</b>
+      <div class="imp-bulk-f" style="min-width:260px;flex:1 1 260px;"><select id="impBulkConta" style="display:none;"></select></div>
+      <select class="cx-select" id="impBulkCC" style="width:160px;"><option value="">Centro de custo</option>${COST_CENTERS.map(c=>`<option>${c}</option>`).join('')}</select>
+      <button class="btn" id="impBulkApply">Aplicar</button><span class="rp-hint" id="impBulkMsg"></span></div>
     <datalist id="impDlP">${parts.pagar.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist><datalist id="impDlR">${parts.receber.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist>
-    <div class="table-scroll"><table class="cx-table imp-tbl"><thead><tr><th style="width:30px;"><input type="checkbox" id="impAll" checked></th><th style="width:100px;">Tipo</th><th style="width:128px;">Vencimento</th><th style="width:190px;">Fornecedor / Cliente</th><th>Descrição</th><th style="width:116px;" class="num">Valor</th><th style="width:140px;">Forma</th><th style="width:170px;">Situação</th><th style="width:30px;"></th></tr></thead><tbody id="impTbody"></tbody></table></div>
+    <div class="table-scroll"><table class="cx-table imp-tbl"><thead><tr><th style="width:30px;"><input type="checkbox" id="impAll" checked></th><th style="width:100px;">Tipo</th><th style="width:128px;">Vencimento</th><th style="width:190px;">Fornecedor / Cliente</th><th>Descrição</th><th style="width:112px;" class="num">Valor</th><th style="width:112px;">Forma</th><th style="width:210px;">Conta contábil</th><th style="width:130px;">Centro de custo</th><th style="width:170px;">Situação</th><th style="width:30px;"></th></tr></thead><tbody id="impTbody"></tbody></table></div>
     <div class="imp-total" id="impTotal"></div>`;
   foot.innerHTML = `<span class="rp-hint" id="impCount"></span><div class="mt-btns"><button class="btn" id="impBack">Voltar</button><button class="btn btn-dark" id="impSave">Importar</button></div>`;
   const draw = ()=>{
@@ -6895,6 +6902,8 @@ function impStep2(obs){
         <td><input type="text" class="cx-input" data-k="desc" value="${r.desc.replace(/"/g,'&quot;')}" style="width:100%;"></td>
         <td><input type="text" class="cx-input" data-k="valor" inputmode="numeric" value="${r.valor}" style="width:100%;text-align:right;"></td>
         <td><select class="cx-select" data-k="forma" style="width:100%;">${(r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS).map(m=>`<option ${m===r.forma?'selected':''}>${m}</option>`).join('')}</select></td>
+        <td><select class="cx-select imp-conta" data-k="conta" style="width:100%;"><option value="${r.conta}">${contaLabel(r.conta)}</option></select></td>
+        <td><select class="cx-select" data-k="cc" style="width:100%;">${COST_CENTERS.map(c=>`<option ${c===r.cc?'selected':''}>${c}</option>`).join('')}</select></td>
         <td class="imp-sit">${impSitHTML(r)}</td>
         <td><button class="ac-x" data-del="1" title="Remover linha">×</button></td>
       </tr>`).join('');
@@ -6915,19 +6924,52 @@ function impStep2(obs){
     if(k==='sel') { r.sel = e.target.checked; tr.classList.toggle('imp-off', !r.sel); }
     else if(k==='valor'){ const dg = e.target.value.replace(/\D/g,''); r.valor = dg ? fmtMoneyInput(parseInt(dg,10)/100) : ''; e.target.value = r.valor; }
     else r[k] = e.target.value;
-    if(k==='tipo'){ r.forma = impMatchForma('', r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS); draw(); return; }
+    if(k==='tipo'){ r.forma = impMatchForma('', r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS); impDefaults(r); draw(); return; }
+    if(k==='parte' && impAcOf(r.tipo)===r.conta){ const c0 = r.conta; impDefaults(r); if(r.conta!==c0){ tr.querySelector('[data-k=conta]').innerHTML = `<option value="${r.conta}">${contaLabel(r.conta)}</option>`; tr.querySelector('[data-k=cc]').value = r.cc; } }
     if(['venc','parte','valor','tipo'].includes(k)){ r.dup = impIsDup(r); tr.querySelector('.imp-sit').innerHTML = impSitHTML(r); }
     totals();
+  });
+  const fillConta = sel=>{
+    if(sel.dataset.full) return; const r = impRows[+sel.closest('tr').dataset.i];
+    sel.innerHTML = contaOptionsHTML(r.tipo==='pagar' ? contasPagar() : contasReceber(), r.conta); sel.value = r.conta; sel.dataset.full = '1';
+  };
+  tb.addEventListener('mousedown', e=>{ if(e.target.matches('.imp-conta')) fillConta(e.target); });
+  tb.addEventListener('focusin', e=>{ if(e.target.matches('.imp-conta')) fillConta(e.target); });
+  const bulk = body.querySelector('#impBulkConta');
+  bulk.innerHTML = `<option value="">— conta contábil (não alterar) —</option>` + contaOptionsHTML(contasPagar().concat(contasReceber()));
+  makeContaPicker('impBulkConta'); bulk.value = ''; bulk._cpRefresh();
+  body.querySelector('#impBulkApply').addEventListener('click', ()=>{
+    const conta = bulk.value, cc = body.querySelector('#impBulkCC').value, msg = body.querySelector('#impBulkMsg');
+    if(!conta && !cc){ msg.textContent = 'Escolha uma conta contábil e/ou um centro de custo.'; return; }
+    let n = 0, ign = 0;
+    impRows.filter(r=>r.sel).forEach(r=>{
+      if(conta){ if(impContaValida(conta, r.tipo) || conta===impAcOf(r.tipo)){ r.conta = conta; } else { ign++; } }
+      if(cc) r.cc = cc; n++;
+    });
+    draw(); msg.textContent = `Aplicado a ${n} linha(s)` + (ign ? ` · conta não aplicada em ${ign} (tipo diferente: despesa x receita)` : '') + '.';
   });
   tb.addEventListener('click', e=>{ const b = e.target.closest('[data-del]'); if(!b) return; impRows.splice(+b.closest('tr').dataset.i,1); if(!impRows.length){ impStep1(); return; } draw(); });
   body.querySelector('#impAll').addEventListener('change', e=>{ impRows.forEach(r=>r.sel=e.target.checked); draw(); });
   foot.querySelector('#impBack').addEventListener('click', ()=>impStep1());
   foot.querySelector('#impSave').addEventListener('click', impSave);
 }
-function impFindOrCreateParty(tipo, nome){
+function impFindParty(tipo, nome){
   const emp = state.filters.empresaId, list = tipo==='pagar' ? SUPPLIERS : CLIENTS, n = impNorm(nome);
-  let p = list.find(x=>x.empresaId===emp && impNorm(x.nome)===n)
-    || list.find(x=>x.empresaId===emp && n.length>=12 && impNorm(x.nome).length>=12 && (impNorm(x.nome).startsWith(n) || n.startsWith(impNorm(x.nome))));
+  if(!n) return null;
+  return list.find(x=>x.empresaId===emp && impNorm(x.nome)===n)
+    || list.find(x=>x.empresaId===emp && n.length>=12 && impNorm(x.nome).length>=12 && (impNorm(x.nome).startsWith(n) || n.startsWith(impNorm(x.nome)))) || null;
+}
+const impAcOf = tipo=> tipo==='receber' ? 'REC-AC' : 'PAG-AC';
+function impContaValida(cod, tipo){ const a = contaByCod(cod); return !!a && a.nat === (tipo==='receber' ? 'C' : 'D'); }
+// Conta contábil e centro de custo sugeridos: o que estiver no cadastro do fornecedor/cliente; senão "A classificar"
+function impDefaults(r){
+  const p = impFindParty(r.tipo, r.parte);
+  r.conta = (p && p.categoria && impContaValida(p.categoria, r.tipo)) ? p.categoria : impAcOf(r.tipo);
+  r.cc = (p && p.centroCusto && COST_CENTERS.includes(p.centroCusto)) ? p.centroCusto : COST_CENTERS[0];
+}
+function impFindOrCreateParty(tipo, nome){
+  const emp = state.filters.empresaId, list = tipo==='pagar' ? SUPPLIERS : CLIENTS;
+  let p = impFindParty(tipo, nome);
   if(p) return {p, created:false};
   const ac = tipo==='pagar' ? 'PAG-AC' : 'REC-AC';
   p = {id:(tipo==='pagar'?'f':'cl')+Date.now()+Math.floor(Math.random()*1000), empresaId:emp, nome:nome.trim(), nomeFantasia:nome.trim(), cnpj:'', categoria:ac, planoContas:'A classificar', centroCusto:COST_CENTERS[0], historicoPadrao:'', formaPagamentoPadrao:'', pix:'', banco:'', status:'Ativo', observacoes:'Cadastrado na importação de relatório.', createdAt:fmtDateISO(TODAY), email:'', telefone:''};
@@ -6938,25 +6980,28 @@ function impSave(){
   const sel = impRows.filter(r=>r.sel);
   const bad = sel.find(r=>!r.parte.trim() || isNaN(parseMoney(r.valor)) || parseMoney(r.valor)<=0 || !r.venc);
   if(bad){ showToast('Há linhas sem fornecedor/cliente, vencimento ou valor. Corrija ou desmarque.'); return; }
-  const emp = state.filters.empresaId; let nP=0, nR=0, novas=0; const stamp = Date.now();
+  const emp = state.filters.empresaId; let nP=0, nR=0, novas=0, learned=false; const stamp = Date.now();
   sel.forEach((r,i)=>{
     const {p, created} = impFindOrCreateParty(r.tipo, r.parte); if(created) novas++;
+    const conta = r.conta || impAcOf(r.tipo), cc = r.cc || COST_CENTERS[0];
+    if(conta!==impAcOf(r.tipo) && (!p.categoria || p.categoria===impAcOf(r.tipo))){ p.categoria = conta; p.planoContas = contaLabel(conta); p.centroCusto = cc; learned = true; }
     const valor = parseMoney(r.valor), id = String(stamp).slice(-6)+String(i).padStart(3,'0');
     const doc = r.doc || 'IMP-'+id, anexos = impFile ? [{tipo:'Relatório importado', nome:impFile.name}] : [];
     if(r.tipo==='pagar'){
       state.accounts.unshift({id:'AP'+id, empresaId:emp, fornecedorId:p.id, documento:doc, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), emissao:fmtDateISO(TODAY), vencimento:r.venc, valor,
-        categoria:'PAG-AC', centroCusto:COST_CENTERS[0], formaPagamento:r.forma, pixCodigo:'', contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.', status:computeStatusForDate(r.venc), dataPagamento:null, planoContas:'A classificar', anexos});
+        categoria:conta, centroCusto:cc, formaPagamento:r.forma, pixCodigo:'', contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.', status:computeStatusForDate(r.venc), dataPagamento:null, planoContas:contaLabel(conta), anexos});
       nP++;
     } else {
       RECEIVABLES.unshift({id:'AR'+id, empresaId:emp, clienteId:p.id, documento:doc, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), emissao:fmtDateISO(TODAY), vencimento:r.venc, valor,
-        categoria:'REC-AC', centroCusto:COST_CENTERS[0], formaRecebimento:r.forma, contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.', status:new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer', dataRecebimento:null, valorRecebido:null, planoContas:'A classificar', anexos});
+        categoria:conta, centroCusto:cc, formaRecebimento:r.forma, contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.', status:new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer', dataRecebimento:null, valorRecebido:null, planoContas:contaLabel(conta), anexos});
       nR++;
     }
   });
-  saveAccounts(state.accounts); saveReceivables();
+  saveAccounts(state.accounts); saveReceivables(); if(learned){ persist(SUPPLIERS_KEY, SUPPLIERS); persist(CLIENTS_KEY, CLIENTS); }
+  const nAC = sel.filter(r=>(r.conta||impAcOf(r.tipo))===impAcOf(r.tipo)).length;
   const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
   body.innerHTML = `<div class="imp-done"><div class="imp-ok">✓</div><div class="lc-empty-title">${nP+nR} lançamento(s) importado(s)</div>
-    <div class="lc-empty-text">${nP} conta(s) a pagar e ${nR} a receber${novas?`, com ${novas} novo(s) cadastro(s) de fornecedor/cliente`:''}. Todos estão como <b>A classificar</b>: use <b>Editar em lote</b> nas telas de Contas para reclassificar.</div></div>`;
+    <div class="lc-empty-text">${nP} conta(s) a pagar e ${nR} a receber${novas?`, com ${novas} novo(s) cadastro(s) de fornecedor/cliente`:''}. ${nAC ? `<b>${nAC}</b> ficaram como <b>A classificar</b>: use <b>Editar em lote</b> nas telas de Contas para reclassificar.` : 'Todos já entraram classificados.'}</div></div>`;
   foot.innerHTML = `<span></span><div class="mt-btns"><button class="btn" id="impGoPag">Ver Contas a Pagar</button><button class="btn" id="impGoRec">Ver Contas a Receber</button><button class="btn btn-dark" id="impEnd">Concluir</button></div>`;
   const close = ()=>{ document.getElementById('impOverlay').classList.remove('open'); };
   foot.querySelector('#impGoPag').addEventListener('click', ()=>{ close(); navigateTo('contas-pagar'); });
