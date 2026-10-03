@@ -1510,6 +1510,7 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
         <div class="form-field"><label>Centro de custo</label><select id="rCentroCusto"></select></div>
         <div class="form-field"><label>Forma de recebimento</label><select id="rFormaRecebimento"></select></div>
         <div class="form-field"><label>Conta bancária</label><select id="rContaBancaria"></select></div>
+        <div class="form-field"><label>Repasse a terceiros (R$)</label><input type="text" inputmode="numeric" id="rRepasse" placeholder="R$ 0,00"><span class="rp-hint">Parte que não é receita sua (ex.: repasse ao proprietário). Fica fora da DRE.</span></div>
         <div class="form-field col-span-2" style="display:flex;flex-direction:row;gap:26px;align-items:center;padding-top:4px;">
           <label class="lanc-check"><input type="checkbox" id="rRecorrente"> Lançamento recorrente</label>
           <label class="lanc-check"><input type="checkbox" id="rParcelado"> Parcelado</label>
@@ -1947,11 +1948,22 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : `${a.cod} · ${a.nome}`; }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-function contasPagar(){ return [CONTAS_AC[0]].concat(PLANO.filter(a=>a.tipo==='A' && a.aceita && a.status==='Ativa' && a.dem==='DRE' && a.nat==='D')); }
-function contasReceber(){ return [CONTAS_AC[1]].concat(PLANO.filter(a=>a.tipo==='A' && a.aceita && a.status==='Ativa' && a.dem==='DRE' && a.nat==='C')); }
+const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
+const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
+function contaAtiva(a){ return a.tipo==='A' && a.aceita && a.status==='Ativa'; }
+// Resultado (DRE) por natureza + contas patrimoniais (BP) para qualquer lado: BP não entra na DRE
+function contasPagar(){ return [CONTAS_AC[0]].concat(PLANO.filter(a=>contaAtiva(a) && ((a.dem==='DRE' && a.nat==='D') || a.dem==='BP'))); }
+function contasReceber(){ return [CONTAS_AC[1]].concat(PLANO.filter(a=>contaAtiva(a) && ((a.dem==='DRE' && a.nat==='C') || a.dem==='BP'))); }
+function contaServe(cod, tipo){
+  const a = contaByCod(cod); if(!a) return false;
+  if(a.sistema) return a.cod === (tipo==='receber' ? 'REC-AC' : 'PAG-AC');
+  if(a.dem==='BP') return true;
+  return a.dem==='DRE' && a.nat === (tipo==='receber' ? 'C' : 'D');
+}
+function contaEhBP(cod){ const a = contaByCod(cod); return !!a && a.dem==='BP'; }
 function catsPagar(){ return contasPagar().map(a=>a.cod); }
 function catsReceber(){ return contasReceber().map(a=>a.cod); }
-function contaOptionsHTML(list, sel){ return list.map(a=>`<option value="${a.cod}" data-g="${a.sistema?'':(contaGrupoNome(a.cod))}" ${a.cod===sel?'selected':''}>${a.sistema?'A classificar':a.cod+' · '+a.nome}</option>`).join(''); }
+function contaOptionsHTML(list, sel){ return list.map(a=>`<option value="${a.cod}" data-g="${a.sistema?'':(a.dem==='BP' ? 'Balanço · '+(a.sub||a.grupo) : contaGrupoNome(a.cod))}" ${a.cod===sel?'selected':''}>${a.sistema?'A classificar':a.cod+' · '+a.nome}</option>`).join(''); }
 // migra categorias antigas (nomes) para códigos do plano; o que não for reconhecido vira "A classificar"
 const CONTA_LEGACY = {
   'Pessoal - Salários e Encargos':'6.01.001','Pessoal - Benefícios':'6.01.020','Ocupação - Aluguel e Condomínio':'6.02.001','Utilidades - Energia Elétrica':'6.02.004',
@@ -3323,7 +3335,7 @@ function parseMoney(v){ if(typeof v==='number') return v; const d=String(v||'').
 function fmtMoneyInput(v){ if(v===null||v===undefined||v===''||isNaN(v)) return ''; return 'R$ '+Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function setMoney(id, v){ document.getElementById(id).value = fmtMoneyInput(v); }
 function bindMoney(id){ const el=document.getElementById(id); el.addEventListener('input', ()=>{ const d=el.value.replace(/\D/g,''); el.value = d ? fmtMoneyInput(parseInt(d,10)/100) : ''; }); }
-['fValor','fValorTotalParcelado','rValor','rValorTotalParcelado','tfValor'].forEach(bindMoney);
+['fValor','fValorTotalParcelado','rValor','rValorTotalParcelado','tfValor','rRepasse'].forEach(bindMoney);
 function anexoChipUpdate(p, file){
   const chip = document.getElementById(p+'AnexoChip');
   if(!file){ chip.style.display='none'; return; }
@@ -4039,8 +4051,8 @@ function renderVisaoGeral(){
 
   // ---- Despesas / Receitas por categoria (mês atual) ----
   const sumPor = (list, keyFn, valFn)=>{ const m={}; list.forEach(x=>{ const k=keyFn(x); m[k]=(m[k]||0)+valFn(x); }); return Object.entries(m).map(([cat,valor])=>({cat,valor})).filter(x=>x.valor>0).sort((a,b)=>b.valor-a.valor); };
-  const despesasPorCategoria = sumPor(allPayables.filter(a=>a.status==='pago' && monthOf(a.dataPagamento||a.vencimento)===curMonth), a=>contaGrupoNome(a.categoria), a=>a.valor);
-  const receitasPorCategoria = sumPor(allReceivables.filter(r=>r.status==='recebido' && monthOf(r.dataRecebimento||r.vencimento)===curMonth), r=>contaNome(r.categoria), r=>(r.valorRecebido||r.valor));
+  const despesasPorCategoria = sumPor(allPayables.filter(a=>a.status==='pago' && monthOf(a.dataPagamento||a.vencimento)===curMonth), a=>contaEhBP(a.categoria)?contaNome(a.categoria):contaGrupoNome(a.categoria), a=>a.valor);
+  const receitasPorCategoria = sumPor(allReceivables.filter(r=>r.status==='recebido' && monthOf(r.dataRecebimento||r.vencimento)===curMonth), r=>contaNome(r.categoria), r=>Math.max(0,(r.valorRecebido||r.valor)-(r.repasse||0)));
   const totalDespesas = despesasPorCategoria.reduce((s,x)=>s+x.valor,0);
   const totalReceitas = receitasPorCategoria.reduce((s,x)=>s+x.valor,0);
 
@@ -4341,7 +4353,7 @@ function openRecModal(mode, id){
       document.getElementById('rDescricao').value=r.descricao;
       document.getElementById('rEmissao').value=r.emissao;
       document.getElementById('rVencimento').value=r.vencimento;
-      setMoney('rValor', r.valor);
+      setMoney('rValor', r.valor); setMoney('rRepasse', r.repasse||'');
       ensureOption('rCategoria', r.categoria);
       document.getElementById('rCategoria').value=r.categoria;
       document.getElementById('rCentroCusto').value=r.centroCusto;
@@ -4357,7 +4369,7 @@ function openRecModal(mode, id){
       document.getElementById('rDescricao').value='';
       document.getElementById('rEmissao').value=fmtDateISO(TODAY);
       document.getElementById('rVencimento').value=fmtDateISO(addDays(TODAY,10));
-      document.getElementById('rValor').value='';
+      document.getElementById('rValor').value=''; document.getElementById('rRepasse').value='';
       document.getElementById('rCategoria').value='REC-AC';
       document.getElementById('rCentroCusto').value=COST_CENTERS[0];
       document.getElementById('rFormaRecebimento').value='PIX';
@@ -4409,6 +4421,7 @@ function submitRecForm(opts){
   const descricao=document.getElementById('rDescricao').value.trim();
   const competencia=document.getElementById('rCompetencia').value, emissao=document.getElementById('rEmissao').value || fmtDateISO(TODAY), vencimento=document.getElementById('rVencimento').value;
   const valor=parseMoney(document.getElementById('rValor').value);
+  let repasse = parseMoney(document.getElementById('rRepasse').value); if(isNaN(repasse)) repasse = 0;
   const categoria=document.getElementById('rCategoria').value, centroCusto=document.getElementById('rCentroCusto').value;
   const formaRecebimento=document.getElementById('rFormaRecebimento').value;
   const contaBancaria=document.getElementById('rContaBancaria').value;
@@ -4418,6 +4431,7 @@ function submitRecForm(opts){
   const parcelado = isNew && document.getElementById('rParcelado').checked;
   const documento = document.getElementById('rDocumento').value.trim() || (rEntryAnexo ? rEntryAnexo.name.replace(/\.[^.]+$/,'') : 'LC-'+String(Date.now()).slice(-6));
   if(!descricao || !vencimento || isNaN(valor) || valor<=0){ showToast('Preencha ao menos Descrição, Vencimento e Valor.'); return; }
+  if(repasse>valor){ showToast('O repasse a terceiros não pode ser maior que o valor.'); return; }
   if(recorrente && parcelado){ showToast('Escolha apenas uma opção: recorrente ou parcelado.'); return; }
   const clientRec = clientById(clienteId);
   const planoContas = clientRec ? (clientRec.planoContas || 'Receitas > Receita de Serviços') : 'Receitas > Receita de Serviços';
@@ -4427,7 +4441,7 @@ function submitRecForm(opts){
     const venc = new Date(vencimento+'T00:00:00');
     const r = RECEIVABLES.find(x=>x.id===rState.editingId);
     const status = ['recebido','parcial','cancelado','aguardando_conciliacao','conciliado'].includes(r.status) ? r.status : (venc<TODAY ? 'vencido' : 'a_vencer');
-    Object.assign(r, {empresaId,clienteId,documento,descricao,competencia,emissao,vencimento,valor,categoria,centroCusto,formaRecebimento,contaBancaria,observacoes,status,planoContas});
+    Object.assign(r, {empresaId,clienteId,documento,descricao,competencia,emissao,vencimento,valor,repasse,categoria,centroCusto,formaRecebimento,contaBancaria,observacoes,status,planoContas});
     showToast('Recebimento atualizado.');
   } else if(parcelado){
     const qtd = parseInt(document.getElementById('rQtdParcelas').value,10);
@@ -4461,7 +4475,7 @@ function submitRecForm(opts){
       const vencIso = fmtDateISO(dataAtual);
       const vStatus = dataAtual<TODAY ? 'vencido' : 'a_vencer';
       RECEIVABLES.unshift({id:'AR'+String(Date.now()).slice(-6)+String(i).padStart(2,'0'),empresaId,clienteId,documento,descricao,
-        competencia: monthOf(vencIso), emissao, vencimento:vencIso, valor,
+        competencia: monthOf(vencIso), emissao, vencimento:vencIso, valor, repasse,
         categoria,centroCusto,formaRecebimento,contaBancaria,observacoes,status:vStatus,
         dataRecebimento:null,valorRecebido:null,planoContas, anexos: i===0?anexos:[]});
       i++;
@@ -4471,7 +4485,7 @@ function submitRecForm(opts){
   } else {
     const venc = new Date(vencimento+'T00:00:00');
     const status = venc<TODAY ? 'vencido' : 'a_vencer';
-    RECEIVABLES.unshift({id:'AR'+String(Date.now()).slice(-6),empresaId,clienteId,documento,descricao,competencia,emissao,vencimento,valor,categoria,centroCusto,formaRecebimento,contaBancaria,observacoes,status,dataRecebimento:null,valorRecebido:null,planoContas,anexos});
+    RECEIVABLES.unshift({id:'AR'+String(Date.now()).slice(-6),empresaId,clienteId,documento,descricao,competencia,emissao,vencimento,valor,repasse,categoria,centroCusto,formaRecebimento,contaBancaria,observacoes,status,dataRecebimento:null,valorRecebido:null,planoContas,anexos});
     showToast('Recebimento criado com sucesso.');
   }
   saveReceivables();
@@ -6648,7 +6662,7 @@ function impIsDup(r){
   return RECEIVABLES.some(a=>a.empresaId===emp && a.vencimento===r.venc && Math.abs(a.valor-v)<0.005 && impNorm((clientById(a.clienteId)||{}).nome)===nome);
 }
 function impSitHTML(r){
-  const flag = r.flag ? `<span class="imp-tag proj">${r.flag}</span> ` : '';
+  const flag = (r.flag ? `<span class="imp-tag proj">${r.flag}</span> ` : '') + (r.note ? `<span class="imp-tag warn">${r.note}</span> ` : '');
   return flag + (r.dup ? '<span class="imp-tag warn">Já existe</span>' : (impPartyExists(r) ? '<span class="imp-tag">Novo</span>' : '<span class="imp-tag new">Novo + cadastro</span>'));
 }
 function impPartyExists(r){
@@ -6697,12 +6711,24 @@ function impParseImobzi(lines){
     if(sec===1 || sec===2 || sec===3){
       const contrato = cells[1]||'', inquilino = cells[2]||'', ref = cells[4]||'', prop = sec===3 ? '' : (cells[3]||'');
       const desc = `Aluguel contrato ${contrato}${ref?' — ref. '+ref:''}${prop?' (proprietário '+prop+')':''}${sec===3?' (paga em '+(cells[3]||'')+')':''}`;
-      rows.push({sel:sec===1, flag:sec===2?'Projeção':sec===3?'Já recebida':'', tipo:'receber', venc, parte:inquilino, desc, valor:fmtMoneyInput(valor), forma:RECEIVE_METHODS[0], doc:'Contrato '+contrato});
+      rows.push({sel:sec===1, flag:sec===2?'Projeção':sec===3?'Já recebida':'', tipo:'receber', venc, parte:inquilino, desc, valor:fmtMoneyInput(valor), forma:RECEIVE_METHODS[0], doc:'Contrato '+contrato, contrato, _sec:sec});
     } else if(sec===4){
-      rows.push({sel:true, flag:'', tipo:'pagar', venc, parte:cells[1]||'', desc:cells[2]||'Repasse', valor:fmtMoneyInput(valor), forma:impMatchForma(cells[3], PAYMENT_METHODS), doc:''});
+      rows.push({sel:true, flag:'', tipo:'pagar', venc, parte:cells[1]||'', desc:cells[2]||'Repasse', valor:fmtMoneyInput(valor), forma:impMatchForma(cells[3], PAYMENT_METHODS), doc:'', contrato:((cells[2]||'').match(/(\d+)\s*$/)||[])[1]||'', _sec:4});
     } else if(sec===5){
-      rows.push({sel:false, flag:'Estimativa', tipo:'pagar', venc, parte:cells[2]||'', desc:`Repasse estimado contrato ${cells[1]||''} (inquilino ${cells[3]||''})`, valor:fmtMoneyInput(valor), forma:PAYMENT_METHODS[0], doc:''});
+      rows.push({sel:false, flag:'Estimativa', tipo:'pagar', venc, parte:cells[2]||'', desc:`Repasse estimado contrato ${cells[1]||''} (inquilino ${cells[3]||''})`, valor:fmtMoneyInput(valor), forma:PAYMENT_METHODS[0], doc:'', contrato:cells[1]||'', _sec:5});
     }
+  });
+  // Aluguel x repasse por contrato (vencimentos até 10 dias de distância): o repasse é valor de terceiros; a diferença é a taxa de administração
+  const dias = (a,b)=>Math.abs((new Date(a+'T00:00:00')-new Date(b+'T00:00:00'))/864e5);
+  rows.forEach(r=>{ r.cc = 'Operações'; if(r._sec===4 || r._sec===5) r.conta = CONTA_REPASSE; });
+  rows.filter(r=>r._sec===1 || r._sec===2).forEach(r=>{
+    const pool = rows.filter(x=>x._sec===(r._sec===1?4:5) && x.contrato===r.contrato && !x._used && dias(x.venc, r.venc)<=10);
+    if(pool.length){
+      pool.forEach(x=>x._used = true);
+      const v = parseMoney(r.valor), rep = Math.min(v, pool.reduce((t,x)=>t+(parseMoney(x.valor)||0),0));
+      r.repasse = fmtMoneyInput(rep); r.conta = CONTA_TAXA_ADM;
+      r.desc += ` — repasse ${fmtCurrency(rep)} · taxa adm. ${fmtCurrency(v-rep)}`;
+    } else { r.conta = 'REC-AC'; r.note = 'Sem repasse'; }
   });
   // Linhas que o próprio relatório avisa como "destacadas em amarelo" (possível duplicidade): contrato + valor
   const all = lines.map(c=>c.join(' ')).join(' ');
@@ -6805,7 +6831,7 @@ function impOpen(preset){
 function impStep1(msg){
   const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
   body.innerHTML = `
-    <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">Anexe um relatório de contas a pagar e/ou a receber: <b>planilha Excel/CSV</b> (lida direto, sem IA) ou <b>PDF/foto</b> (lido pela IA). Você vê uma <b>prévia para conferir</b> antes de salvar. Cada linha entra com a <b>conta contábil e o centro de custo</b> que você escolher na prévia (ou <b>A classificar</b>, para reclassificar depois, em lote). <a class="subpanel-link" id="impModelo">Baixar modelo de planilha</a></div>
+    <div style="font-size:12.5px;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">Anexe um relatório de contas a pagar e/ou a receber: <b>planilha Excel/CSV</b> (lida direto, sem IA) ou <b>PDF/foto</b> (lido pela IA). Você vê uma <b>prévia para conferir</b> antes de salvar. Cada linha entra com a <b>conta contábil e o centro de custo</b> da prévia (ou <b>A classificar</b>, para reclassificar depois, em lote). Contas de Balanço, como <b>Valores de Terceiros a Repassar</b>, não entram na DRE. <a class="subpanel-link" id="impModelo">Baixar modelo de planilha</a></div>
     <div class="anexo-row"><div class="upload-drop" id="impDrop"><span class="up-clip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></span><span><b>Clique para anexar</b> ou arraste o arquivo aqui<br><span class="up-hint">Excel, CSV, PDF, JPG, PNG ou WEBP (máx. 10MB)</span></span><input type="file" id="impFileInput" accept=".xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/*"></div>
       <div class="anexo-chip" id="impChip" style="display:none;"><span class="ac-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v15H6z"/><polyline points="15 2 15 7 20 7"/></svg></span><div class="ac-txt"><div class="ac-n" id="impChipN"></div><div class="ac-s" id="impChipS"></div></div></div></div>
     <div class="form-grid" style="margin-top:14px;"><div class="form-field"><label>O relatório contém</label><select id="impTipo"><option value="">Detectar sozinho (pagar e receber)</option><option value="pagar" ${impPreset==='pagar'?'selected':''}>Só contas a pagar</option><option value="receber" ${impPreset==='receber'?'selected':''}>Só contas a receber</option></select></div></div>
@@ -6880,6 +6906,7 @@ function impStep2(obs){
   const body = document.getElementById('impBody'), foot = document.getElementById('impFooter');
   if(!impRows.length){ impStep1('A IA não encontrou nenhuma conta nesse arquivo.'+(obs?' Observação: '+obs:'')); return; }
   impRows.forEach(r=>{ if(!r.conta) impDefaults(r); });
+  const showRep = impRows.some(r=>r.repasse!==undefined || r.note==='Sem repasse');
   const parts = {pagar:[...new Set(SUPPLIERS.filter(x=>x.empresaId===state.filters.empresaId).map(x=>x.nome))], receber:[...new Set(CLIENTS.filter(x=>x.empresaId===state.filters.empresaId).map(x=>x.nome))]};
   body.innerHTML = `
     ${obs?`<div class="imp-obs"><b>Observações da leitura:</b> ${obs.replace(/</g,'&lt;')}</div>`:''}
@@ -6889,7 +6916,7 @@ function impStep2(obs){
       <select class="cx-select" id="impBulkCC" style="width:160px;"><option value="">Centro de custo</option>${COST_CENTERS.map(c=>`<option>${c}</option>`).join('')}</select>
       <button class="btn" id="impBulkApply">Aplicar</button><span class="rp-hint" id="impBulkMsg"></span></div>
     <datalist id="impDlP">${parts.pagar.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist><datalist id="impDlR">${parts.receber.map(n=>`<option value="${n.replace(/"/g,'&quot;')}">`).join('')}</datalist>
-    <div class="table-scroll"><table class="cx-table imp-tbl"><thead><tr><th style="width:30px;"><input type="checkbox" id="impAll" checked></th><th style="width:100px;">Tipo</th><th style="width:128px;">Vencimento</th><th style="width:190px;">Fornecedor / Cliente</th><th>Descrição</th><th style="width:112px;" class="num">Valor</th><th style="width:112px;">Forma</th><th style="width:210px;">Conta contábil</th><th style="width:130px;">Centro de custo</th><th style="width:170px;">Situação</th><th style="width:30px;"></th></tr></thead><tbody id="impTbody"></tbody></table></div>
+    <div class="table-scroll"><table class="cx-table imp-tbl"><thead><tr><th style="width:30px;"><input type="checkbox" id="impAll" checked></th><th style="width:100px;">Tipo</th><th style="width:128px;">Vencimento</th><th style="width:190px;">Fornecedor / Cliente</th><th>Descrição</th><th style="width:112px;" class="num">Valor</th><th style="width:112px;">Forma</th>${showRep?'<th style="width:112px;" class="num">Repasse (R$)</th>':''}<th style="width:210px;">Conta contábil</th><th style="width:130px;">Centro de custo</th><th style="width:170px;">Situação</th><th style="width:30px;"></th></tr></thead><tbody id="impTbody"></tbody></table></div>
     <div class="imp-total" id="impTotal"></div>`;
   foot.innerHTML = `<span class="rp-hint" id="impCount"></span><div class="mt-btns"><button class="btn" id="impBack">Voltar</button><button class="btn btn-dark" id="impSave">Importar</button></div>`;
   const draw = ()=>{
@@ -6902,6 +6929,7 @@ function impStep2(obs){
         <td><input type="text" class="cx-input" data-k="desc" value="${r.desc.replace(/"/g,'&quot;')}" style="width:100%;"></td>
         <td><input type="text" class="cx-input" data-k="valor" inputmode="numeric" value="${r.valor}" style="width:100%;text-align:right;"></td>
         <td><select class="cx-select" data-k="forma" style="width:100%;">${(r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS).map(m=>`<option ${m===r.forma?'selected':''}>${m}</option>`).join('')}</select></td>
+        ${showRep?`<td>${r.tipo==='receber'?`<input type="text" class="cx-input" data-k="repasse" inputmode="numeric" value="${r.repasse||''}" placeholder="R$ 0,00" style="width:100%;text-align:right;">`:''}</td>`:''}
         <td><select class="cx-select imp-conta" data-k="conta" style="width:100%;"><option value="${r.conta}">${contaLabel(r.conta)}</option></select></td>
         <td><select class="cx-select" data-k="cc" style="width:100%;">${COST_CENTERS.map(c=>`<option ${c===r.cc?'selected':''}>${c}</option>`).join('')}</select></td>
         <td class="imp-sit">${impSitHTML(r)}</td>
@@ -6912,7 +6940,8 @@ function impStep2(obs){
   const totals = ()=>{
     const sel = impRows.filter(r=>r.sel);
     const sum = t=>sel.filter(r=>r.tipo===t).reduce((s,r)=>s+(parseMoney(r.valor)||0),0);
-    body.querySelector('#impTotal').innerHTML = `A pagar: <b>${fmtCurrency(sum('pagar'))}</b> &nbsp;·&nbsp; A receber: <b>${fmtCurrency(sum('receber'))}</b>`;
+    const taxa = sel.filter(r=>r.tipo==='receber' && r.conta===CONTA_TAXA_ADM).reduce((s,r)=>s+Math.max(0,(parseMoney(r.valor)||0)-(parseMoney(r.repasse)||0)),0);
+    body.querySelector('#impTotal').innerHTML = `A pagar: <b>${fmtCurrency(sum('pagar'))}</b> &nbsp;·&nbsp; A receber: <b>${fmtCurrency(sum('receber'))}</b>${showRep ? ` &nbsp;·&nbsp; Receita (taxa de administração): <b>${fmtCurrency(taxa)}</b>` : ''}`;
     foot.querySelector('#impCount').textContent = `${sel.length} de ${impRows.length} linhas selecionadas`;
     foot.querySelector('#impSave').disabled = !sel.length;
     foot.querySelector('#impSave').textContent = sel.length ? `Importar ${sel.length} lançamento(s)` : 'Importar';
@@ -6922,7 +6951,7 @@ function impStep2(obs){
   tb.addEventListener('input', e=>{
     const tr = e.target.closest('tr'); if(!tr) return; const r = impRows[+tr.dataset.i], k = e.target.dataset.k; if(!k) return;
     if(k==='sel') { r.sel = e.target.checked; tr.classList.toggle('imp-off', !r.sel); }
-    else if(k==='valor'){ const dg = e.target.value.replace(/\D/g,''); r.valor = dg ? fmtMoneyInput(parseInt(dg,10)/100) : ''; e.target.value = r.valor; }
+    else if(k==='valor' || k==='repasse'){ const dg = e.target.value.replace(/\D/g,''); r[k] = dg ? fmtMoneyInput(parseInt(dg,10)/100) : ''; e.target.value = r[k]; }
     else r[k] = e.target.value;
     if(k==='tipo'){ r.forma = impMatchForma('', r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS); impDefaults(r); draw(); return; }
     if(k==='parte' && impAcOf(r.tipo)===r.conta){ const c0 = r.conta; impDefaults(r); if(r.conta!==c0){ tr.querySelector('[data-k=conta]').innerHTML = `<option value="${r.conta}">${contaLabel(r.conta)}</option>`; tr.querySelector('[data-k=cc]').value = r.cc; } }
@@ -6960,7 +6989,7 @@ function impFindParty(tipo, nome){
     || list.find(x=>x.empresaId===emp && n.length>=12 && impNorm(x.nome).length>=12 && (impNorm(x.nome).startsWith(n) || n.startsWith(impNorm(x.nome)))) || null;
 }
 const impAcOf = tipo=> tipo==='receber' ? 'REC-AC' : 'PAG-AC';
-function impContaValida(cod, tipo){ const a = contaByCod(cod); return !!a && a.nat === (tipo==='receber' ? 'C' : 'D'); }
+function impContaValida(cod, tipo){ return contaServe(cod, tipo); }
 // Conta contábil e centro de custo sugeridos: o que estiver no cadastro do fornecedor/cliente; senão "A classificar"
 function impDefaults(r){
   const p = impFindParty(r.tipo, r.parte);
@@ -6993,7 +7022,7 @@ function impSave(){
       nP++;
     } else {
       RECEIVABLES.unshift({id:'AR'+id, empresaId:emp, clienteId:p.id, documento:doc, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), emissao:fmtDateISO(TODAY), vencimento:r.venc, valor,
-        categoria:conta, centroCusto:cc, formaRecebimento:r.forma, contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.', status:new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer', dataRecebimento:null, valorRecebido:null, planoContas:contaLabel(conta), anexos});
+        repasse:(parseMoney(r.repasse)||0), categoria:conta, centroCusto:cc, formaRecebimento:r.forma, contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.', status:new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer', dataRecebimento:null, valorRecebido:null, planoContas:contaLabel(conta), anexos});
       nR++;
     }
   });
@@ -7076,8 +7105,8 @@ function dgPeriod(from, to){
   const pay = state.accounts.filter(a=>(!emp||a.empresaId===emp) && !['cancelado','reprovado'].includes(a.status) && inR(a.competencia));
   const rec = RECEIVABLES.filter(r=>(!emp||r.empresaId===emp) && r.status!=='cancelado' && inR(r.competencia));
   const P = {}, R = {};
-  pay.forEach(a=>{ const g=contaGrupoCod(a.categoria); P[g]=(P[g]||0)+a.valor; });
-  rec.forEach(r=>{ const g=contaGrupoCod(r.categoria); R[g]=(R[g]||0)+r.valor; });
+  pay.forEach(a=>{ if(contaEhBP(a.categoria)) return; const g=contaGrupoCod(a.categoria); P[g]=(P[g]||0)+a.valor; });
+  rec.forEach(r=>{ if(contaEhBP(r.categoria)) return; const g=contaGrupoCod(r.categoria); R[g]=(R[g]||0)+Math.max(0, r.valor-(r.repasse||0)); });
   const sp = (...gs)=>gs.reduce((t,g)=>t+(P[g]||0),0), sr = (...gs)=>gs.reduce((t,g)=>t+(R[g]||0),0);
   const receita = sr('4.01','REC-AC'), deducoes = sp('4.02'), custos = sp(...DG_CUSTOS);
   const comercial = sp('6.04'), admTotal = sp(...DG_ADM), pessoal = sp('6.01'), da = sp('6.08');
@@ -7238,7 +7267,7 @@ function renderDRE(){
   const rr = dgCatRange(dgCatRecMode), dr = dgCatRange(dgCatDespMode);
   const emp = state.filters.empresaId;
   const recMap = {};
-  RECEIVABLES.filter(x=>(!emp||x.empresaId===emp) && x.status!=='cancelado' && x.competencia>=rr[0] && x.competencia<=rr[1]).forEach(x=>{ const k=contaNome(x.categoria); recMap[k]=(recMap[k]||0)+x.valor; });
+  RECEIVABLES.filter(x=>(!emp||x.empresaId===emp) && x.status!=='cancelado' && x.competencia>=rr[0] && x.competencia<=rr[1]).forEach(x=>{ if(contaEhBP(x.categoria)) return; const k=contaNome(x.categoria); recMap[k]=(recMap[k]||0)+Math.max(0, x.valor-(x.repasse||0)); });
   const recItems = Object.entries(recMap).map(([name,v])=>({name,v})).sort((a,b)=>b.v-a.v);
   const recTotal = recItems.reduce((s,x)=>s+x.v,0);
   const dp = dgPeriod(dr[0], dr[1]);
@@ -7309,7 +7338,7 @@ function renderDRE(){
         ${dgCatListHTML(despItems, despTotal)}
       </div>
     </div>
-    <div class="dg-foot-note">Os valores vêm das contas contábeis dos lançamentos (regime de competência), seguindo a estrutura DRE do seu plano de contas. Lançamentos "A classificar" entram em Receita Bruta (receitas) e Despesas Administrativas (despesas) até serem reclassificados. Seta indica o sentido do valor; verde = favorável, vermelho = desfavorável.</div>`;
+    <div class="dg-foot-note">Os valores vêm das contas contábeis dos lançamentos (regime de competência), seguindo a estrutura DRE do seu plano de contas. Lançamentos em contas de Balanço (como Valores de Terceiros a Repassar) não entram na DRE, e a parte de repasse a terceiros de uma receita é descontada. Lançamentos "A classificar" entram em Receita Bruta (receitas) e Despesas Administrativas (despesas) até serem reclassificados. Seta indica o sentido do valor; verde = favorável, vermelho = desfavorável.</div>`;
   cxFitCards(el);
   el.querySelector('#dgMonth').addEventListener('change', e=>{ dgMonth=e.target.value; renderDRE(); });
   el.querySelectorAll('.pl-toggle button').forEach(b=>b.addEventListener('click', ()=>{ dgPlMode=b.dataset.mode; renderDRE(); }));
@@ -7388,19 +7417,20 @@ function bsCompute(mk){
   const openPay = cats => pays.filter(a=>a.competencia<=mk && !paidBy(a) && (cats===null || cats.includes(contaGrupoCod(a.categoria))));
   const sumV = arr => arr.reduce((s,a)=>s+a.valor,0);
   const special = ['6.01','6.09','4.02','7.03','6.10'];
-  const fornecedores = sumV(pays.filter(a=>a.competencia<=mk && !paidBy(a) && !special.includes(contaGrupoCod(a.categoria))));
+  const repassesTerc = sumV(pays.filter(a=>a.competencia<=mk && !paidBy(a) && a.categoria===CONTA_REPASSE));
+  const fornecedores = sumV(pays.filter(a=>a.competencia<=mk && !paidBy(a) && a.categoria!==CONTA_REPASSE && !special.includes(contaGrupoCod(a.categoria))));
   const trabalhistas = sumV(openPay(['6.01']));
   const tributarias = sumV(openPay(['6.09','4.02','7.03']));
   const emprestCP = sumV(openPay(['6.10']));
   const ac = caixa + receber + man.adiantamentos;
   const anc = man.imobilizado + man.depreciacao;
   const ativo = ac + anc;
-  const pc = fornecedores + trabalhistas + tributarias + emprestCP;
+  const pc = fornecedores + repassesTerc + trabalhistas + tributarias + emprestCP;
   const pnc = man.emprestimosLP;
   const lucros = ativo - (pc + pnc + man.capital);
   const pl = man.capital + lucros;
   return {caixa, receber, adiantamentos:man.adiantamentos, ac, imobilizado:man.imobilizado, depreciacao:man.depreciacao, anc, ativo,
-          fornecedores, trabalhistas, tributarias, emprestCP, pc, emprestimosLP:man.emprestimosLP, pnc, capital:man.capital, lucros, pl, passivoPl: pc+pnc+pl};
+          fornecedores, repassesTerc, trabalhistas, tributarias, emprestCP, pc, emprestimosLP:man.emprestimosLP, pnc, capital:man.capital, lucros, pl, passivoPl: pc+pnc+pl};
 }
 function bsRowHTML(label, a, b, opts){
   opts = opts || {};
@@ -7437,6 +7467,7 @@ function renderBalanco(){
   const passivoRows = [
     bsRowHTML('Passivo Circulante',0,0,{head:true}),
     bsRowHTML('Fornecedores e Contas a Pagar', c.fornecedores, p.fornecedores, {indent:true}),
+    bsRowHTML('Valores de Terceiros a Repassar', c.repassesTerc, p.repassesTerc, {indent:true}),
     bsRowHTML('Obrigações Trabalhistas', c.trabalhistas, p.trabalhistas, {indent:true}),
     bsRowHTML('Obrigações Tributárias', c.tributarias, p.tributarias, {indent:true}),
     bsRowHTML('Empréstimos e Financiamentos (CP)', c.emprestCP, p.emprestCP, {indent:true}),
@@ -7490,7 +7521,7 @@ function renderBalanco(){
       ['Caixa e Equivalentes de Caixa',c.caixa,p.caixa],['Contas a Receber de Clientes',c.receber,p.receber],['Adiantamentos e Despesas Antecipadas',c.adiantamentos,p.adiantamentos],['Total do Ativo Circulante',c.ac,p.ac],
       ['Imobilizado',c.imobilizado,p.imobilizado],['(-) Depreciação Acumulada',c.depreciacao,p.depreciacao],['Total do Ativo Não Circulante',c.anc,p.anc],['TOTAL DO ATIVO',c.ativo,p.ativo],
       ['PASSIVO E PATRIMÔNIO LÍQUIDO','',''],
-      ['Fornecedores e Contas a Pagar',c.fornecedores,p.fornecedores],['Obrigações Trabalhistas',c.trabalhistas,p.trabalhistas],['Obrigações Tributárias',c.tributarias,p.tributarias],['Empréstimos e Financiamentos (CP)',c.emprestCP,p.emprestCP],['Total do Passivo Circulante',c.pc,p.pc],
+      ['Fornecedores e Contas a Pagar',c.fornecedores,p.fornecedores],['Valores de Terceiros a Repassar',c.repassesTerc,p.repassesTerc],['Obrigações Trabalhistas',c.trabalhistas,p.trabalhistas],['Obrigações Tributárias',c.tributarias,p.tributarias],['Empréstimos e Financiamentos (CP)',c.emprestCP,p.emprestCP],['Total do Passivo Circulante',c.pc,p.pc],
       ['Empréstimos e Financiamentos (LP)',c.emprestimosLP,p.emprestimosLP],['Total do Passivo Não Circulante',c.pnc,p.pnc],
       ['Capital Social',c.capital,p.capital],['Lucros / Prejuízos Acumulados',c.lucros,p.lucros],['Total do Patrimônio Líquido',c.pl,p.pl],['TOTAL DO PASSIVO E PL',c.passivoPl,p.passivoPl]];
     const data = rows.map(r=>({'Descrição':r[0], [cxMonthLabel(bsMonth)]:typeof r[1]==='number'?Math.round(r[1]*100)/100:'', [cxMonthLabel(prevMk)]:typeof r[2]==='number'?Math.round(r[2]*100)/100:''}));
