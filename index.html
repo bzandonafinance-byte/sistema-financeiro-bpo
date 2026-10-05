@@ -1049,6 +1049,8 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .rp-tbl th:nth-child(1){width:86px;} .rp-tbl th:nth-child(2){width:24%;} .rp-tbl th:nth-child(4){width:16%;} .rp-tbl th:nth-child(5){width:112px;}
 .rp-tbl td.r,.rp-tbl th.r{white-space:nowrap;}
 .rp-paper.rp-wide{max-width:1240px;}
+.ri-row{display:grid;grid-template-columns:210px 1fr 130px 30px;gap:8px;margin-bottom:6px;align-items:center;} .ri-row select,.ri-row input{height:32px;font-size:12.5px;width:100%;box-sizing:border-box;} .ri-del{border:none;background:#f3f4f6;border-radius:4px;height:28px;cursor:pointer;font-size:16px;color:#6b7280;} .ri-del:hover{background:#fee2e2;color:#b42318;}
+.ext-row{cursor:pointer;} .ext-row:hover td{background:#f8f9fb;} .rp-tbl.ext-tbl td,.rp-tbl.ext-tbl th{width:auto;} .rp-tbl.ext-tbl th:nth-child(n){width:auto;} .rp-tbl.ext-tbl{table-layout:auto;} .rp-tbl.ext-tbl2{table-layout:auto;} .rp-tbl.ext-tbl2 th:nth-child(n){width:auto;}
 .rp-tbl.rp6 th:nth-child(2){width:22%;} .rp-tbl.rp6 th:nth-child(4){width:84px;} .rp-tbl.rp6 th:nth-child(5){width:64px;} .rp-tbl.rp6 th:nth-child(6){width:104px;}
 .rp-tbl.inc-tbl th:nth-child(1){width:84px;} .rp-tbl.inc-tbl th:nth-child(2){width:84px;} .rp-tbl.inc-tbl th:nth-child(3){width:104px;} .rp-tbl.inc-tbl th:nth-child(4){width:24%;} .rp-tbl.inc-tbl th:nth-child(5){width:92px;} .rp-tbl.inc-tbl th:nth-child(6){width:104px;}
 .rp-tbl.inc-tbl td{vertical-align:top;white-space:normal;} .rp-tbl.inc-tbl td.r{white-space:nowrap;}
@@ -1524,6 +1526,12 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
         <div class="form-field"><label>Forma de recebimento</label><select id="rFormaRecebimento"></select></div>
         <div class="form-field"><label>Conta bancária</label><select id="rContaBancaria"></select></div>
         <div class="form-field"><label>Repasse a terceiros (R$)</label><input type="text" inputmode="numeric" id="rRepasse" placeholder="R$ 0,00"><span class="rp-hint">Parte que não é receita sua (ex.: repasse ao proprietário). Fica fora da DRE.</span></div>
+        <div class="form-field col-span-2" id="rItensBox">
+          <label>Composição da fatura</label>
+          <div id="rItensList"></div>
+          <div class="rp-hint" id="rItensSum"></div>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;"><button type="button" class="btn" id="rItemAdd">+ Adicionar item</button><button type="button" class="btn" id="rItemFill">Completar com taxa de administração</button></div>
+        </div>
         <div class="form-field col-span-2" style="display:flex;flex-direction:row;gap:26px;align-items:center;padding-top:4px;">
           <label class="lanc-check"><input type="checkbox" id="rRecorrente"> Lançamento recorrente</label>
           <label class="lanc-check"><input type="checkbox" id="rParcelado"> Parcelado</label>
@@ -1963,6 +1971,29 @@ function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return Str
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
+
+/* Composição da fatura: cada item tem um destino. Itens "de terceiros" não são receita (ficam no Balanço, em Valores de Terceiros a Repassar). */
+const INV_TIPOS = {
+  repasse:    {label:'Repasse ao proprietário',        terc:true},
+  seguro:     {label:'Seguro fiança (a repassar)',     terc:true},
+  iptu:       {label:'IPTU',                           terc:true},
+  condominio: {label:'Condomínio',                     terc:true},
+  agua:       {label:'Água / energia (rateio)',        terc:true},
+  terceiros:  {label:'Outros valores de terceiros',     terc:true},
+  taxa:       {label:'Taxa de administração',          terc:false, conta:CONTA_TAXA_ADM},
+  comissao:   {label:'Comissão (seguro / outros)',     terc:false, conta:'4.01.007'},
+  outraRec:   {label:'Outra receita da imobiliária',   terc:false, conta:'4.01.024'},
+};
+/* Parte de terceiros e parte da empresa de uma conta a receber (com ou sem composição) */
+function arParts(r){
+  if(Array.isArray(r.itens) && r.itens.length){
+    const terc = [], emp = {};
+    r.itens.forEach(i=>{ const T = INV_TIPOS[i.t] || INV_TIPOS.terceiros; if(T.terc) terc.push({t:i.t, b:i.b||'', v:i.v}); else emp[T.conta] = (emp[T.conta]||0) + i.v; });
+    return {terc, emp:Object.entries(emp).map(([conta,v])=>({conta, v})), itens:true};
+  }
+  const rep = Math.min(r.repasse||0, r.valor);
+  return {terc: rep>0 ? [{t:'repasse', b:'', v:rep}] : [], emp: r.valor-rep>0.004 ? [{conta:r.categoria, v:r.valor-rep}] : [], itens:false};
+}
 function contaAtiva(a){ return a.tipo==='A' && a.aceita && a.status==='Ativa'; }
 // Resultado (DRE) por natureza + contas patrimoniais (BP) para qualquer lado: BP não entra na DRE
 function contasPagar(){ return [CONTAS_AC[0]].concat(PLANO.filter(a=>contaAtiva(a) && ((a.dem==='DRE' && a.nat==='D') || a.dem==='BP'))); }
@@ -4065,7 +4096,7 @@ function renderVisaoGeral(){
   // ---- Despesas / Receitas por categoria (mês atual) ----
   const sumPor = (list, keyFn, valFn)=>{ const m={}; list.forEach(x=>{ const k=keyFn(x); m[k]=(m[k]||0)+valFn(x); }); return Object.entries(m).map(([cat,valor])=>({cat,valor})).filter(x=>x.valor>0).sort((a,b)=>b.valor-a.valor); };
   const despesasPorCategoria = sumPor(allPayables.filter(a=>a.status==='pago' && monthOf(a.dataPagamento||a.vencimento)===curMonth), a=>contaEhBP(a.categoria)?contaNome(a.categoria):contaGrupoNome(a.categoria), a=>a.valor);
-  const receitasPorCategoria = sumPor(allReceivables.filter(r=>r.status==='recebido' && monthOf(r.dataRecebimento||r.vencimento)===curMonth), r=>contaNome(r.categoria), r=>Math.max(0,(r.valorRecebido||r.valor)-(r.repasse||0)));
+  const receitasPorCategoria = (()=>{ const m={}; allReceivables.filter(r=>r.status==='recebido' && monthOf(r.dataRecebimento||r.vencimento)===curMonth).forEach(r=>{ const f=(r.valorRecebido||r.valor)/(r.valor||1); arParts(r).emp.forEach(pt=>{ const k=contaNome(pt.conta); m[k]=(m[k]||0)+Math.max(0,pt.v*f); }); }); return Object.entries(m).map(([cat,valor])=>({cat,valor})).filter(x=>x.valor>0).sort((a,b)=>b.valor-a.valor); })();
   const totalDespesas = despesasPorCategoria.reduce((s,x)=>s+x.valor,0);
   const totalReceitas = receitasPorCategoria.reduce((s,x)=>s+x.valor,0);
 
@@ -4355,6 +4386,7 @@ function openRecModal(mode, id){
     rEntryAnexo = null;
     document.getElementById('rAnexo').value = '';
     anexoChipUpdate('r', null); docAiToggle('r', null);
+    rItensInit([]);
 
     if(mode==='edit'){
       const r = RECEIVABLES.find(x=>x.id===id);
@@ -4366,7 +4398,7 @@ function openRecModal(mode, id){
       document.getElementById('rDescricao').value=r.descricao;
       document.getElementById('rEmissao').value=r.emissao;
       document.getElementById('rVencimento').value=r.vencimento;
-      setMoney('rValor', r.valor); setMoney('rRepasse', r.repasse||'');
+      setMoney('rValor', r.valor); setMoney('rRepasse', r.repasse||''); rItensInit(r.itens);
       ensureOption('rCategoria', r.categoria);
       document.getElementById('rCategoria').value=r.categoria;
       document.getElementById('rCentroCusto').value=r.centroCusto;
@@ -4427,6 +4459,54 @@ document.getElementById('rQtdParcelas').addEventListener('input', recalcParcelaR
 document.getElementById('rValorTotalParcelado').addEventListener('input', recalcParcelaReceber);
 anexoSetup('r', f=>{ rEntryAnexo = f; });
 document.getElementById('rCategoria').addEventListener('change', ()=>refreshCatIcon('rCategoria','rCatIco'));
+/* ---------- Composição da fatura (no modal de Contas a Receber) ---------- */
+let rItens = [];
+function rItensValor(){ const v = parseMoney(document.getElementById('rValor').value); return isNaN(v) ? 0 : v; }
+function rItensSoma(){ return Math.round(rItens.reduce((t,i)=>t+(i.v||0),0)*100)/100; }
+function rItensRender(){
+  const box = document.getElementById('rItensList'); if(!box) return;
+  const nomes = [...new Set([...SUPPLIERS.map(s=>s.nome), ...rItens.map(i=>i.b)].filter(Boolean))];
+  box.innerHTML = rItens.map((it,i)=>`<div class="ri-row" data-i="${i}">
+      <select data-f="t">${Object.entries(INV_TIPOS).map(([k,T])=>`<option value="${k}" ${it.t===k?'selected':''}>${T.label}</option>`).join('')}</select>
+      <input type="text" data-f="b" list="rBenefList" placeholder="${INV_TIPOS[it.t].terc?'Para quem (proprietário, seguradora...)':'—'}" value="${rpEsc(it.b||'')}" ${INV_TIPOS[it.t].terc?'':'disabled'}>
+      <input type="text" data-f="v" inputmode="numeric" placeholder="R$ 0,00" value="${it.v?fmtMoneyInput(it.v):''}">
+      <button type="button" class="ri-del" data-del title="Remover">×</button></div>`).join('') + `<datalist id="rBenefList">${nomes.map(n=>`<option value="${rpEsc(n)}">`).join('')}</datalist>`;
+  rItensSumRender();
+}
+function rItensSumRender(){
+  const hint = document.getElementById('rItensSum'), rep = document.getElementById('rRepasse');
+  if(!hint) return;
+  if(!rItens.length){ hint.textContent = 'Opcional. Sem composição, use o campo "Repasse a terceiros" acima. Com composição, cada parte da fatura vai para quem de direito.'; rep.readOnly = false; return; }
+  const soma = rItensSoma(), valor = rItensValor(), dif = Math.round((valor-soma)*100)/100;
+  const terc = rItens.filter(i=>INV_TIPOS[i.t].terc).reduce((t,i)=>t+(i.v||0),0);
+  hint.innerHTML = `Soma dos itens <b>${fmtCurrency(soma)}</b> · valor da fatura <b>${fmtCurrency(valor)}</b> · ` + (Math.abs(dif)<0.01 ? '<b style="color:#0f6e45;">confere</b>' : `<b style="color:#b42318;">${dif>0?'faltam':'sobram'} ${fmtCurrency(Math.abs(dif))}</b>`) + ` · de terceiros <b>${fmtCurrency(terc)}</b>`;
+  rep.readOnly = true; setMoney('rRepasse', terc||'');
+}
+function rItensInit(list){
+  rItens = (list||[]).map(i=>({t:i.t, b:i.b||'', v:i.v||0}));
+  rItensRender();
+}
+(function rItensWire(){
+  const box = document.getElementById('rItensList'); if(!box) return;
+  box.addEventListener('input', e=>{
+    const row = e.target.closest('.ri-row'); if(!row) return; const it = rItens[+row.dataset.i], f = e.target.dataset.f; if(!f) return;
+    if(f==='v'){ const dg = e.target.value.replace(/\D/g,''); it.v = dg ? parseInt(dg,10)/100 : 0; e.target.value = dg ? fmtMoneyInput(it.v) : ''; }
+    else if(f==='b'){ it.b = e.target.value; }
+    rItensSumRender();
+  });
+  box.addEventListener('change', e=>{
+    const row = e.target.closest('.ri-row'); if(!row || e.target.dataset.f!=='t') return;
+    const it = rItens[+row.dataset.i]; it.t = e.target.value; if(!INV_TIPOS[it.t].terc) it.b = ''; rItensRender();
+  });
+  box.addEventListener('click', e=>{ const d = e.target.closest('[data-del]'); if(!d) return; rItens.splice(+d.closest('.ri-row').dataset.i,1); rItensRender(); });
+  document.getElementById('rItemAdd').addEventListener('click', ()=>{ rItens.push({t:rItens.length?'seguro':'repasse', b:'', v:0}); rItensRender(); });
+  document.getElementById('rItemFill').addEventListener('click', ()=>{
+    const dif = Math.round((rItensValor()-rItensSoma())*100)/100;
+    if(dif<=0){ showToast('Não há saldo a completar: a soma dos itens já atingiu o valor da fatura.'); return; }
+    rItens.push({t:'taxa', b:'', v:dif}); rItensRender();
+  });
+  document.getElementById('rValor').addEventListener('input', rItensSumRender);
+})();
 function submitRecForm(opts){
   opts = opts || {};
   const andNew = !!opts.andNew;
@@ -4435,7 +4515,7 @@ function submitRecForm(opts){
   const competencia=document.getElementById('rCompetencia').value, emissao=document.getElementById('rEmissao').value || fmtDateISO(TODAY), vencimento=document.getElementById('rVencimento').value;
   const valor=parseMoney(document.getElementById('rValor').value);
   let repasse = parseMoney(document.getElementById('rRepasse').value); if(isNaN(repasse)) repasse = 0;
-  const categoria=document.getElementById('rCategoria').value, centroCusto=document.getElementById('rCentroCusto').value;
+  let categoria=document.getElementById('rCategoria').value; const centroCusto=document.getElementById('rCentroCusto').value;
   const formaRecebimento=document.getElementById('rFormaRecebimento').value;
   const contaBancaria=document.getElementById('rContaBancaria').value;
   const observacoes=document.getElementById('rObservacoes').value.trim();
@@ -4445,6 +4525,17 @@ function submitRecForm(opts){
   const documento = document.getElementById('rDocumento').value.trim() || (rEntryAnexo ? rEntryAnexo.name.replace(/\.[^.]+$/,'') : 'LC-'+String(Date.now()).slice(-6));
   if(!descricao || !vencimento || isNaN(valor) || valor<=0){ showToast('Preencha ao menos Descrição, Vencimento e Valor.'); return; }
   if(repasse>valor){ showToast('O repasse a terceiros não pode ser maior que o valor.'); return; }
+  let itens;
+  if(rItens.length){
+    const clean = rItens.map(i=>({t:i.t, b:(i.b||'').trim(), v:Math.round((i.v||0)*100)/100}));
+    if(clean.some(i=>!(i.v>0))){ showToast('Todos os itens da composição precisam de valor.'); return; }
+    if(clean.some(i=>INV_TIPOS[i.t].terc && !i.b)){ showToast('Informe para quem vai cada item de terceiros (proprietário, seguradora...).'); return; }
+    const soma = Math.round(clean.reduce((t,i)=>t+i.v,0)*100)/100;
+    if(Math.abs(soma-valor)>0.009){ showToast(`A soma dos itens (${fmtCurrency(soma)}) precisa ser igual ao valor da fatura (${fmtCurrency(valor)}).`); return; }
+    itens = clean;
+    const pt = arParts({itens, valor, repasse:0, categoria}); repasse = Math.round(pt.terc.reduce((t,i)=>t+i.v,0)*100)/100;
+    const maior = pt.emp.slice().sort((a,b)=>b.v-a.v)[0]; categoria = maior ? maior.conta : CONTA_REPASSE;
+  }
   if(recorrente && parcelado){ showToast('Escolha apenas uma opção: recorrente ou parcelado.'); return; }
   const clientRec = clientById(clienteId);
   const planoContas = clientRec ? (clientRec.planoContas || 'Receitas > Receita de Serviços') : 'Receitas > Receita de Serviços';
@@ -4454,7 +4545,7 @@ function submitRecForm(opts){
     const venc = new Date(vencimento+'T00:00:00');
     const r = RECEIVABLES.find(x=>x.id===rState.editingId);
     const status = ['recebido','parcial','cancelado','aguardando_conciliacao','conciliado'].includes(r.status) ? r.status : (venc<TODAY ? 'vencido' : 'a_vencer');
-    Object.assign(r, {empresaId,clienteId,documento,descricao,competencia,emissao,vencimento,valor,repasse,categoria,centroCusto,formaRecebimento,contaBancaria,observacoes,status,planoContas});
+    Object.assign(r, {empresaId,clienteId,documento,descricao,competencia,emissao,vencimento,valor,repasse,categoria,centroCusto,formaRecebimento,contaBancaria,observacoes,status,planoContas,itens});
     showToast('Recebimento atualizado.');
   } else if(parcelado){
     const qtd = parseInt(document.getElementById('rQtdParcelas').value,10);
@@ -4488,7 +4579,7 @@ function submitRecForm(opts){
       const vencIso = fmtDateISO(dataAtual);
       const vStatus = dataAtual<TODAY ? 'vencido' : 'a_vencer';
       RECEIVABLES.unshift({id:'AR'+String(Date.now()).slice(-6)+String(i).padStart(2,'0'),empresaId,clienteId,documento,descricao,
-        competencia: monthOf(vencIso), emissao, vencimento:vencIso, valor, repasse,
+        competencia: monthOf(vencIso), emissao, vencimento:vencIso, valor, repasse, itens,
         categoria,centroCusto,formaRecebimento,contaBancaria,observacoes,status:vStatus,
         dataRecebimento:null,valorRecebido:null,planoContas, anexos: i===0?anexos:[]});
       i++;
@@ -4498,7 +4589,7 @@ function submitRecForm(opts){
   } else {
     const venc = new Date(vencimento+'T00:00:00');
     const status = venc<TODAY ? 'vencido' : 'a_vencer';
-    RECEIVABLES.unshift({id:'AR'+String(Date.now()).slice(-6),empresaId,clienteId,documento,descricao,competencia,emissao,vencimento,valor,repasse,categoria,centroCusto,formaRecebimento,contaBancaria,observacoes,status,dataRecebimento:null,valorRecebido:null,planoContas,anexos});
+    RECEIVABLES.unshift({id:'AR'+String(Date.now()).slice(-6),empresaId,clienteId,documento,descricao,competencia,emissao,vencimento,valor,repasse,itens,categoria,centroCusto,formaRecebimento,contaBancaria,observacoes,status,dataRecebimento:null,valorRecebido:null,planoContas,anexos});
     showToast('Recebimento criado com sucesso.');
   }
   saveReceivables();
@@ -5576,9 +5667,172 @@ function rpIncPlain(d, msg){
   return body;
 }
 
-/* ---------- Contexto do relatório em uso (diário ou inconsistências) ---------- */
+
+/* ================================================================
+   EXTRATO DE TERCEIROS (proprietários, seguradoras, prefeitura...)
+   Conta corrente de cada beneficiário: o que é devido (partes de terceiros das faturas),
+   o que já foi recebido do inquilino, o que foi lançado e pago como repasse e o saldo.
+   ================================================================ */
+let extSel = '';
+function extKey(n){ return String(n||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim(); }
+const EXT_OK = ['Pago/Recebido','Aguardando conciliação','Conciliado'];
+function rpExtData(){
+  const emp = state.filters.empresaId, company = companyById(emp), today = fmtDateISO(TODAY);
+  const map = {}, r2 = x=>Math.round(x*100)/100;
+  const get = n=>{ const k = extKey(n)||'~'; return map[k] = map[k] || {nome:(n||'').trim()||'(sem beneficiário informado)', faturas:[], repasses:[]}; };
+  RECEIVABLES.filter(r=>(!emp||r.empresaId===emp) && r.status!=='cancelado').forEach(r=>{
+    const contrato = (/^Contrato (\d+)/.exec(r.documento||'')||[])[1] || (r.documento||'—');
+    arParts(r).terc.forEach(p=>get(p.b).faturas.push({id:r.id, venc:r.vencimento, contrato, inquilino:(clientById(r.clienteId)||{}).nome||'—', tipo:p.t, valorFatura:r.valor, devido:p.v, recebida:EXT_OK.includes(lancStatusDisplay(r.status))}));
+  });
+  state.accounts.filter(a=>(!emp||a.empresaId===emp) && a.categoria===CONTA_REPASSE && !['cancelado','reprovado'].includes(a.status)).forEach(a=>{
+    const paga = EXT_OK.includes(lancStatusDisplay(a.status));
+    get((supplierById(a.fornecedorId)||{}).nome).repasses.push({id:a.id, venc:a.vencimento, desc:a.descricao, forma:a.formaPagamento||'—', valor:a.valor, paga, vencida:!paga && a.vencimento<today});
+  });
+  const sum = (l,f)=>r2(l.reduce((t,x)=>t+f(x),0));
+  const lista = Object.values(map).map(o=>{
+    o.faturas.sort((a,b)=>a.venc<b.venc?-1:a.venc>b.venc?1:0); o.repasses.sort((a,b)=>a.venc<b.venc?-1:a.venc>b.venc?1:0);
+    o.devido = sum(o.faturas,f=>f.devido); o.recebido = sum(o.faturas.filter(f=>f.recebida),f=>f.devido);
+    o.lancado = sum(o.repasses,x=>x.valor); o.pago = sum(o.repasses.filter(x=>x.paga),x=>x.valor);
+    o.aberto = r2(o.lancado-o.pago); o.vencido = sum(o.repasses.filter(x=>x.vencida),x=>x.valor);
+    o.falta = Math.max(0, r2(o.devido-o.lancado)); o.semFatura = Math.max(0, r2(o.lancado-o.devido)); o.saldo = r2(Math.max(o.devido,o.lancado)-o.pago); return o;
+  }).sort((a,b)=>String(a.nome).localeCompare(String(b.nome),'pt-BR'));
+  const tot = {devido:sum(lista,o=>o.devido), recebido:sum(lista,o=>o.recebido), lancado:sum(lista,o=>o.lancado), pago:sum(lista,o=>o.pago), aberto:sum(lista,o=>o.aberto), vencido:sum(lista,o=>o.vencido), falta:sum(lista,o=>o.falta)};
+  const mon = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+  return {company, nome:(company?company.nome:'TODAS AS EMPRESAS').toUpperCase(), today, dateBR:fmtDateBR(today), dateLabel:`${String(TODAY.getDate()).padStart(2,'0')} ${mon[TODAY.getMonth()]} ${TODAY.getFullYear()}`, lista, tot};
+}
+function extSelObj(d){ return extSel ? d.lista.find(o=>extKey(o.nome)===extSel) : null; }
+const extMoney = v=> v ? fmtCurrency(v) : '—';
+function rpExtPreviewHTML(d){
+  const o = extSelObj(d);
+  const opts = `<select class="cx-select" id="extSel"><option value="">Resumo de todos os beneficiários</option>${d.lista.map(x=>`<option value="${rpEsc(extKey(x.nome))}" ${extSel===extKey(x.nome)?'selected':''}>${rpEsc(x.nome)}</option>`).join('')}</select>`;
+  const head = `<div class="rp-top"><span class="rp-brand">${RP_BRAND}</span><span class="rp-kind">EXTRATO DE TERCEIROS</span></div>
+    <div class="rp-company"><div><div class="rp-cname">${rpEsc(o?o.nome:d.nome)}</div><div class="rp-muted">${o?d.nome+' · extrato de valores de terceiros':'Valores de terceiros a repassar, por beneficiário'}</div></div>
+      <div class="r"><div class="rp-date">${d.dateLabel}</div><div class="rp-muted">Posição em ${d.dateBR}</div></div></div>`;
+  if(!d.lista.length) return `<div class="rp-paper rp-wide">${head}<div class="cx-empty">Nenhum valor de terceiros lançado ainda. Importe o relatório do Imobzi ou use "Composição da fatura" nas contas a receber.</div></div>`;
+  if(!o){
+    return `<div class="rp-paper rp-wide">${head}
+      <div class="cx-filters" style="padding:10px 0;border:0;">${opts}</div>
+      <div class="rp-sum"><div><span>DEVIDO (FATURAS)</span><b>${fmtCurrency(d.tot.devido)}</b><em>partes de terceiros nas faturas</em></div>
+        <div><span>REPASSES PAGOS</span><b>${fmtCurrency(d.tot.pago)}</b><em>${d.tot.lancado?`de ${fmtCurrency(d.tot.lancado)} lançados`:'nada lançado'}</em></div>
+        <div><span>A PAGAR EM ABERTO</span><b>${fmtCurrency(d.tot.aberto)}</b><em>vencido ${fmtCurrency(d.tot.vencido)} · confere com o Balanço</em></div></div>
+      <div class="rp-sec">SALDO POR BENEFICIÁRIO</div>
+      <table class="rp-tbl ext-tbl"><thead><tr><th>Beneficiário</th><th class="r">Devido</th><th class="r">Já recebido</th><th class="r">Lançado</th><th class="r">Pago</th><th class="r">A pagar</th><th class="r">Vencido</th><th class="r">Falta lançar</th></tr></thead>
+      <tbody>${d.lista.map(x=>`<tr class="ext-row" data-k="${rpEsc(extKey(x.nome))}"><td>${rpEsc(x.nome)}</td><td class="r">${fmtCurrency(x.devido)}</td><td class="r">${fmtCurrency(x.recebido)}</td><td class="r">${fmtCurrency(x.lancado)}</td><td class="r">${fmtCurrency(x.pago)}</td><td class="r">${extMoney(x.aberto)}</td><td class="r" style="${x.vencido?'color:#b42318;font-weight:700;':''}">${extMoney(x.vencido)}</td><td class="r" style="${x.falta?'color:#b54708;font-weight:700;':''}">${extMoney(x.falta)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>TOTAL (${d.lista.length})</td><td class="r">${fmtCurrency(d.tot.devido)}</td><td class="r">${fmtCurrency(d.tot.recebido)}</td><td class="r">${fmtCurrency(d.tot.lancado)}</td><td class="r">${fmtCurrency(d.tot.pago)}</td><td class="r">${fmtCurrency(d.tot.aberto)}</td><td class="r">${fmtCurrency(d.tot.vencido)}</td><td class="r">${fmtCurrency(d.tot.falta)}</td></tr></tfoot></table>
+      <div class="rp-note"><b>Como ler:</b> <i>Devido</i> é a soma das partes de terceiros das faturas (aluguel líquido da taxa, IPTU, seguro etc.). <i>Já recebido</i> é a parte das faturas que o inquilino já pagou. <i>Lançado/Pago</i> são os repasses em Contas a Pagar. <i>Falta lançar</i> é o devido que ainda não tem repasse lançado. A soma de <i>A pagar</i> confere com "Valores de Terceiros a Repassar" no Balanço. Clique em um beneficiário para ver o extrato dele.</div></div>`;
+  }
+  return `<div class="rp-paper rp-wide">${head}
+    <div class="cx-filters" style="padding:10px 0;border:0;">${opts}</div>
+    <div class="rp-sum"><div><span>DEVIDO (FATURAS)</span><b>${fmtCurrency(o.devido)}</b><em>já recebido do inquilino ${fmtCurrency(o.recebido)}</em></div>
+      <div><span>REPASSES PAGOS</span><b>${fmtCurrency(o.pago)}</b><em>de ${fmtCurrency(o.lancado)} lançados</em></div>
+      <div><span>A PAGAR EM ABERTO</span><b>${fmtCurrency(o.aberto)}</b><em>vencido ${fmtCurrency(o.vencido)}${o.falta?` · falta lançar ${fmtCurrency(o.falta)}`:''}</em></div></div>
+    <div class="rp-sec">FATURAS COM VALOR PARA ${rpEsc(o.nome.toUpperCase())}</div>
+    <table class="rp-tbl ext-tbl2"><thead><tr><th>Vencimento</th><th>Contrato</th><th>Inquilino</th><th>Item</th><th>Situação</th><th class="r">Valor da fatura</th><th class="r">Devido</th></tr></thead>
+      <tbody>${o.faturas.length ? o.faturas.map(f=>`<tr><td>${fmtDateBR(f.venc)}</td><td>${rpEsc(f.contrato)}</td><td>${rpEsc(f.inquilino)}</td><td>${INV_TIPOS[f.tipo].label}</td><td>${f.recebida?'Recebida':'A receber'}</td><td class="r">${fmtCurrency(f.valorFatura)}</td><td class="r">${fmtCurrency(f.devido)}</td></tr>`).join('') : '<tr><td colspan="7" class="rp-none">Nenhuma fatura.</td></tr>'}</tbody>
+      <tfoot><tr><td colspan="6" class="r">TOTAL DEVIDO</td><td class="r">${fmtCurrency(o.devido)}</td></tr></tfoot></table>
+    <div class="rp-sec">REPASSES LANÇADOS</div>
+    <table class="rp-tbl ext-tbl2"><thead><tr><th>Vencimento</th><th colspan="2">Descrição</th><th>Forma</th><th>Situação</th><th class="r"></th><th class="r">Valor</th></tr></thead>
+      <tbody>${o.repasses.length ? o.repasses.map(x=>`<tr><td>${fmtDateBR(x.venc)}</td><td colspan="2">${rpEsc(x.desc)}</td><td>${rpEsc(x.forma)}</td><td style="${x.vencida?'color:#b42318;font-weight:700;':''}">${x.paga?'Pago':x.vencida?'Vencido':'A pagar'}</td><td></td><td class="r">${fmtCurrency(x.valor)}</td></tr>`).join('') : '<tr><td colspan="7" class="rp-none">Nenhum repasse lançado.</td></tr>'}</tbody>
+      <tfoot><tr><td colspan="6" class="r">TOTAL LANÇADO</td><td class="r">${fmtCurrency(o.lancado)}</td></tr></tfoot></table>
+    <div class="rp-fin"><div class="rp-fin-h">SALDO</div>
+      <div class="rp-fin-r"><span>Devido ao beneficiário (faturas)</span><span>${fmtCurrency(o.devido)}</span></div>
+      ${o.semFatura?`<div class="rp-fin-r"><span>(+) Repasses lançados sem fatura no sistema (faturas já recebidas antes ou fora desta base)</span><span>${fmtCurrency(o.semFatura)}</span></div>`:''}
+      <div class="rp-fin-r"><span>(–) Repasses pagos</span><span>(${fmtCurrency(o.pago)})</span></div>
+      <div class="rp-fin-r bold"><span>Saldo a repassar</span><span>${fmtCurrency(o.saldo)}</span></div></div>
+    <div class="rp-note">Extrato gerado em ${d.dateBR}. Valores de terceiros não são receita nem despesa da imobiliária. Itens: aluguel líquido da taxa de administração e demais valores cobrados na fatura que pertencem ao beneficiário.</div></div>`;
+}
+function rpExtPDF(d){
+  const { jsPDF } = window.jspdf, o = extSelObj(d);
+  const doc = new jsPDF({unit:'pt', format:'a4', orientation:'landscape'});
+  const W = 841.89, M = 36, CW = W-2*M;
+  const NAVY = [23,40,59], GRAY = [107,122,144], LINE = [226,229,234], PALE = [243,244,247];
+  let y = 44;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...NAVY); doc.text(RP_BRAND, M, y);
+  doc.setFontSize(9.5); doc.setTextColor(...GRAY); doc.text('EXTRATO DE TERCEIROS', W-M, y, {align:'right'});
+  y += 32; doc.setFontSize(19); doc.setTextColor(...NAVY);
+  const titulo = o ? o.nome : d.nome; while(doc.getTextWidth(titulo) > CW-150 && doc.getFontSize()>11) doc.setFontSize(doc.getFontSize()-1);
+  doc.text(titulo, M, y); doc.setFontSize(14); doc.text(d.dateLabel, W-M, y-2, {align:'right'});
+  y += 16; doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...GRAY);
+  doc.text(o ? `${d.nome} · extrato de valores de terceiros` : 'Valores de terceiros a repassar, por beneficiário', M, y); doc.text(`Posição em ${d.dateBR}`, W-M, y, {align:'right'});
+  y += 9; doc.setDrawColor(...LINE); doc.setLineWidth(.8); doc.line(M, y, W-M, y); y += 20;
+  const tabela = (head, body, foot, cs, right)=>{
+    doc.autoTable({startY:y, margin:{left:M,right:M}, theme:'plain', head:[head], body, foot:foot?[foot]:undefined, showFoot:'lastPage',
+      styles:{font:'helvetica', fontSize:8.5, textColor:[30,38,50], cellPadding:{top:5,bottom:5,left:5,right:5}, lineWidth:0, overflow:'linebreak'},
+      headStyles:{fillColor:PALE, textColor:[30,38,50], fontStyle:'bold'}, footStyles:{fillColor:PALE, textColor:[20,28,40], fontStyle:'bold'}, columnStyles:cs,
+      didParseCell:h=>{ if((h.section==='head'||h.section==='foot') && right.includes(h.column.index)) h.cell.styles.halign='right'; },
+      didDrawCell:h=>{ if(h.section==='body'){ doc.setDrawColor(...LINE); doc.setLineWidth(.6); doc.line(h.cell.x, h.cell.y+h.cell.height, h.cell.x+h.cell.width, h.cell.y+h.cell.height); } }});
+    y = doc.lastAutoTable.finalY + 22;
+  };
+  const sec = t=>{ if(y>520){ doc.addPage(); y = 44; } doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...NAVY); doc.text(t, M, y); y += 8; };
+  const m = fmtCurrency;
+  if(!d.lista.length){ doc.setFontSize(11); doc.setTextColor(...NAVY); doc.text('Nenhum valor de terceiros lançado.', M, y+10); return doc; }
+  if(!o){
+    sec('SALDO POR BENEFICIÁRIO');
+    tabela(['Beneficiário','Devido','Já recebido','Lançado','Pago','A pagar','Vencido','Falta lançar'],
+      d.lista.map(x=>[x.nome, m(x.devido), m(x.recebido), m(x.lancado), m(x.pago), extMoney(x.aberto), extMoney(x.vencido), extMoney(x.falta)]),
+      ['TOTAL ('+d.lista.length+')', m(d.tot.devido), m(d.tot.recebido), m(d.tot.lancado), m(d.tot.pago), m(d.tot.aberto), m(d.tot.vencido), m(d.tot.falta)],
+      {0:{cellWidth:CW-7*84}, 1:{cellWidth:84}, 2:{cellWidth:84}, 3:{cellWidth:84}, 4:{cellWidth:84}, 5:{cellWidth:84}, 6:{cellWidth:84}, 7:{cellWidth:84}}, [1,2,3,4,5,6,7]);
+  } else {
+    sec('FATURAS COM VALOR PARA '+o.nome.toUpperCase());
+    tabela(['Vencimento','Contrato','Inquilino','Item','Situação','Valor da fatura','Devido'],
+      o.faturas.map(f=>[fmtDateBR(f.venc), f.contrato, f.inquilino, INV_TIPOS[f.tipo].label, f.recebida?'Recebida':'A receber', m(f.valorFatura), m(f.devido)]),
+      [{content:'TOTAL DEVIDO', colSpan:6, styles:{halign:'right'}}, m(o.devido)],
+      {0:{cellWidth:62}, 1:{cellWidth:60}, 2:{cellWidth:CW-62-60-150-64-90-80}, 3:{cellWidth:150}, 4:{cellWidth:64}, 5:{cellWidth:90, halign:'right'}, 6:{cellWidth:80, halign:'right'}}, [5,6]);
+    sec('REPASSES LANÇADOS');
+    tabela(['Vencimento','Descrição','Forma','Situação','Valor'],
+      o.repasses.length ? o.repasses.map(x=>[fmtDateBR(x.venc), x.desc, x.forma, x.paga?'Pago':x.vencida?'Vencido':'A pagar', m(x.valor)]) : [[{content:'Nenhum repasse lançado.', colSpan:5}]],
+      [{content:'TOTAL LANÇADO', colSpan:4, styles:{halign:'right'}}, m(o.lancado)],
+      {0:{cellWidth:62}, 1:{cellWidth:CW-62-110-80-90}, 2:{cellWidth:110}, 3:{cellWidth:80}, 4:{cellWidth:90, halign:'right'}}, [4]);
+    if(y>500){ doc.addPage(); y = 44; }
+    doc.setFillColor(...NAVY); doc.rect(M, y, 360, 22, 'F'); doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(255,255,255); doc.text('SALDO', M+10, y+15); y += 22;
+    [['Devido ao beneficiário (faturas)', m(o.devido), false], ...(o.semFatura?[['(+) Repasses lançados sem fatura no sistema', m(o.semFatura), false]]:[]), ['(–) Repasses pagos', '('+m(o.pago)+')', false], ['Saldo a repassar', m(o.saldo), true]].forEach(f=>{
+      doc.setFont('helvetica', f[2]?'bold':'normal'); doc.setFontSize(10); doc.setTextColor(20,28,40); doc.text(f[0], M+10, y+18); doc.text(f[1], M+350, y+18, {align:'right'});
+      doc.setDrawColor(...LINE); doc.line(M, y+26, M+360, y+26); y += 26; });
+    y += 14;
+  }
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...GRAY);
+  doc.text(doc.splitTextToSize(`Extrato gerado em ${d.dateBR}. Valores de terceiros não são receita nem despesa da imobiliária. ${o?'':'A soma da coluna "A pagar" confere com "Valores de Terceiros a Repassar" no Balanço. '}"Falta lançar" é o devido que ainda não tem repasse lançado em Contas a Pagar.`, CW), M, y);
+  return doc;
+}
+function rpExtXLSX(d){
+  if(typeof XLSX==='undefined'){ showToast('Biblioteca de planilha não carregou. Verifique a internet e recarregue.'); return; }
+  const wb = XLSX.utils.book_new();
+  const resumo = [['Beneficiário','Devido','Já recebido','Lançado','Pago','A pagar','Vencido','Falta lançar']];
+  d.lista.forEach(x=>resumo.push([x.nome,x.devido,x.recebido,x.lancado,x.pago,x.aberto,x.vencido,x.falta]));
+  resumo.push(['TOTAL',d.tot.devido,d.tot.recebido,d.tot.lancado,d.tot.pago,d.tot.aberto,d.tot.vencido,d.tot.falta]);
+  const ws1 = XLSX.utils.aoa_to_sheet(resumo); ws1['!cols'] = [{wch:42},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14},{wch:14}]; XLSX.utils.book_append_sheet(wb, ws1, 'Resumo');
+  const fat = [['Beneficiário','Vencimento','Contrato','Inquilino','Item','Situação','Valor da fatura','Devido']];
+  d.lista.forEach(x=>x.faturas.forEach(f=>fat.push([x.nome, fmtDateBR(f.venc), f.contrato, f.inquilino, INV_TIPOS[f.tipo].label, f.recebida?'Recebida':'A receber', f.valorFatura, f.devido])));
+  const ws2 = XLSX.utils.aoa_to_sheet(fat); ws2['!cols'] = [{wch:36},{wch:12},{wch:10},{wch:34},{wch:28},{wch:12},{wch:14},{wch:14}]; XLSX.utils.book_append_sheet(wb, ws2, 'Faturas');
+  const rep = [['Beneficiário','Vencimento','Descrição','Forma','Situação','Valor']];
+  d.lista.forEach(x=>x.repasses.forEach(r=>rep.push([x.nome, fmtDateBR(r.venc), r.desc, r.forma, r.paga?'Pago':r.vencida?'Vencido':'A pagar', r.valor])));
+  const ws3 = XLSX.utils.aoa_to_sheet(rep); ws3['!cols'] = [{wch:36},{wch:12},{wch:34},{wch:16},{wch:12},{wch:14}]; XLSX.utils.book_append_sheet(wb, ws3, 'Repasses');
+  XLSX.writeFile(wb, `extrato_terceiros_${rpSlug(d)}_${d.today}.xlsx`);
+}
+function rpExtFilename(d){ const o = extSelObj(d); return `extrato_terceiros_${o?extKey(o.nome).replace(/[^a-z0-9]+/g,'_')+'_':''}${rpSlug(d)}_${d.today}.pdf`; }
+function rpExtEmailHTML(d, msg){
+  const o = extSelObj(d), m = fmtCurrency, cel = 'padding:6px;border-bottom:1px solid #eee;';
+  const linhas = o ? `<tr><td style="${cel}">Devido (faturas)</td><td style="${cel}text-align:right;">${m(o.devido)}</td></tr><tr><td style="${cel}">Repasses pagos</td><td style="${cel}text-align:right;">${m(o.pago)}</td></tr><tr><td style="${cel}"><b>Saldo a repassar</b></td><td style="${cel}text-align:right;"><b>${m(o.saldo)}</b></td></tr>`
+    : d.lista.map(x=>`<tr><td style="${cel}">${rpEsc(x.nome)}</td><td style="${cel}text-align:right;">${m(x.devido)}</td><td style="${cel}text-align:right;">${m(x.pago)}</td><td style="${cel}text-align:right;">${m(x.aberto)}</td></tr>`).join('');
+  const cab = o ? '' : '<tr style="background:#f3f4f7;"><th style="padding:6px;text-align:left;">Beneficiário</th><th style="padding:6px;text-align:right;">Devido</th><th style="padding:6px;text-align:right;">Pago</th><th style="padding:6px;text-align:right;">A pagar</th></tr>';
+  return `<div style="font-family:Arial,sans-serif;max-width:720px;color:#1e2632;"><p style="white-space:pre-line;font-size:14px;">${rpEsc(msg)}</p>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">${cab}${linhas}</table>
+    <p style="font-size:12px;color:#6b7a90;margin-top:14px;">O extrato completo segue em anexo (PDF).<br>${RP_BRAND}</p></div>`;
+}
+function rpExtPlain(d, msg){
+  const o = extSelObj(d), m = fmtCurrency;
+  return `${msg}\n\n` + (o ? `Devido (faturas): ${m(o.devido)}\nRepasses pagos: ${m(o.pago)}\nSaldo a repassar: ${m(o.saldo)}` : d.lista.slice(0,25).map(x=>`- ${x.nome}: devido ${m(x.devido)} | pago ${m(x.pago)} | a pagar ${m(x.aberto)}`).join('\n')) + `\n\n(O extrato completo em PDF está anexado.)\n\n${RP_BRAND}`;
+}
+
+/* ---------- Contexto do relatório em uso (diário, inconsistências ou extrato) ---------- */
 let rpCurCtx = null;
 function rpCtx(mode){
+  if(mode==='ext'){
+    const d = rpExtData(), o = extSelObj(d), nome = d.company?d.company.nome:'', pn = d.company && d.company.responsavel ? d.company.responsavel.split(' ')[0] : '';
+    return {mode, d, pdf:()=>rpExtPDF(d), filename:rpExtFilename(d), subject:`Extrato de valores de terceiros — ${o?o.nome+' — ':''}${nome} — ${d.dateBR}`,
+      msg:`Olá${pn?', '+pn:''},\n\nSegue em anexo o extrato de valores de terceiros ${o?'de '+o.nome+' ':''}da ${nome||'empresa'} (posição em ${d.dateBR}), com o que é devido, o que já foi repassado e o saldo a repassar.\n\nQualquer dúvida, estamos à disposição.`,
+      html:m=>rpExtEmailHTML(d,m), plain:m=>rpExtPlain(d,m), hint:'PDF gerado na hora com a posição atual'};
+  }
   if(mode==='incons'){
     const d = rpIncData(), nome = d.company?d.company.nome:'';
     const pn = d.company && d.company.responsavel ? d.company.responsavel.split(' ')[0] : '';
@@ -5695,8 +5949,8 @@ function renderRelatorios(){
   const d = rpData();
   const cfg = envioCfg();
   const last = cfg.last ? `Último envio: ${new Date(cfg.last.at).toLocaleString('pt-BR')} para ${cfg.last.to}` : '';
-  const inc = rpTab==='incons';
-  const di = rpIncData();
+  const inc = rpTab==='incons', ext = rpTab==='ext', mode = inc ? 'incons' : ext ? 'ext' : 'diario';
+  const di = rpIncData(), de = ext ? rpExtData() : null;
   const syncTxt = cfg.sync ? `dados sincronizados em ${new Date(cfg.sync).toLocaleString('pt-BR')}` : 'ainda sem sincronização';
   el.innerHTML = `
     <div class="cx-head">
@@ -5706,35 +5960,38 @@ function renderRelatorios(){
       </div>
       <div class="cx-head-actions">
         <button class="cx-btn" id="rpCfgBtn">${cxSvg('edit')} Configurar envio</button>
-        ${inc ? `<button class="cx-btn" id="rpXlsBtn">${cxSvg('down')} Baixar Excel</button>` : ''}
+        ${inc||ext ? `<button class="cx-btn" id="rpXlsBtn">${cxSvg('down')} Baixar Excel</button>` : ''}
         <button class="cx-btn" id="rpPdfBtn">${cxSvg('down')} Baixar PDF</button>
         <button class="cx-btn accent big" id="rpSendBtn">${cxSvg('file')} Enviar por e-mail</button>
       </div>
     </div>
     <div class="tabs-row" style="margin-bottom:12px;"><div class="tabs-list">
-      <button class="tab-btn ${inc?'':'active'}" data-tab="diario">Relatório diário</button>
+      <button class="tab-btn ${mode==='diario'?'active':''}" data-tab="diario">Relatório diário</button>
+      <button class="tab-btn ${ext?'active':''}" data-tab="ext">Extrato de terceiros</button>
       <button class="tab-btn ${inc?'active':''}" data-tab="incons">Inconsistências${di.items.length?` (${di.items.length})`:''}</button>
     </div></div>
     <div class="rp-bar">
       <span>Destinatário: <b>${d.company&&d.company.email?d.company.email:'— sem e-mail cadastrado —'}</b> (cadastro da empresa)</span>
       <span>${cfg.url ? (last||'Envio configurado.') : 'Envio ainda não configurado — clique em "Configurar envio".'}</span>
     </div>
-    ${inc ? '' : `<div class="rp-bar" style="align-items:center;">
+    ${mode!=='diario' ? '' : `<div class="rp-bar" style="align-items:center;">
       <span>Envio automático todo dia às <b>08:00</b>: <b>${cfg.diario?'ativo':'desligado'}</b>${cfg.diario?` · ${syncTxt}`:''}</span>
       <span style="display:flex;gap:8px;">${cfg.diario ? `<button class="cx-btn" id="rpDiaTeste">Enviar agora (teste)</button><button class="cx-btn" id="rpDiaSync">Sincronizar</button><button class="cx-btn" id="rpDiaOff">Desativar</button>` : `<button class="cx-btn" id="rpDiaOn">Ativar envio diário às 8h</button>`}</span>
     </div>`}
-    ${inc ? rpIncPreviewHTML(di) : rpPreviewHTML(d)}`;
+    ${inc ? rpIncPreviewHTML(di) : ext ? rpExtPreviewHTML(de) : rpPreviewHTML(d)}`;
   el.querySelector('#rpCfgBtn').addEventListener('click', rpOpenConfig);
-  el.querySelector('#rpPdfBtn').addEventListener('click', ()=>{ if(!rpEnsureLibs()) return; const c = rpCtx(inc?'incons':'diario'); c.pdf().save(c.filename); showToast('PDF gerado.'); });
-  el.querySelector('#rpSendBtn').addEventListener('click', ()=>rpOpenSend(inc?'incons':'diario'));
+  el.querySelector('#rpPdfBtn').addEventListener('click', ()=>{ if(!rpEnsureLibs()) return; const c = rpCtx(mode); c.pdf().save(c.filename); showToast('PDF gerado.'); });
+  el.querySelector('#rpSendBtn').addEventListener('click', ()=>rpOpenSend(mode));
   el.querySelectorAll('.tab-btn[data-tab]').forEach(b=>b.addEventListener('click', ()=>{ rpTab = b.dataset.tab; renderRelatorios(); }));
   const on = el.querySelector('#rpDiaOn'); if(on) on.addEventListener('click', ()=>rpDiarioToggle(true));
   const off = el.querySelector('#rpDiaOff'); if(off) off.addEventListener('click', ()=>rpDiarioToggle(false));
   const sy = el.querySelector('#rpDiaSync'); if(sy) sy.addEventListener('click', ()=>rpSync(false));
   const te = el.querySelector('#rpDiaTeste'); if(te) te.addEventListener('click', rpDiarioTeste);
-  const xl = el.querySelector('#rpXlsBtn'); if(xl) xl.addEventListener('click', ()=>rpIncXLSX(di));
+  const xl = el.querySelector('#rpXlsBtn'); if(xl) xl.addEventListener('click', ()=>{ if(ext) rpExtXLSX(de); else rpIncXLSX(di); });
   const fs = el.querySelector('#incSev'); if(fs) fs.addEventListener('change', e=>{ incSev = e.target.value; renderRelatorios(); });
   const fc = el.querySelector('#incCat'); if(fc) fc.addEventListener('change', e=>{ incCat = e.target.value; renderRelatorios(); });
+  const es = el.querySelector('#extSel'); if(es) es.addEventListener('change', e=>{ extSel = e.target.value; renderRelatorios(); });
+  el.querySelectorAll('.ext-row').forEach(r=>r.addEventListener('click', ()=>{ extSel = r.dataset.k; renderRelatorios(); window.scrollTo(0,0); }));
 }
 
 
@@ -7067,7 +7324,7 @@ function impParseImobzi(lines){
       const contrato = cells[1]||'', inquilino = cells[2]||'', ref = cells[4]||'', prop = sec===3 ? '' : (cells[3]||'');
       const desc = `Aluguel contrato ${contrato}${ref?' — ref. '+ref:''}`;
       const obs = [prop?'Proprietário: '+prop:'', sec===3?'Paga em '+(cells[3]||''):''].filter(Boolean).join(' · ');
-      rows.push({sel:sec===1, flag:sec===2?'Projeção':sec===3?'Já recebida':'', tipo:'receber', venc, parte:inquilino, desc, obs, valor:fmtMoneyInput(valor), forma:RECEIVE_METHODS[0], doc:'Contrato '+contrato, contrato, _sec:sec});
+      rows.push({sel:sec===1, flag:sec===2?'Projeção':sec===3?'Já recebida':'', tipo:'receber', venc, parte:inquilino, desc, obs, proprietario:prop, valor:fmtMoneyInput(valor), forma:RECEIVE_METHODS[0], doc:'Contrato '+contrato, contrato, _sec:sec});
     } else if(sec===4){
       rows.push({sel:true, flag:'', tipo:'pagar', venc, parte:cells[1]||'', desc:cells[2]||'Repasse', valor:fmtMoneyInput(valor), forma:impMatchForma(cells[3], PAYMENT_METHODS), doc:'', contrato:((cells[2]||'').match(/(\d+)\s*$/)||[])[1]||'', _sec:4});
     } else if(sec===5){
@@ -7083,6 +7340,8 @@ function impParseImobzi(lines){
       pool.forEach(x=>x._used = true);
       const v = parseMoney(r.valor), rep = Math.min(v, pool.reduce((t,x)=>t+(parseMoney(x.valor)||0),0));
       r.repasse = fmtMoneyInput(rep); r.conta = CONTA_TAXA_ADM;
+      const somaPool = pool.reduce((t,x)=>t+(parseMoney(x.valor)||0),0);
+      if(somaPool<=v+0.005){ r.itens = pool.map(x=>({t:'repasse', b:x.parte, v:Math.round((parseMoney(x.valor)||0)*100)/100})); const tx = Math.round((v-somaPool)*100)/100; if(tx>0.004) r.itens.push({t:'taxa', b:'', v:tx}); }
       r.obs = [r.obs, `Repasse ${fmtCurrency(rep)} · taxa de administração ${fmtCurrency(v-rep)}`].filter(Boolean).join(' · ');
     } else { r.conta = 'REC-AC'; r.note = 'Sem repasse'; }
   });
@@ -7317,6 +7576,7 @@ function impStep2(obs){
     if(k==='sel') { r.sel = e.target.checked; tr.classList.toggle('imp-off', !r.sel); }
     else if(k==='valor' || k==='repasse'){ const dg = e.target.value.replace(/\D/g,''); r[k] = dg ? fmtMoneyInput(parseInt(dg,10)/100) : ''; e.target.value = r[k]; }
     else r[k] = e.target.value;
+    if(k==='repasse' || k==='valor' || k==='conta') r.itens = null;
     if(k==='parte' || k==='desc') e.target.style.width = Math.round(Math.min(k==='desc'?760:330, Math.max(k==='desc'?260:150, String(r[k]).length*6.3+32)))+'px';
     if(k==='conta'){ const t = e.target.selectedOptions[0]; if(t) e.target.style.width = Math.round(Math.min(420, Math.max(180, t.text.length*6.3+32)))+'px'; }
     if(k==='tipo'){ r.forma = impMatchForma('', r.tipo==='pagar'?PAYMENT_METHODS:RECEIVE_METHODS); impDefaults(r); draw(); return; }
@@ -7371,6 +7631,12 @@ function impFindOrCreateParty(tipo, nome){
   list.push(p); tipo==='pagar' ? persist(SUPPLIERS_KEY, SUPPLIERS) : persist(CLIENTS_KEY, CLIENTS);
   return {p, created:true};
 }
+function impItens(r, valor, conta){
+  if(Array.isArray(r.itens) && r.itens.length) return r.itens;
+  const rep = parseMoney(r.repasse)||0;
+  if(rep>0 && conta===CONTA_TAXA_ADM && rep<=valor+0.005){ const it = [{t:'repasse', b:r.proprietario||'', v:rep}]; const tx = Math.round((valor-rep)*100)/100; if(tx>0.004) it.push({t:'taxa', b:'', v:tx}); return it; }
+  return undefined;
+}
 function impSave(){
   const sel = impRows.filter(r=>r.sel);
   const bad = sel.find(r=>!r.parte.trim() || isNaN(parseMoney(r.valor)) || parseMoney(r.valor)<=0 || !r.venc);
@@ -7386,6 +7652,7 @@ function impSave(){
       pool.forEach(x=>x._used = true);
       const rep = Math.min(a.valor, pool.reduce((t,x)=>t+(parseMoney(x.valor)||0),0));
       a.repasse = rep; nLig++;
+      if(!a.itens){ const somaP = pool.reduce((t,x)=>t+(parseMoney(x.valor)||0),0); if(somaP<=a.valor+0.005){ a.itens = pool.map(x=>({t:'repasse', b:x.parte, v:Math.round((parseMoney(x.valor)||0)*100)/100})); const tx = Math.round((a.valor-somaP)*100)/100; if(tx>0.004) a.itens.push({t:'taxa', b:'', v:tx}); } }
       if(a.categoria===impAcOf('receber')){ a.categoria = CONTA_TAXA_ADM; a.planoContas = contaLabel(CONTA_TAXA_ADM); }
       a.observacoes = ((a.observacoes||'')+` Repasse ${fmtCurrency(rep)} · taxa de administração ${fmtCurrency(a.valor-rep)}`).trim();
     });
@@ -7402,7 +7669,7 @@ function impSave(){
       nP++;
     } else {
       RECEIVABLES.unshift({id:'AR'+id, empresaId:emp, clienteId:p.id, documento:doc, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), emissao:fmtDateISO(TODAY), vencimento:r.venc, valor,
-        repasse:(parseMoney(r.repasse)||0), categoria:conta, centroCusto:cc, formaRecebimento:r.forma, contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.'+(r.obs?' '+r.obs:''), status:new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer', dataRecebimento:null, valorRecebido:null, planoContas:contaLabel(conta), anexos});
+        repasse:(parseMoney(r.repasse)||0), contrato:r.contrato||'', proprietario:r.proprietario||'', itens:impItens(r,valor,conta), categoria:conta, centroCusto:cc, formaRecebimento:r.forma, contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.'+(r.obs?' '+r.obs:''), status:new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer', dataRecebimento:null, valorRecebido:null, planoContas:contaLabel(conta), anexos});
       nR++;
     }
   });
@@ -7486,7 +7753,7 @@ function dgPeriod(from, to){
   const rec = RECEIVABLES.filter(r=>(!emp||r.empresaId===emp) && r.status!=='cancelado' && inR(r.competencia));
   const P = {}, R = {};
   pay.forEach(a=>{ if(contaEhBP(a.categoria)) return; const g=contaGrupoCod(a.categoria); P[g]=(P[g]||0)+a.valor; });
-  rec.forEach(r=>{ if(contaEhBP(r.categoria)) return; const g=contaGrupoCod(r.categoria); R[g]=(R[g]||0)+Math.max(0, r.valor-(r.repasse||0)); });
+  rec.forEach(r=>{ arParts(r).emp.forEach(pt=>{ if(contaEhBP(pt.conta)) return; const g=contaGrupoCod(pt.conta); R[g]=(R[g]||0)+Math.max(0, pt.v); }); });
   const sp = (...gs)=>gs.reduce((t,g)=>t+(P[g]||0),0), sr = (...gs)=>gs.reduce((t,g)=>t+(R[g]||0),0);
   const receita = sr('4.01','REC-AC'), deducoes = sp('4.02'), custos = sp(...DG_CUSTOS);
   const comercial = sp('6.04'), admTotal = sp(...DG_ADM), pessoal = sp('6.01'), da = sp('6.08');
@@ -7647,7 +7914,7 @@ function renderDRE(){
   const rr = dgCatRange(dgCatRecMode), dr = dgCatRange(dgCatDespMode);
   const emp = state.filters.empresaId;
   const recMap = {};
-  RECEIVABLES.filter(x=>(!emp||x.empresaId===emp) && x.status!=='cancelado' && x.competencia>=rr[0] && x.competencia<=rr[1]).forEach(x=>{ if(contaEhBP(x.categoria)) return; const k=contaNome(x.categoria); recMap[k]=(recMap[k]||0)+Math.max(0, x.valor-(x.repasse||0)); });
+  RECEIVABLES.filter(x=>(!emp||x.empresaId===emp) && x.status!=='cancelado' && x.competencia>=rr[0] && x.competencia<=rr[1]).forEach(x=>{ arParts(x).emp.forEach(pt=>{ if(contaEhBP(pt.conta)) return; const k=contaNome(pt.conta); recMap[k]=(recMap[k]||0)+Math.max(0, pt.v); }); });
   const recItems = Object.entries(recMap).map(([name,v])=>({name,v})).sort((a,b)=>b.v-a.v);
   const recTotal = recItems.reduce((s,x)=>s+x.v,0);
   const dp = dgPeriod(dr[0], dr[1]);
