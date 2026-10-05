@@ -2037,7 +2037,7 @@ const BAIXADO_AR = ['recebido','parcial','aguardando_conciliacao','conciliado'],
 /* Saldo de uma conta bancária: saldo inicial (informado) + recebimentos baixados - pagamentos baixados, desde a data inicial até a data pedida */
 function bankSaldo(emp, conta, ateIso){
   const cfg = (BANKBAL[emp]||{})[conta] || {}, desde = cfg.data || '', ini = cfg.saldoInicial || 0;
-  const dentro = d=> (!desde || d>=desde) && d<=ateIso;
+  const dentro = d=> (!desde || d>desde) && d<=ateIso;
   const ent = RECEIVABLES.filter(r=>r.empresaId===emp && (r.contaBancaria||BANK_ACCOUNTS[0])===conta && BAIXADO_AR.includes(r.status) && dentro(r.dataRecebimento||r.vencimento)).reduce((t,r)=>t+(r.valorRecebido||r.valor),0);
   const sai = state.accounts.filter(a=>a.empresaId===emp && (a.contaBancaria||BANK_ACCOUNTS[0])===conta && BAIXADO_AP.includes(a.status) && dentro(a.dataPagamento||a.vencimento)).reduce((t,a)=>t+a.valor,0);
   const r2 = x=>Math.round(x*100)/100;
@@ -6096,7 +6096,7 @@ function renderCfgContasBancarias(body){
   body.innerHTML = `
     <div class="rp-hint" style="margin:6px 0 14px;line-height:1.6;max-width:900px;">
       <b>Como usar:</b> 1) Informe o <b>saldo inicial</b> de cada banco e a <b>data</b> em que ele vale (o saldo de fechamento do dia anterior ao primeiro lançamento do sistema, por exemplo 30/09 para a base que começa em 01/10).
-      2) O sistema soma os recebimentos e pagamentos <b>baixados</b> daquela conta desde essa data. 3) Para conferir, informe o <b>saldo do extrato</b> em uma data: a <b>diferença</b> mostra o que ainda falta lançar, baixar ou conciliar.
+      2) O sistema soma os recebimentos e pagamentos <b>baixados</b> daquela conta a partir do dia seguinte a essa data (o saldo já inclui o próprio dia). 3) Para conferir, informe o <b>saldo do extrato</b> em uma data: a <b>diferença</b> mostra o que ainda falta lançar, baixar ou conciliar.
     </div>
     <div class="table-scroll"><table class="data-table" style="min-width:0;table-layout:auto;"><thead><tr><th>Conta</th><th>Saldo inicial</th><th>Em</th><th class="num">Entradas</th><th class="num">Saídas</th><th class="num">Saldo no sistema</th><th>Saldo do extrato</th><th>Data do extrato</th><th class="num">Diferença</th></tr></thead><tbody id="cbBody">${linhas}</tbody></table></div>
     <div class="rp-hint" style="margin-top:12px;">Entradas e saídas contam só o que está com baixa (recebido/pago) e a conta bancária escolhida no lançamento. Lançamentos importados do Imobzi entram na primeira conta da lista.</div>`;
