@@ -2030,6 +2030,20 @@ function contaMigrar(valor, tipo){
 const COST_CENTERS = ['Administrativo','Comercial','Financeiro','Tecnologia','Operações','Marketing','Recursos Humanos'];
 const PAYMENT_METHODS = loadOrSeedArray('bpo_financeiro_payment_methods_v1', ()=>['PIX','Boleto','Transferência Bancária','Débito Automático','Cartão','Dinheiro','Outros']);
 const BANK_ACCOUNTS = loadOrSeedArray('bpo_financeiro_bank_accounts_v1', ()=>['Sicredi (Conta Corrente)','Banco do Brasil (Conta Corrente)','Caixa (Conta Corrente)','Itaú (Conta Corrente)']);
+const BANKBAL_KEY = 'bpo_financeiro_bank_balances_v1';
+const BANKBAL = (()=>{ try{ return JSON.parse(localStorage.getItem(BANKBAL_KEY)||'{}') || {}; }catch(e){ return {}; } })();
+function saveBankBal(){ persist(BANKBAL_KEY, BANKBAL); }
+const BAIXADO_AR = ['recebido','parcial','aguardando_conciliacao','conciliado'], BAIXADO_AP = ['pago','aguardando_conciliacao','conciliado'];
+/* Saldo de uma conta bancária: saldo inicial (informado) + recebimentos baixados - pagamentos baixados, desde a data inicial até a data pedida */
+function bankSaldo(emp, conta, ateIso){
+  const cfg = (BANKBAL[emp]||{})[conta] || {}, desde = cfg.data || '', ini = cfg.saldoInicial || 0;
+  const dentro = d=> (!desde || d>=desde) && d<=ateIso;
+  const ent = RECEIVABLES.filter(r=>r.empresaId===emp && (r.contaBancaria||BANK_ACCOUNTS[0])===conta && BAIXADO_AR.includes(r.status) && dentro(r.dataRecebimento||r.vencimento)).reduce((t,r)=>t+(r.valorRecebido||r.valor),0);
+  const sai = state.accounts.filter(a=>a.empresaId===emp && (a.contaBancaria||BANK_ACCOUNTS[0])===conta && BAIXADO_AP.includes(a.status) && dentro(a.dataPagamento||a.vencimento)).reduce((t,a)=>t+a.valor,0);
+  const r2 = x=>Math.round(x*100)/100;
+  return {ini:r2(ini), ent:r2(ent), sai:r2(sai), saldo:r2(ini+ent-sai), desde};
+}
+function bankConfigurado(emp){ const o = BANKBAL[emp]||{}; return Object.keys(o).some(k=>o[k] && o[k].saldoInicial!==undefined); }
 const TRANSFERS_KEY = 'bpo_financeiro_transfers_v1';
 const TRANSFERS = loadOrSeedArray(TRANSFERS_KEY, ()=>[]);
 function saveTransfers(){ persist(TRANSFERS_KEY, TRANSFERS); }
@@ -4034,8 +4048,10 @@ function renderVisaoGeral(){
   const allReceivables = RECEIVABLES.filter(r=>!state.filters.empresaId || r.empresaId===state.filters.empresaId);
 
   // ---- KPIs (posição atual, não dependem do range) ----
-  const saldoAtual = allReceivables.filter(r=>r.status==='recebido').reduce((s,r)=>s+(r.valorRecebido||r.valor),0)
-                    - allPayables.filter(a=>a.status==='pago').reduce((s,a)=>s+a.valor,0);
+  const saldoAtual = (state.filters.empresaId && bankConfigurado(state.filters.empresaId))
+    ? BANK_ACCOUNTS.reduce((t,c)=>t+bankSaldo(state.filters.empresaId, c, todayIso).saldo, 0)
+    : allReceivables.filter(r=>BAIXADO_AR.includes(r.status)).reduce((s,r)=>s+(r.valorRecebido||r.valor),0)
+                    - allPayables.filter(a=>BAIXADO_AP.includes(a.status)).reduce((s,a)=>s+a.valor,0);
   const receberAberto = allReceivables.filter(r=>!['recebido','cancelado'].includes(r.status));
   const pagarAberto = allPayables.filter(a=>!['pago','cancelado'].includes(a.status));
   const vencidosPagar = allPayables.filter(a=>a.status==='vencido');
@@ -4055,7 +4071,7 @@ function renderVisaoGeral(){
   const saldoProjetado = saldoAtual + sum(receberNoRange) - sum(pagarNoRange);
 
   const kpis = [
-    {icon:'dollar-sign', title:'Saldo atual', value:fmtCurrency(saldoAtual), sub:'Em conta'},
+    {icon:'dollar-sign', title:'Saldo atual', value:fmtCurrency(saldoAtual), sub:(state.filters.empresaId && bankConfigurado(state.filters.empresaId)) ? 'Soma das contas bancárias' : 'Recebido − pago (sem saldo inicial)'},
     {icon:'arrow-up-circle', title:'A receber', value:fmtCurrency(sum(receberAberto)), sub:`${receberAberto.length} título(s) em aberto`},
     {icon:'arrow-down-circle', title:'A pagar', value:fmtCurrency(sum(pagarAberto)), sub:`${pagarAberto.length} título(s) em aberto`},
     {icon:'alert-triangle', title:'Vencidos', value:fmtCurrency(sum(vencidosPagar)+sum(vencidosReceber)), sub:`${vencidosPagar.length} a pagar | ${vencidosReceber.length} a receber`},
@@ -6030,6 +6046,7 @@ const CFG_TABS = [
   {key:'clientes', label:'Clientes'},
   {key:'plano-contas', label:'Plano de Contas'},
   {key:'centros-custo', label:'Centros de Custo'},
+  {key:'contas-bancarias', label:'Contas bancárias'},
   {key:'formas-pagamento', label:'Formas de Pagamento'},
   {key:'aprovadores', label:'Aprovadores'},
   {key:'usuarios', label:'Usuários', admin:true},
@@ -6054,10 +6071,49 @@ function renderCfgTabBody(){
   const renderers = {
     'empresas': renderCfgEmpresas, 'fornecedores': renderCfgFornecedores, 'clientes': renderCfgClientes,
     'categorias': renderCfgCategorias, 'plano-contas': renderCfgPlanoContas, 'centros-custo': renderCfgCentrosCusto,
-    'formas-pagamento': renderCfgFormasPagamento, 'aprovadores': renderCfgAprovadores, 'usuarios': renderCfgUsuarios,
+    'formas-pagamento': renderCfgFormasPagamento, 'contas-bancarias': renderCfgContasBancarias, 'aprovadores': renderCfgAprovadores, 'usuarios': renderCfgUsuarios,
   };
   if(cfgTab==='usuarios' && !isAdmin()) cfgTab = 'empresas';
   renderers[cfgTab](body);
+}
+
+/* ---------- Contas bancárias (saldo inicial e conferência com o extrato) ---------- */
+function renderCfgContasBancarias(body){
+  const emp = state.filters.empresaId;
+  if(!emp){ body.innerHTML = '<div class="cx-empty">Escolha uma empresa para informar os saldos.</div>'; return; }
+  const hoje = fmtDateISO(TODAY);
+  const linhas = BANK_ACCOUNTS.map(c=>{
+    const cfg = (BANKBAL[emp]||{})[c] || {}, ate = cfg.extData || hoje, m = bankSaldo(emp, c, ate);
+    const dif = (cfg.extrato!==undefined && cfg.extrato!=='') ? Math.round((m.saldo-cfg.extrato)*100)/100 : null;
+    return `<tr data-c="${rpEsc(c)}"><td><b>${rpEsc(c)}</b></td>
+      <td><input type="text" class="cx-input" data-k="saldoInicial" inputmode="decimal" value="${cfg.saldoInicial!==undefined?fmtMoneyInput(cfg.saldoInicial):''}" placeholder="R$ 0,00" style="width:130px;text-align:right;"></td>
+      <td><input type="date" class="cx-input" data-k="data" value="${cfg.data||''}" style="width:140px;"></td>
+      <td class="num">${fmtCurrency(m.ent)}</td><td class="num">${fmtCurrency(m.sai)}</td><td class="num"><b>${fmtCurrency(m.saldo)}</b></td>
+      <td><input type="text" class="cx-input" data-k="extrato" inputmode="decimal" value="${cfg.extrato!==undefined&&cfg.extrato!==''?fmtMoneyInput(cfg.extrato):''}" placeholder="R$ 0,00" style="width:130px;text-align:right;"></td>
+      <td><input type="date" class="cx-input" data-k="extData" value="${cfg.extData||''}" style="width:140px;"></td>
+      <td class="num" style="font-weight:700;${dif===null?'':(Math.abs(dif)<0.005?'color:#0f6e45;':'color:#b42318;')}">${dif===null?'—':(Math.abs(dif)<0.005?'Confere':fmtCurrency(dif))}</td></tr>`;
+  }).join('');
+  body.innerHTML = `
+    <div class="rp-hint" style="margin:6px 0 14px;line-height:1.6;max-width:900px;">
+      <b>Como usar:</b> 1) Informe o <b>saldo inicial</b> de cada banco e a <b>data</b> em que ele vale (o saldo de fechamento do dia anterior ao primeiro lançamento do sistema, por exemplo 30/09 para a base que começa em 01/10).
+      2) O sistema soma os recebimentos e pagamentos <b>baixados</b> daquela conta desde essa data. 3) Para conferir, informe o <b>saldo do extrato</b> em uma data: a <b>diferença</b> mostra o que ainda falta lançar, baixar ou conciliar.
+    </div>
+    <div class="table-scroll"><table class="data-table" style="min-width:0;table-layout:auto;"><thead><tr><th>Conta</th><th>Saldo inicial</th><th>Em</th><th class="num">Entradas</th><th class="num">Saídas</th><th class="num">Saldo no sistema</th><th>Saldo do extrato</th><th>Data do extrato</th><th class="num">Diferença</th></tr></thead><tbody id="cbBody">${linhas}</tbody></table></div>
+    <div class="rp-hint" style="margin-top:12px;">Entradas e saídas contam só o que está com baixa (recebido/pago) e a conta bancária escolhida no lançamento. Lançamentos importados do Imobzi entram na primeira conta da lista.</div>`;
+  const moneyOf = txt=>{ const d = String(txt||'').replace(/\D/g,''); if(!d) return NaN; const n = parseInt(d,10)/100; return /-/.test(txt) ? -n : n; };
+  body.querySelector('#cbBody').addEventListener('input', e=>{
+    const el = e.target.closest('input[data-k]'); if(!el || !['saldoInicial','extrato'].includes(el.dataset.k)) return;
+    const v = moneyOf(el.value); el.value = isNaN(v) ? (/-/.test(el.value)?'-':'') : fmtMoneyInput(v);
+  });
+  body.querySelector('#cbBody').addEventListener('change', e=>{
+    const el = e.target.closest('input[data-k]'); if(!el) return;
+    const c = el.closest('tr').dataset.c, k = el.dataset.k;
+    const o = (BANKBAL[emp] = BANKBAL[emp] || {}); const cfg = (o[c] = o[c] || {});
+    if(k==='saldoInicial' || k==='extrato'){ const v = el.value.trim()==='' ? undefined : moneyOf(el.value); if(v===undefined || isNaN(v)) delete cfg[k]; else cfg[k] = v; }
+    else cfg[k] = el.value || undefined;
+    if(cfg.saldoInicial===undefined && cfg.extrato===undefined && !cfg.data && !cfg.extData) delete o[c];
+    saveBankBal(); renderCfgContasBancarias(body);
+  });
 }
 
 /* ---------- Empresas ---------- */
