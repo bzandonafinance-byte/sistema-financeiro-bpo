@@ -1103,6 +1103,8 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .imp-zoom{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);white-space:nowrap;}
 .imp-zoom .btn{height:26px;padding:0 9px;} .imp-zoom b{min-width:38px;text-align:center;color:var(--text-primary);}
 .imp-tbl select[data-k=tipo]{min-width:108px;padding:0 4px;}
+.bc-bar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:6px 0 10px;}
+.bc-move{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;}
 </style>
 </head>
 <body>
@@ -1339,6 +1341,7 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
     <div class="page-section active" id="page-visao-geral"></div>
     <div class="page-section" id="page-lancamentos"></div>
     <div class="page-section" id="page-contas-receber"></div>
+    <div class="page-section" id="page-conciliacao"></div>
     <div class="page-section" id="page-aprovacoes"></div>
     <div class="page-section" id="page-pagamentos-autorizados"></div>
     <div class="page-section" id="page-dashboard-gerencial"></div>
@@ -1911,6 +1914,7 @@ const NAV_ITEMS = [
   {key:'lancamentos', label:'Lançamentos', icon:'list'},
   {key:'contas-pagar', label:'Contas a Pagar', icon:'arrow-down-circle'},
   {key:'contas-receber', label:'Contas a Receber', icon:'arrow-up-circle'},
+  {key:'conciliacao', label:'Conciliação bancária', icon:'check-square'},
   {key:'dre', label:'DRE Gerencial', icon:'bar-chart'},
   {key:'balanco', label:'Balanço Patrimonial', icon:'building'},
   {key:'relatorios', label:'Relatórios', icon:'file'},
@@ -2039,9 +2043,11 @@ function bankSaldo(emp, conta, ateIso){
   const cfg = (BANKBAL[emp]||{})[conta] || {}, desde = cfg.data || '', ini = cfg.saldoInicial || 0;
   const dentro = d=> (!desde || d>desde) && d<=ateIso;
   const ent = RECEIVABLES.filter(r=>r.empresaId===emp && (r.contaBancaria||BANK_ACCOUNTS[0])===conta && BAIXADO_AR.includes(r.status) && dentro(r.dataRecebimento||r.vencimento)).reduce((t,r)=>t+(r.valorRecebido||r.valor),0);
-  const sai = state.accounts.filter(a=>a.empresaId===emp && (a.contaBancaria||BANK_ACCOUNTS[0])===conta && BAIXADO_AP.includes(a.status) && dentro(a.dataPagamento||a.vencimento)).reduce((t,a)=>t+a.valor,0);
+  const sai = state.accounts.filter(a=>a.empresaId===emp && (a.contaBancaria||BANK_ACCOUNTS[0])===conta && BAIXADO_AP.includes(a.status) && dentro(a.dataPagamento||a.vencimento)).reduce((t,a)=>t+(a.valorPago!==undefined?a.valorPago:a.valor),0);
+  const tin = TRANSFERS.filter(t=>t.empresaId===emp && t.destino===conta && dentro(t.data)).reduce((t,x)=>t+x.valor,0);
+  const tout = TRANSFERS.filter(t=>t.empresaId===emp && t.origem===conta && dentro(t.data)).reduce((t,x)=>t+x.valor,0);
   const r2 = x=>Math.round(x*100)/100;
-  return {ini:r2(ini), ent:r2(ent), sai:r2(sai), saldo:r2(ini+ent-sai), desde};
+  return {ini:r2(ini), ent:r2(ent+tin), sai:r2(sai+tout), tin:r2(tin), tout:r2(tout), saldo:r2(ini+ent+tin-sai-tout), desde};
 }
 function bankConfigurado(emp){ const o = BANKBAL[emp]||{}; return Object.keys(o).some(k=>o[k] && o[k].saldoInicial!==undefined); }
 const TRANSFERS_KEY = 'bpo_financeiro_transfers_v1';
@@ -6099,7 +6105,21 @@ function renderCfgContasBancarias(body){
       2) O sistema soma os recebimentos e pagamentos <b>baixados</b> daquela conta a partir do dia seguinte a essa data (o saldo já inclui o próprio dia). 3) Para conferir, informe o <b>saldo do extrato</b> em uma data: a <b>diferença</b> mostra o que ainda falta lançar, baixar ou conciliar.
     </div>
     <div class="table-scroll"><table class="data-table" style="min-width:0;table-layout:auto;"><thead><tr><th>Conta</th><th>Saldo inicial</th><th>Em</th><th class="num">Entradas</th><th class="num">Saídas</th><th class="num">Saldo no sistema</th><th>Saldo do extrato</th><th>Data do extrato</th><th class="num">Diferença</th></tr></thead><tbody id="cbBody">${linhas}</tbody></table></div>
-    <div class="rp-hint" style="margin-top:12px;">Entradas e saídas contam só o que está com baixa (recebido/pago) e a conta bancária escolhida no lançamento. Lançamentos importados do Imobzi entram na primeira conta da lista.</div>`;
+    <div class="rp-hint" style="margin-top:12px;">Entradas e saídas contam só o que está com baixa (recebido/pago) e a conta bancária escolhida no lançamento. As transferências entre contas (Lançamentos > Transferência, ou criadas na Conciliação bancária) também entram.</div>
+    <div id="cbExtra" style="margin-top:18px;display:flex;gap:28px;flex-wrap:wrap;align-items:flex-end;">
+      <div><div class="rp-hint" style="margin-bottom:4px;"><b>Adicionar conta bancária</b> (ex.: PJBank)</div><input class="cx-input" id="cbNova" placeholder="Nome da conta" style="width:220px;"> <button class="cx-btn" id="cbNovaBtn">Adicionar</button></div>
+      <div><div class="rp-hint" style="margin-bottom:4px;"><b>Conta onde caem os aluguéis do Imobzi</b> (recebimentos)</div><select class="cx-select" id="cbReceb"><option value="">— primeira conta da lista —</option>${BANK_ACCOUNTS.map(c=>`<option ${((envioCfg().imobzi||{}).contaReceb===c)?'selected':''}>${rpEsc(c)}</option>`).join('')}</select></div>
+    </div>`;
+  body.querySelector('#cbNovaBtn').addEventListener('click', ()=>{
+    const n = body.querySelector('#cbNova').value.trim(); if(!n) return;
+    if(BANK_ACCOUNTS.includes(n)){ showToast('Essa conta já existe.'); return; }
+    BANK_ACCOUNTS.push(n); saveBankAccounts(); showToast('Conta adicionada.'); renderCfgContasBancarias(body);
+  });
+  body.querySelector('#cbReceb').addEventListener('change', e=>{
+    const c = e.target.value; imobziSetCfg({contaReceb:c});
+    if(c){ let n = 0; RECEIVABLES.forEach(r=>{ if(r.empresaId===emp && r.imobziId && !['conciliado'].includes(r.status) && r.contaBancaria!==c){ r.contaBancaria = c; n++; } }); saveReceivables(); showToast(`Aluguéis do Imobzi na conta ${c}${n?` (${n} lançamento(s) movido(s))`:''}.`); }
+    renderCfgContasBancarias(body);
+  });
   const moneyOf = txt=>{ const d = String(txt||'').replace(/\D/g,''); if(!d) return NaN; const n = parseInt(d,10)/100; return /-/.test(txt) ? -n : n; };
   body.querySelector('#cbBody').addEventListener('input', e=>{
     const el = e.target.closest('input[data-k]'); if(!el || !['saldoInicial','extrato'].includes(el.dataset.k)) return;
@@ -7766,6 +7786,7 @@ async function impImobzi(){
 /* ---------- Sincronização automática com o Imobzi ---------- */
 let imobziBusy = false;
 function imobziCfg(){ return envioCfg().imobzi || {}; }
+function imobziContaReceb(){ const c = (envioCfg().imobzi||{}).contaReceb; return c && BANK_ACCOUNTS.includes(c) ? c : BANK_ACCOUNTS[0]; }
 function imobziSetCfg(o){ const c = envioCfg(); envioSave(Object.assign({}, c, {imobzi:Object.assign({}, c.imobzi||{}, o)})); }
 function imobziAutoOn(){ const c = envioCfg(), im = c.imobzi||{}; return !!(c.url && c.token && im.auto && im.empresa); }
 async function imobziSyncAuto(opts){
@@ -7903,7 +7924,7 @@ function impApply(sel, emp, anexosBase, opts){
         const camp = {faturaId:r.faturaId||undefined, fornecedorId:p.id, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), vencimento:r.venc, valor, categoria:conta, formaPagamento:r.forma, planoContas:contaLabel(conta)};
         if(exist){
           Object.assign(exist, camp);
-          if(!emConc(exist)){ exist.status = baixa ? 'pago' : computeStatusForDate(r.venc); exist.dataPagamento = baixa ? baixa.data : null; }
+          if(!emConc(exist) && !(exist.status==='pago' && !baixa)){ exist.status = baixa ? 'pago' : computeStatusForDate(r.venc); exist.dataPagamento = baixa ? baixa.data : null; }
           nUp++;
         } else {
           state.accounts.unshift(Object.assign({id:'AP'+id, empresaId:emp, documento:doc, emissao:fmtDateISO(TODAY), centroCusto:cc, pixCodigo:'', contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.'+(r.obs?' '+r.obs:''),
@@ -7916,10 +7937,11 @@ function impApply(sel, emp, anexosBase, opts){
         const stAberto = new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer';
         if(exist){
           Object.assign(exist, camp);
-          if(!emConc(exist)){ exist.status = baixa ? 'recebido' : stAberto; exist.dataRecebimento = baixa ? baixa.data : null; exist.valorRecebido = baixa ? baixa.valor : null; }
+          if(!emConc(exist) && !(['recebido','parcial'].includes(exist.status) && !baixa)){ exist.status = baixa ? 'recebido' : stAberto; exist.dataRecebimento = baixa ? baixa.data : null; exist.valorRecebido = baixa ? baixa.valor : null; }
+          if(!emConc(exist) && (envioCfg().imobzi||{}).contaReceb) exist.contaBancaria = imobziContaReceb();
           nUp++;
         } else {
-          RECEIVABLES.unshift(Object.assign({id:'AR'+id, empresaId:emp, documento:doc, emissao:fmtDateISO(TODAY), centroCusto:cc, contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.'+(r.obs?' '+r.obs:''),
+          RECEIVABLES.unshift(Object.assign({id:'AR'+id, empresaId:emp, documento:doc, emissao:fmtDateISO(TODAY), centroCusto:cc, contaBancaria:imobziContaReceb(), observacoes:'Importado de relatório.'+(r.obs?' '+r.obs:''),
             status: baixa ? 'recebido' : stAberto, dataRecebimento: baixa ? baixa.data : null, valorRecebido: baixa ? baixa.valor : null, anexos, imobziId:r.imobziId}, camp));
           nR++;
         }
@@ -8493,12 +8515,570 @@ function bsOpenManual(){
    listeners) on each navigation — same pattern already used by the
    Contas a Pagar table/KPI/tabs renderers above.
    ================================================================ */
+/* ================================================================
+   SECTION: PAGE — Conciliação bancária (extrato × lançamentos)
+   Importa o extrato (PDF com texto, OFX ou CSV), sugere o par de cada linha
+   (título em aberto, transferência entre contas, regra aprendida) e dá a baixa
+   como "Conciliado". Linhas sem título viram lançamento já baixado.
+   ================================================================ */
+const BANKTX_KEY = 'bpo_financeiro_bank_tx_v1', BANKRULES_KEY = 'bpo_financeiro_bank_rules_v1';
+const BANKTX = loadOrSeedArray(BANKTX_KEY, ()=>[]);
+const BANKRULES = loadOrSeedArray(BANKRULES_KEY, ()=>[]);
+function saveBankTx(){ persist(BANKTX_KEY, BANKTX); }
+function saveBankRules(){ persist(BANKRULES_KEY, BANKRULES); }
+function saveBankAccounts(){ persist('bpo_financeiro_bank_accounts_v1', BANK_ACCOUNTS); }
+
+let bcConta = '', bcTab = 'pendentes', bcBusca = '';
+const bcR2 = x=>Math.round(x*100)/100;
+const bcDias = (a,b)=>Math.abs((new Date(a+'T00:00:00')-new Date(b+'T00:00:00'))/864e5);
+
+/* ---------- leitura do extrato ---------- */
+function bcDate(s){
+  s = String(s||'').trim();
+  let m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/); if(m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m = s.match(/^(\d{2})\/(\d{2})\/(\d{2})$/); if(m) return `20${m[3]}-${m[2]}-${m[1]}`;
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return m[0].slice(0,10);
+  m = s.match(/^(\d{4})(\d{2})(\d{2})/); if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return '';
+}
+function bcIsMoney(s){ return /^[-+(]?\s*(R\$\s*)?[\d.]*\d,\d{2}\s*\)?\s*[CD]?$/i.test(String(s).trim()); }
+function bcNum(t){
+  let s = String(t==null?'':t).trim().replace(/R\$\s*/i,''), neg = false;
+  if(/^\(.*\)$/.test(s)){ neg = true; s = s.slice(1,-1).trim(); }
+  const m = s.match(/^([+-])?\s*([\d.,]+)\s*([CD])?$/i); if(!m) return NaN;
+  if(m[1]==='-' || (m[3] && m[3].toUpperCase()==='D')) neg = true;
+  let n = m[2];
+  if(n.includes(',')) n = n.replace(/\./g,'').replace(',','.'); else if(/^\d{1,3}(\.\d{3})+$/.test(n)) n = n.replace(/\./g,'');
+  const v = parseFloat(n); return isNaN(v) ? NaN : (neg ? -v : v);
+}
+function bcDetectBank(txt){
+  const t = cxNormalizeText(txt);
+  const bancos = [['sicredi','Sicredi'],['pjbank','PJBank'],['banco do brasil','Banco do Brasil'],['bradesco','Bradesco'],['itau','Itaú'],['santander','Santander'],['caixa economica','Caixa'],['nubank','Nubank'],['inter','Inter'],['sicoob','Sicoob']];
+  const b = bancos.find(x=>t.includes(x[0])); return b ? b[1] : '';
+}
+function bcFinish(r){
+  if(r.tx.length>1 && r.tx[0].data > r.tx[r.tx.length-1].data) r.tx.reverse(); // extrato do mais novo para o mais antigo
+  const soma = bcR2(r.tx.reduce((t,x)=>t+x.valor,0));
+  r.soma = soma;
+  const ult = [...r.tx].reverse().find(x=>x.saldo!==null && x.saldo!==undefined);
+  if((r.saldoFim===null || r.saldoFim===undefined) && ult) r.saldoFim = ult.saldo;
+  if((r.saldoIni===null || r.saldoIni===undefined) && r.saldoFim!==null && r.saldoFim!==undefined && !isNaN(r.saldoFim)) r.saldoIni = bcR2(r.saldoFim - soma);
+  if(r.saldoIni!==null && r.saldoIni!==undefined && r.tx.length && r.tx.every(x=>x.saldo===null || x.saldo===undefined)){ let acc = r.saldoIni; r.tx.forEach(x=>{ acc = bcR2(acc + x.valor); x.saldo = acc; }); }
+  r.confere = (r.saldoIni!==null && r.saldoFim!==null && r.saldoIni!==undefined && r.saldoFim!==undefined) ? Math.abs(r.saldoIni + soma - r.saldoFim) < 0.005 : null;
+  r.ini = r.tx.length ? r.tx[0].data : ''; r.fim = r.tx.length ? r.tx[r.tx.length-1].data : '';
+  return r;
+}
+function bcParseLines(lines){
+  const tx = []; let saldoIni = null, saldoFim = null;
+  const re = /^(\d{2}\/\d{2}(?:\/\d{2,4})?)\s+(.*?)\s+(-?[\d.]*\d,\d{2}\s*[CD]?)(?:\s+(-?[\d.]*\d,\d{2}\s*[CD]?))?$/;
+  lines.forEach(c=>{
+    let row = c.map(x=>String(x).trim());
+    if(/^SALDO( ANTERIOR| INICIAL)?$/i.test(row[0]) && row.length>=2 && bcIsMoney(row[row.length-1])){ if(saldoIni===null) saldoIni = bcNum(row[row.length-1]); return; }
+    if(row.length<3 && /^\d{2}\/\d{2}/.test(row[0])){ const m = row.join(' ').match(re); if(m) row = [m[1], m[2], m[3]].concat(m[4]?[m[4]]:[]); }
+    const d = bcDate(row[0]); if(!d || row.length<3) return;
+    const nums = [];
+    for(let i=row.length-1; i>=1 && nums.length<2; i--){ if(!bcIsMoney(row[i])) break; nums.unshift({i, n:bcNum(row[i])}); }
+    if(!nums.length) return;
+    const valor = nums[0].n, saldo = nums.length>1 ? nums[1].n : null;
+    let cells = row.slice(1, nums[0].i), doc = '';
+    if(cells.length>1 && /^[A-Z0-9_\-\/.]{5,}$/.test(cells[cells.length-1]) && !/\s/.test(cells[cells.length-1])) doc = cells.pop();
+    tx.push({data:d, desc:cells.join(' ').replace(/\s+/g,' ').trim(), doc, valor:bcR2(valor), saldo:saldo===null?null:bcR2(saldo)});
+  });
+  return bcFinish({tx, saldoIni, saldoFim:null});
+}
+function bcParseOfx(txt){
+  const tx = [], tag = (b,t)=>{ const r = b.match(new RegExp('<'+t+'>([^<\\r\\n]*)','i')); return r ? r[1].trim() : ''; };
+  const re = /<STMTTRN>([\s\S]*?)(?=<\/STMTTRN>|<STMTTRN>|<\/BANKTRANLIST>)/gi; let m;
+  while((m = re.exec(txt))){
+    const b = m[1], d = bcDate(tag(b,'DTPOSTED')), v = parseFloat(tag(b,'TRNAMT').replace(',','.'));
+    if(!d || isNaN(v)) continue;
+    tx.push({data:d, desc:(tag(b,'MEMO')||tag(b,'NAME')).replace(/\s+/g,' '), doc:tag(b,'FITID')||tag(b,'CHECKNUM'), valor:bcR2(v), saldo:null});
+  }
+  const lb = txt.match(/<LEDGERBAL>[\s\S]*?<BALAMT>([^<\r\n]*)/i);
+  return bcFinish({tx, saldoIni:null, saldoFim: lb ? parseFloat(lb[1].replace(',','.')) : null});
+}
+function bcParseCsv(txt){
+  const lines = txt.replace(/\r/g,'').split('\n').filter(l=>l.trim());
+  const amostra = lines.slice(0,8).join('\n'), sep = (amostra.match(/;/g)||[]).length >= (amostra.match(/\t/g)||[]).length && (amostra.match(/;/g)||[]).length ? ';' : ((amostra.match(/\t/g)||[]).length ? '\t' : ',');
+  const split = l=>{ const out = []; let cur = '', q = false; for(const ch of l){ if(ch==='"') q = !q; else if(ch===sep && !q){ out.push(cur.trim()); cur = ''; } else cur += ch; } out.push(cur.trim()); return out; };
+  const rows = lines.map(split);
+  let hi = rows.findIndex(r=>r.length>=3 && r.some(c=>/^data/.test(cxNormalizeText(c))));
+  const H = hi>=0 ? rows[hi].map(c=>cxNormalizeText(c)) : [];
+  const col = rx=>H.findIndex(h=>rx.test(h));
+  let cD = col(/^data/), cDesc = col(/(hist|descri|lancamento|memo|detalhe)/), cV = col(/^valor/), cCred = col(/credito/), cDeb = col(/debito/), cS = col(/saldo/), cDoc = col(/(documento|^doc|numero|^id)/);
+  if(hi<0){ hi = -1; cD = 0; cDesc = 1; cV = rows[0] ? rows[0].length-1 : 2; }
+  const tx = [];
+  rows.slice(hi+1).forEach(r=>{
+    const d = bcDate(r[cD]); if(!d) return;
+    let v = NaN;
+    if(cV>=0) v = bcNum(r[cV]);
+    if(isNaN(v) && (cCred>=0 || cDeb>=0)){ const c = cCred>=0 ? bcNum(r[cCred]) : NaN, db = cDeb>=0 ? bcNum(r[cDeb]) : NaN; v = (isNaN(c)?0:c) - Math.abs(isNaN(db)?0:db); if(!v) v = NaN; }
+    if(isNaN(v)) return;
+    const s = cS>=0 ? bcNum(r[cS]) : NaN;
+    tx.push({data:d, desc:String(r[cDesc>=0?cDesc:1]||'').replace(/\s+/g,' ').trim(), doc:cDoc>=0?String(r[cDoc]||''):'', valor:bcR2(v), saldo:isNaN(s)?null:bcR2(s)});
+  });
+  return bcFinish({tx, saldoIni:null, saldoFim:null});
+}
+
+/* ---------- chaves, regras e sugestões ---------- */
+function bcKeys(list, emp, conta){
+  const cont = {};
+  return list.map(x=>{
+    const base = [emp, conta, x.data, x.valor.toFixed(2), impNorm(x.desc), x.doc].join('|');
+    cont[base] = (cont[base]||0) + 1; return base+'#'+cont[base];
+  });
+}
+function bcRuleKey(desc){
+  let s = impNorm(desc).toUpperCase();
+  s = s.replace(/^(PAGAMENTO PIX|RECEBIMENTO PIX|COMPRAS NACIONAIS|LIQUIDACAO BOLETO|PAGAMENTO BOLETO|TARIFA|PIX ENVIADO|PIX RECEBIDO)\s*/,'').replace(/\b\d+\b/g,' ').replace(/\s+/g,' ').trim();
+  return s.split(' ').slice(0,3).join(' ');
+}
+function bcFindRule(tx){
+  const k = bcRuleKey(tx.desc), dir = tx.valor<0 ? 'D' : 'C';
+  return k ? BANKRULES.find(r=>r.empresaId===tx.empresaId && r.key===k && r.dir===dir) : null;
+}
+function bcParty(tipo, id){ const p = (tipo==='ap' ? SUPPLIERS : CLIENTS).find(x=>x.id===id); return p ? p.nome : ''; }
+function bcTitleParty(tipo, a){ return tipo==='ap' ? bcParty('ap', a.fornecedorId) : bcParty('ar', a.clienteId); }
+function bcNameSim(nome, desc){
+  const toks = impNorm(nome).split(' ').filter(t=>t.length>2); if(!toks.length) return 0;
+  const set = new Set(impNorm(desc).split(' '));
+  return toks.filter(t=>set.has(t)).length / toks.length;
+}
+function bcTitulos(tx){
+  const emp = tx.empresaId, v = Math.abs(tx.valor), out = [];
+  const pool = tx.valor<0 ? state.accounts.filter(a=>a.empresaId===emp).map(a=>({tipo:'ap', a})) : RECEIVABLES.filter(r=>r.empresaId===emp).map(a=>({tipo:'ar', a}));
+  pool.forEach(({tipo, a})=>{
+    if(['cancelado','conciliado'].includes(a.status)) return;
+    const parte = bcTitleParty(tipo, a), dataRef = tipo==='ap' ? (a.dataPagamento||a.vencimento) : (a.dataRecebimento||a.vencimento);
+    const valores = tipo==='ap' ? [a.valorPago!==undefined?a.valorPago:a.valor] : [a.valorRecebido||a.valor, a.valor];
+    const exato = valores.some(x=>Math.abs(x-v)<0.011);
+    let score = 0;
+    if(exato) score += 60;
+    const sim = bcNameSim(parte, tx.desc); score += Math.round(sim*35);
+    const dd = bcDias(dataRef, tx.data); score += dd<=3 ? 15 : dd<=10 ? 8 : dd<=31 ? 2 : 0;
+    if(['pago','recebido','parcial','aguardando_conciliacao'].includes(a.status)) score += 5;
+    out.push({tipo, id:a.id, a, parte, dataRef, exato, score, sim});
+  });
+  return out.sort((x,y)=>y.score-x.score || (x.dataRef<y.dataRef?-1:1));
+}
+function bcTransfCandidatas(tx){
+  const v = Math.abs(tx.valor);
+  return TRANSFERS.filter(t=>t.empresaId===tx.empresaId && Math.abs(t.valor-v)<0.011 && bcDias(t.data, tx.data)<=5
+    && (tx.valor>0 ? t.destino===tx.conta : t.origem===tx.conta) && !((t.conc||{})[tx.conta]));
+}
+function bcOutraConta(tx){
+  const outras = BANK_ACCOUNTS.filter(c=>c!==tx.conta);
+  return outras.find(c=>/pjbank/i.test(c)) || outras[0] || '';
+}
+function bcSugestao(tx){
+  const co = COMPANIES.find(c=>c.id===tx.empresaId) || {}, cnpj = String(co.cnpj||'').replace(/\D/g,'');
+  const tr = bcTransfCandidatas(tx)[0];
+  if(tr) return {tipo:'transf', tf:tr, label:`Transferência já lançada: ${tr.origem} → ${tr.destino}`, score:100};
+  const tits = bcTitulos(tx), best = tits[0], second = tits[1];
+  if(best && best.exato && best.score>=65 && (!second || second.score < best.score-10)) return {tipo:best.tipo, id:best.id, label:`${best.tipo==='ap'?'Pagar':'Receber'}: ${best.parte||'—'} · ${best.a.descricao||''} · venc. ${fmtDateBR(best.a.vencimento)}`, score:best.score, auto:true};
+  const regra = bcFindRule(tx);
+  if(regra) return {tipo:'regra', regra, label:`Lançar como ${contaNome(regra.conta)} — ${regra.parte} (regra aprendida)`, score:70, auto:true};
+  if(cnpj && cnpj.length>=11 && String(tx.desc).replace(/\D/g,'').includes(cnpj) && BANK_ACCOUNTS.length>1){
+    const outra = bcOutraConta(tx);
+    return {tipo:'transf-nova', outra, label:`Transferência ${tx.valor>0?'de':'para'} ${outra} (CNPJ da própria empresa)`, score:75, auto:true};
+  }
+  if(best && best.exato) return {tipo:best.tipo, id:best.id, label:`Possível: ${best.parte||'—'} · ${best.a.descricao||''} (há mais de um título com esse valor)`, score:best.score, auto:false};
+  return null;
+}
+
+/* ---------- gravar / desfazer vínculos ---------- */
+function bcSaveAll(){ saveAccounts(state.accounts); saveReceivables(); saveBankTx(); saveTransfers(); }
+function bcLinkTitulo(tx, tipo, id){
+  const a = tipo==='ap' ? state.accounts.find(x=>x.id===id) : RECEIVABLES.find(x=>x.id===id); if(!a) return false;
+  const v = Math.abs(tx.valor);
+  const prev = tipo==='ap' ? {status:a.status, data:a.dataPagamento||null, valorPago:a.valorPago, conta:a.contaBancaria}
+                           : {status:a.status, data:a.dataRecebimento||null, valorRecebido:a.valorRecebido, conta:a.contaBancaria};
+  a.contaBancaria = tx.conta; a.conciliacao = tx.id;
+  if(tipo==='ap'){ a.status = 'conciliado'; a.dataPagamento = tx.data; if(Math.abs(a.valor-v)>0.005) a.valorPago = v; else delete a.valorPago; }
+  else { a.status = v < a.valor-0.005 ? 'parcial' : 'conciliado'; a.dataRecebimento = tx.data; a.valorRecebido = v; }
+  tx.status = 'conciliado'; tx.vinc = {tipo, id, prev};
+  return true;
+}
+function bcLinkTransf(tx, tf){ tf.conc = tf.conc || {}; tf.conc[tx.conta] = tx.id; tx.status = 'conciliado'; tx.vinc = {tipo:'transf', id:tf.id, criada:false}; return true; }
+function bcCriarTransf(tx, outra){
+  const v = Math.abs(tx.valor), entrada = tx.valor>0;
+  const tf = {id:'TF'+String(Date.now()).slice(-6)+Math.floor(Math.random()*90+10), empresaId:tx.empresaId, origem:entrada?outra:tx.conta, destino:entrada?tx.conta:outra, data:tx.data, valor:v,
+    descricao:'Transferência entre contas (conciliação)', observacoes:tx.desc, conc:{[tx.conta]:tx.id}};
+  TRANSFERS.unshift(tf); tx.status = 'conciliado'; tx.vinc = {tipo:'transf', id:tf.id, criada:true}; return tf;
+}
+function bcCriarLancamento(tx, f){
+  const emp = tx.empresaId, v = Math.abs(tx.valor), debito = tx.valor<0, tipo = debito ? 'pagar' : 'receber';
+  const prevEmp = state.filters.empresaId; state.filters.empresaId = emp;
+  let p; try{ p = impFindOrCreateParty(tipo, f.parte||'Diversos').p; } finally { state.filters.empresaId = prevEmp; }
+  const conta = f.conta || (debito ? 'PAG-AC' : 'REC-AC'), cc = f.cc || COST_CENTERS[0];
+  if(!p.categoria || p.categoria===impAcOf(tipo)){ p.categoria = conta; p.planoContas = contaLabel(conta); p.centroCusto = cc; persist(debito?SUPPLIERS_KEY:CLIENTS_KEY, debito?SUPPLIERS:CLIENTS); }
+  const id = (debito?'AP':'AR')+String(Date.now()).slice(-7)+Math.floor(Math.random()*900+100);
+  const base = {id, empresaId:emp, documento:tx.doc||('EXT-'+tx.id.slice(-6)), descricao:f.desc||tx.desc, competencia:monthOf(tx.data), emissao:tx.data, vencimento:tx.data, valor:v, categoria:conta,
+    planoContas:contaLabel(conta), centroCusto:cc, contaBancaria:tx.conta, observacoes:'Lançado na conciliação bancária: '+tx.desc, status:'conciliado', anexos:[], conciliacao:tx.id, origemExtrato:true};
+  if(debito){ state.accounts.unshift(Object.assign(base, {fornecedorId:p.id, formaPagamento:f.forma||'PIX', pixCodigo:'', dataPagamento:tx.data})); }
+  else { RECEIVABLES.unshift(Object.assign(base, {clienteId:p.id, formaRecebimento:f.forma||'PIX', repasse:0, dataRecebimento:tx.data, valorRecebido:v})); }
+  tx.status = 'conciliado'; tx.vinc = {tipo: debito?'novo-ap':'novo-ar', id, conta};
+  if(f.lembrar){
+    const key = bcRuleKey(tx.desc), dir = debito?'D':'C';
+    if(key){
+      let r = BANKRULES.find(x=>x.empresaId===emp && x.key===key && x.dir===dir);
+      if(!r){ r = {id:'RG'+Date.now()+Math.floor(Math.random()*900), empresaId:emp, key, dir, vezes:0}; BANKRULES.push(r); }
+      Object.assign(r, {conta, parte:f.parte||'Diversos', desc:f.desc||'', cc, forma:f.forma||'PIX'}); r.vezes++; saveBankRules();
+    }
+  }
+  return id;
+}
+function bcDesfazer(tx){
+  const v = tx.vinc; if(!v){ tx.status = 'pendente'; return; }
+  if(v.tipo==='ap' || v.tipo==='ar'){
+    const a = v.tipo==='ap' ? state.accounts.find(x=>x.id===v.id) : RECEIVABLES.find(x=>x.id===v.id);
+    if(a){
+      a.status = v.prev.status; a.contaBancaria = v.prev.conta; delete a.conciliacao;
+      if(v.tipo==='ap'){ a.dataPagamento = v.prev.data; if(v.prev.valorPago===undefined) delete a.valorPago; else a.valorPago = v.prev.valorPago; }
+      else { a.dataRecebimento = v.prev.data; a.valorRecebido = v.prev.valorRecebido; }
+    }
+  } else if(v.tipo==='novo-ap'){ const i = state.accounts.findIndex(x=>x.id===v.id); if(i>=0) state.accounts.splice(i,1); }
+  else if(v.tipo==='novo-ar'){ const i = RECEIVABLES.findIndex(x=>x.id===v.id); if(i>=0) RECEIVABLES.splice(i,1); }
+  else if(v.tipo==='transf'){
+    const i = TRANSFERS.findIndex(x=>x.id===v.id);
+    if(i>=0){ if(v.criada) TRANSFERS.splice(i,1); else if(TRANSFERS[i].conc) delete TRANSFERS[i].conc[tx.conta]; }
+  }
+  tx.status = 'pendente'; tx.vinc = null;
+}
+function bcVincTexto(tx){
+  const v = tx.vinc; if(!v) return '';
+  if(v.tipo==='ap' || v.tipo==='ar'){
+    const a = v.tipo==='ap' ? state.accounts.find(x=>x.id===v.id) : RECEIVABLES.find(x=>x.id===v.id);
+    return a ? `Título ${v.tipo==='ap'?'a pagar':'a receber'}: ${rpEsc(bcTitleParty(v.tipo,a)||'—')} · ${rpEsc(a.descricao||'')}` : 'Título removido';
+  }
+  if(v.tipo==='novo-ap' || v.tipo==='novo-ar'){ return `Lançado em ${rpEsc(contaLabel(v.conta))}`; }
+  if(v.tipo==='transf'){ const t = TRANSFERS.find(x=>x.id===v.id); return t ? `Transferência ${rpEsc(t.origem)} → ${rpEsc(t.destino)}` : 'Transferência removida'; }
+  if(v.tipo==='ignorar') return 'Ignorado: '+rpEsc(v.motivo||'');
+  return '';
+}
+function bcAplicarSugestao(tx, s){
+  if(s.tipo==='ap' || s.tipo==='ar') return bcLinkTitulo(tx, s.tipo, s.id);
+  if(s.tipo==='transf') return bcLinkTransf(tx, s.tf);
+  if(s.tipo==='transf-nova'){ bcCriarTransf(tx, s.outra); return true; }
+  if(s.tipo==='regra'){ const r = s.regra; bcCriarLancamento(tx, {conta:r.conta, parte:r.parte, desc:r.desc, cc:r.cc, forma:r.forma, lembrar:true}); return true; }
+  return false;
+}
+
+/* ---------- página ---------- */
+function bcCmp(a,b){ return a.data<b.data ? -1 : a.data>b.data ? 1 : (a.seq||0)-(b.seq||0); }
+function bcSemExtrato(emp, conta){
+  const ini = ((BANKBAL[emp]||{})[conta]||{}).data || '';
+  const ap = state.accounts.filter(a=>a.empresaId===emp && (a.contaBancaria||BANK_ACCOUNTS[0])===conta && ['pago','aguardando_conciliacao'].includes(a.status) && (!ini || (a.dataPagamento||a.vencimento)>ini)).map(a=>({tipo:'ap', a, data:a.dataPagamento||a.vencimento, valor:a.valorPago!==undefined?a.valorPago:a.valor, parte:bcTitleParty('ap',a)}));
+  const ar = RECEIVABLES.filter(a=>a.empresaId===emp && (a.contaBancaria||BANK_ACCOUNTS[0])===conta && ['recebido','parcial','aguardando_conciliacao'].includes(a.status) && (!ini || (a.dataRecebimento||a.vencimento)>ini)).map(a=>({tipo:'ar', a, data:a.dataRecebimento||a.vencimento, valor:a.valorRecebido||a.valor, parte:bcTitleParty('ar',a)}));
+  return ap.concat(ar).sort((x,y)=>x.data<y.data?-1:x.data>y.data?1:0);
+}
+function renderConciliacao(){
+  const el = document.getElementById('page-conciliacao'), emp = state.filters.empresaId;
+  if(!emp){ el.innerHTML = pageHeaderHTML('Conciliação bancária','Escolha uma empresa para conciliar o extrato.'); return; }
+  const co = COMPANIES.find(c=>c.id===emp) || {};
+  const contas = [...new Set(BANK_ACCOUNTS.concat(BANKTX.filter(t=>t.empresaId===emp).map(t=>t.conta)))];
+  if(!contas.includes(bcConta)) bcConta = (contas.find(c=>BANKTX.some(t=>t.empresaId===emp && t.conta===c)) || contas[0] || '');
+  const todas = BANKTX.filter(t=>t.empresaId===emp && t.conta===bcConta).sort(bcCmp);
+  const pend = todas.filter(t=>t.status!=='conciliado'), conc = todas.filter(t=>t.status==='conciliado');
+  const semExt = bcSemExtrato(emp, bcConta);
+  const regras = BANKRULES.filter(r=>r.empresaId===emp);
+  const ult = [...todas].reverse().find(t=>t.saldo!==null && t.saldo!==undefined);
+  const ate = ult ? ult.data : fmtDateISO(TODAY), sis = bankSaldo(emp, bcConta, ate);
+  const cfg = (BANKBAL[emp]||{})[bcConta] || {};
+  const dif = ult ? bcR2(sis.saldo - ult.saldo) : null;
+  const sug = new Map(pend.map(t=>[t.id, bcSugestao(t)]));
+  const auto = pend.filter(t=>{ const s = sug.get(t.id); return s && s.auto; });
+  const entP = bcR2(pend.filter(t=>t.valor>0).reduce((s,t)=>s+t.valor,0)), saiP = bcR2(pend.filter(t=>t.valor<0).reduce((s,t)=>s+Math.abs(t.valor),0));
+  const q = cxNormalizeText(bcBusca);
+  const filtra = t=>!q || cxNormalizeText(t.desc+' '+t.doc+' '+t.valor).includes(q);
+  const lista = (bcTab==='conciliados' ? conc : pend).filter(filtra);
+  const kpi = (t,v,s)=>`<div class="vg-kpi-card"><div class="vg-kpi-top"><div class="vg-kpi-title">${t}</div></div><div class="vg-kpi-value">${v}</div><div class="vg-kpi-sub">${s}</div></div>`;
+  const linhaTx = t=>{
+    const s = sug.get(t.id), saida = t.valor<0;
+    const sit = t.status==='conciliado' ? `<span class="imp-tag" style="background:#e8f6ee;color:#0f6e45;">Conciliado</span> <span style="font-size:12px;">${bcVincTexto(t)}</span>`
+      : s ? `<span class="imp-tag ${s.auto?'new':'warn'}">${s.auto?'Sugestão':'Verificar'}</span> <span style="font-size:12px;">${rpEsc(s.label)}</span>` : '<span style="font-size:12px;color:var(--text-tertiary);">Sem sugestão</span>';
+    const acoes = t.status==='conciliado' ? `<button class="cx-btn" data-act="undo" data-id="${t.id}">Desfazer</button>`
+      : `${s && s.auto ? `<button class="cx-btn accent" data-act="ok" data-id="${t.id}">Confirmar</button> ` : ''}<button class="cx-btn" data-act="op" data-id="${t.id}">${s&&s.auto?'Outras opções':'Conciliar…'}</button>`;
+    return `<tr><td>${fmtDateBR(t.data)}</td><td class="wrap"><div style="font-weight:600;">${rpEsc(t.desc)}</div>${t.doc?`<div style="font-size:11px;color:var(--text-tertiary);">${rpEsc(t.doc)}</div>`:''}</td>
+      <td class="num" style="color:#0f6e45;">${saida?'':fmtCurrency(t.valor)}</td><td class="num" style="color:#b42318;">${saida?fmtCurrency(Math.abs(t.valor)):''}</td>
+      <td class="wrap" style="min-width:260px;">${sit}</td><td style="text-align:right;white-space:nowrap;">${acoes}</td></tr>`;
+  };
+  let corpo = '';
+  if(bcTab==='semextrato'){
+    corpo = !semExt.length ? '<div class="cx-empty">Nenhum lançamento baixado nesta conta está sem extrato.</div>' : `
+      <div class="rp-hint" style="margin:0 0 10px;">Estes lançamentos estão baixados no sistema nesta conta, mas ainda não foram casados com uma linha do extrato. Se o dinheiro entrou em outra conta (por exemplo, os aluguéis no PJBank), selecione e mova.</div>
+      <div class="bc-move"><select class="cx-select" id="bcMoveTo">${contas.filter(c=>c!==bcConta).map(c=>`<option>${rpEsc(c)}</option>`).join('')}</select>
+        <button class="cx-btn" id="bcMoveBtn">Mover selecionados para esta conta</button><label style="font-size:12px;"><input type="checkbox" id="bcMoveAll"> marcar todos</label></div>
+      <div class="cx-table-wrap"><table class="cx-table"><thead><tr><th></th><th>Data</th><th>Tipo</th><th>Parte</th><th>Descrição</th><th class="num">Valor</th></tr></thead><tbody>${semExt.map((x,i)=>`
+        <tr><td><input type="checkbox" class="bc-mv" data-i="${i}"></td><td>${fmtDateBR(x.data)}</td><td>${x.tipo==='ap'?'Pagamento':'Recebimento'}</td><td>${rpEsc(x.parte||'—')}</td><td class="wrap">${rpEsc(x.a.descricao||'')}</td>
+        <td class="num" style="color:${x.tipo==='ap'?'#b42318':'#0f6e45'};">${fmtCurrency(x.valor)}</td></tr>`).join('')}</tbody></table></div>`;
+  } else if(bcTab==='regras'){
+    corpo = !regras.length ? '<div class="cx-empty">Nenhuma regra ainda. Ao conciliar uma linha como novo lançamento, marque "Lembrar" e o sistema passa a sugerir a mesma classificação nas próximas.</div>' : `
+      <div class="cx-table-wrap"><table class="cx-table"><thead><tr><th>Quando a descrição contém</th><th>Tipo</th><th>Conta contábil</th><th>Fornecedor / Cliente</th><th class="num">Usada</th><th></th></tr></thead><tbody>${regras.map(r=>`
+        <tr><td><b>${rpEsc(r.key)}</b></td><td>${r.dir==='D'?'Saída':'Entrada'}</td><td>${rpEsc(contaLabel(r.conta))}</td><td>${rpEsc(r.parte)}</td><td class="num">${r.vezes||0}</td><td style="text-align:right;"><button class="cx-btn" data-act="rdel" data-id="${r.id}">Excluir</button></td></tr>`).join('')}</tbody></table></div>`;
+  } else {
+    corpo = !todas.length ? `<div class="cx-empty">Nenhum extrato importado para ${rpEsc(bcConta||'esta conta')}. Clique em <b>Importar extrato</b>.</div>`
+      : !lista.length ? `<div class="cx-empty">${bcTab==='pendentes' ? 'Tudo conciliado nesta conta.' : 'Nada encontrado.'}</div>` : `
+      <div class="cx-table-wrap"><table class="cx-table"><thead><tr><th>Data</th><th>Descrição do extrato</th><th class="num">Entrada</th><th class="num">Saída</th><th>Situação</th><th></th></tr></thead><tbody>${lista.map(linhaTx).join('')}</tbody></table></div>`;
+  }
+  el.innerHTML = `
+    <div class="cx-head">
+      <div><div class="cx-title">Conciliação bancária</div><div class="cx-crumb">Financeiro &nbsp;/&nbsp; <b>Conciliação bancária</b>${co.nome?` &nbsp;·&nbsp; ${rpEsc(co.nome)}`:''}</div></div>
+      <div class="cx-head-actions"><select class="cx-select" id="bcConta">${contas.map(c=>`<option ${c===bcConta?'selected':''}>${rpEsc(c)}</option>`).join('')}</select>
+        <button class="cx-btn accent big" data-act="imp">${cxSvg('down')} Importar extrato</button></div>
+    </div>
+    <div class="vg-kpi-grid">
+      ${kpi('Saldo do extrato', ult?fmtCurrency(ult.saldo):'—', ult?`em ${fmtDateBR(ult.data)}`:'importe um extrato')}
+      ${kpi('Saldo no sistema', fmtCurrency(sis.saldo), cfg.saldoInicial!==undefined?`saldo inicial ${fmtCurrency(cfg.saldoInicial)} em ${cfg.data?fmtDateBR(cfg.data):'—'}`:'<b style="color:#b42318;">defina o saldo inicial</b> (importe um extrato com saldo ou use Configurações)')}
+      ${kpi('Diferença', dif===null?'—':(Math.abs(dif)<0.005?'<span style="color:#0f6e45;">Confere</span>':'<span style="color:#b42318;">'+fmtCurrency(dif)+'</span>'), dif===null?'':'sistema − extrato')}
+      ${kpi('Pendentes de conciliar', String(pend.length), `entradas ${fmtCurrency(entP)} · saídas ${fmtCurrency(saiP)}`)}
+    </div>
+    <div class="panel" style="margin-top:14px;">
+      <div class="tabs-row"><div class="tabs-list">
+        <button class="tab-btn ${bcTab==='pendentes'?'active':''}" data-tab="pendentes">Pendentes (${pend.length})</button>
+        <button class="tab-btn ${bcTab==='conciliados'?'active':''}" data-tab="conciliados">Conciliados (${conc.length})</button>
+        <button class="tab-btn ${bcTab==='semextrato'?'active':''}" data-tab="semextrato">Baixados sem extrato (${semExt.length})</button>
+        <button class="tab-btn ${bcTab==='regras'?'active':''}" data-tab="regras">Regras (${regras.length})</button>
+      </div></div>
+      ${(bcTab==='pendentes'||bcTab==='conciliados') && todas.length ? `<div class="bc-bar"><input class="cx-input" id="bcBusca" placeholder="Buscar no extrato" value="${rpEsc(bcBusca)}" style="width:240px;">
+        ${bcTab==='pendentes' && auto.length ? `<button class="cx-btn accent" data-act="bulk">Confirmar ${auto.length} sugest${auto.length>1?'ões':'ão'} automática${auto.length>1?'s':''}</button>` : ''}</div>` : ''}
+      ${corpo}
+    </div>`;
+  el.querySelector('#bcConta').addEventListener('change', e=>{ bcConta = e.target.value; renderConciliacao(); });
+  el.querySelectorAll('.tab-btn[data-tab]').forEach(b=>b.addEventListener('click', ()=>{ bcTab = b.dataset.tab; renderConciliacao(); }));
+  const bs = el.querySelector('#bcBusca'); if(bs) bs.addEventListener('input', e=>{ bcBusca = e.target.value; const pos = e.target.selectionStart; renderConciliacao(); const n = document.getElementById('bcBusca'); n.focus(); n.setSelectionRange(pos,pos); });
+  const mv = el.querySelector('#bcMoveBtn');
+  if(mv){
+    el.querySelector('#bcMoveAll').addEventListener('change', e=>el.querySelectorAll('.bc-mv').forEach(c=>c.checked = e.target.checked));
+    mv.addEventListener('click', ()=>{
+      if(denyIfReadOnly()) return;
+      const sel = [...el.querySelectorAll('.bc-mv:checked')].map(c=>semExt[+c.dataset.i]); if(!sel.length){ showToast('Marque os lançamentos.'); return; }
+      const para = bcConta, de = el.querySelector('#bcMoveTo').value;
+      if(!confirm(`Mover ${sel.length} lançamento(s) da conta "${de}"? Eles passam a contar na conta "${para}".`)) return;
+      sel.forEach(x=>{ x.a.contaBancaria = para; });
+      bcSaveAll(); showToast(`${sel.length} lançamento(s) movido(s).`); renderConciliacao();
+    });
+  }
+  el.onclick = e=>{
+    const b = e.target.closest('[data-act]'); if(!b) return; const act = b.dataset.act, id = b.dataset.id;
+    if(act==='imp') return bcImpOpen();
+    if(denyIfReadOnly()) return;
+    const tx = id ? BANKTX.find(t=>t.id===id) : null;
+    if(act==='op' && tx) return bcOpen(id);
+    if(act==='ok' && tx){ const s = bcSugestao(tx); if(s && bcAplicarSugestao(tx, s)){ bcSaveAll(); showToast('Conciliado.'); renderConciliacao(); } return; }
+    if(act==='undo' && tx){ if(!confirm('Desfazer esta conciliação? O lançamento volta ao estado anterior.')) return; bcDesfazer(tx); bcSaveAll(); renderConciliacao(); return; }
+    if(act==='bulk'){
+      if(!confirm(`Confirmar ${auto.length} sugestão(ões) automática(s)? Você pode desfazer cada uma depois.`)) return;
+      let n = 0; auto.forEach(t=>{ const s = bcSugestao(t); if(s && s.auto && t.status!=='conciliado' && bcAplicarSugestao(t, s)) n++; });
+      bcSaveAll(); showToast(`${n} linha(s) conciliada(s).`); renderConciliacao(); return;
+    }
+    if(act==='rdel'){ const i = BANKRULES.findIndex(r=>r.id===id); if(i>=0){ BANKRULES.splice(i,1); saveBankRules(); renderConciliacao(); } }
+  };
+}
+
+/* ---------- janela: conciliar uma linha ---------- */
+let bcM = null;
+const BC_PRESETS_D = [['Pessoal / retirada do sócio','1.01.05.004'],['Combustíveis','6.06.014'],['Manutenção de veículos','6.06.006'],['Copa e refeições','6.02.020'],['Comissões comerciais','6.04.011'],['Plano de saúde','6.01.015']];
+const BC_PRESETS_C = [['Aporte / depósito do sócio','2.01.05.006'],['Taxa de administração','4.01.008'],['Outras receitas','4.01.024']];
+function bcEnsureModal(){
+  if(document.getElementById('bcOverlay')) return;
+  const d = document.createElement('div'); d.className = 'modal-overlay'; d.id = 'bcOverlay';
+  d.innerHTML = `<div class="modal modal-xl"><div class="modal-header"><div class="mt-wrap"><div class="modal-title" id="bcTitle">Conciliar lançamento</div></div>
+    <button class="modal-close" id="bcClose"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+    <div class="modal-body" id="bcBody"></div><div class="modal-footer split" id="bcFooter"></div></div>`;
+  document.body.appendChild(d);
+  const close = ()=>d.classList.remove('open');
+  d.querySelector('#bcClose').addEventListener('click', close); d.addEventListener('click', e=>{ if(e.target===d) close(); });
+}
+function bcTitleCase(s){ return String(s||'').toLowerCase().replace(/(^|\s)(\S)/g,(m,a,b)=>a+b.toUpperCase()); }
+function bcGuess(tx, regra){
+  if(regra) return {conta:regra.conta, parte:regra.parte, desc:regra.desc||'', cc:regra.cc, forma:regra.forma};
+  let parte = String(tx.desc||'').replace(/^(PAGAMENTO PIX|RECEBIMENTO PIX|COMPRAS NACIONAIS|LIQUIDACAO BOLETO|PAGAMENTO BOLETO|PIX ENVIADO|PIX RECEBIDO)\s*/i,'').replace(/^\d{8,14}\s+/,'').trim();
+  const forma = /PIX/i.test(tx.desc) ? 'PIX' : /BOLETO/i.test(tx.desc) ? 'Boleto' : /COMPRAS/i.test(tx.desc) ? 'Cartão' : 'Outros';
+  return {conta:'', parte:bcTitleCase(parte), desc:'', cc:COST_CENTERS[0], forma};
+}
+function bcOpen(id){
+  const tx = BANKTX.find(t=>t.id===id); if(!tx) return;
+  bcEnsureModal();
+  const regra = bcFindRule(tx), g = bcGuess(tx, regra), s = bcSugestao(tx), tits = bcTitulos(tx);
+  bcM = {id, mode:(s && (s.tipo==='ap'||s.tipo==='ar') && s.id) ? 'titulo' : s && s.tipo==='transf' ? 'transf' : (tits[0] && tits[0].exato) ? 'titulo' : 'novo',
+    busca:'', sel: s && s.id ? s.tipo+':'+s.id : (tits[0] && tits[0].exato ? tits[0].tipo+':'+tits[0].id : ''), conta:g.conta, parte:g.parte, desc:g.desc, cc:g.cc, forma:g.forma, lembrar:true,
+    outra:(s && s.outra) || bcOutraConta(tx), tf:(s && s.tf) ? s.tf.id : '', motivo:'Pessoal — fora do sistema'};
+  bcModalRender(); document.getElementById('bcOverlay').classList.add('open');
+}
+function bcContaOpts(debito){
+  const list = debito ? contasPagar() : contasReceber();
+  return `<datalist id="bcContasDl">${list.map(a=>`<option value="${rpEsc(a.sistema?'A classificar':a.cod+' · '+a.nome)}"></option>`).join('')}</datalist>`;
+}
+function bcContaFromText(txt, debito){
+  const t = String(txt||'').trim(); if(!t) return '';
+  const m = t.match(/^([\d.]+|PAG-AC|REC-AC)\b/i); if(m && contaByCod(m[1])) return m[1];
+  if(/classificar/i.test(t)) return debito ? 'PAG-AC' : 'REC-AC';
+  const n = cxNormalizeText(t), a = (debito?contasPagar():contasReceber()).find(x=>cxNormalizeText(x.nome)===n); return a ? a.cod : '';
+}
+function bcModalRender(){
+  const tx = BANKTX.find(t=>t.id===bcM.id); if(!tx) return;
+  const body = document.getElementById('bcBody'), foot = document.getElementById('bcFooter'), debito = tx.valor<0, m = bcM;
+  document.getElementById('bcTitle').textContent = `Conciliar ${debito?'saída':'entrada'} de ${fmtCurrency(Math.abs(tx.valor))} em ${fmtDateBR(tx.data)}`;
+  const modos = [['titulo','Casar com título'],['novo','Novo lançamento'],['transf','Transferência entre contas'],['ignorar','Ignorar']];
+  let painel = '';
+  if(m.mode==='titulo'){
+    const q = cxNormalizeText(m.busca);
+    let tits = bcTitulos(tx); if(q) tits = tits.filter(t=>cxNormalizeText((t.parte||'')+' '+(t.a.descricao||'')+' '+t.a.valor).includes(q)); tits = tits.slice(0,40);
+    painel = `<input class="cx-input" id="bcBusca2" placeholder="Buscar por nome, descrição ou valor" value="${rpEsc(m.busca)}" style="width:100%;margin-bottom:8px;">
+      <div class="cx-table-wrap" style="max-height:300px;overflow:auto;"><table class="cx-table"><thead><tr><th></th><th>${debito?'Pagar a':'Receber de'}</th><th>Descrição</th><th>Venc.</th><th>Situação</th><th class="num">Valor</th></tr></thead><tbody>${tits.length ? tits.map(t=>{
+        const v = t.tipo==='ap' ? (t.a.valorPago!==undefined?t.a.valorPago:t.a.valor) : t.a.valor, k = t.tipo+':'+t.id;
+        return `<tr><td><input type="radio" name="bcT" value="${k}" ${m.sel===k?'checked':''}></td><td>${rpEsc(t.parte||'—')}</td><td class="wrap">${rpEsc(t.a.descricao||'')}</td><td>${fmtDateBR(t.a.vencimento)}</td><td>${rpEsc((STATUS_META[t.a.status]||RECEIVABLE_STATUS_META[t.a.status]||{label:t.a.status}).label)}</td>
+        <td class="num" style="${t.exato?'color:#0f6e45;':''}">${fmtCurrency(v)}${t.exato?' ✓':''}</td></tr>`; }).join('') : `<tr><td colspan="6" class="cx-empty">Nenhum título ${debito?'a pagar':'a receber'} encontrado.</td></tr>`}</tbody></table></div>
+      <div class="rp-hint" style="margin-top:8px;">Se o valor do extrato for diferente do título, o sistema registra o valor do extrato como o efetivamente ${debito?'pago':'recebido'} (e marca como parcial se for menor num recebimento).</div>`;
+  } else if(m.mode==='novo'){
+    const pres = (debito?BC_PRESETS_D:BC_PRESETS_C).map(([n,c])=>`<button type="button" class="cx-btn" data-preset="${c}">${n}</button>`).join(' ');
+    painel = `${bcContaOpts(debito)}<datalist id="bcPartesDl">${(debito?SUPPLIERS:CLIENTS).filter(p=>p.empresaId===tx.empresaId).map(p=>`<option value="${rpEsc(p.nome)}"></option>`).join('')}</datalist>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${pres}</div>
+      <div class="form-grid">
+        <div class="form-field"><label>Conta contábil</label><input id="bcFConta" list="bcContasDl" value="${rpEsc(m.conta?contaLabel(m.conta):'')}" placeholder="Digite o código ou o nome da conta"></div>
+        <div class="form-field"><label>${debito?'Fornecedor / favorecido':'Cliente / pagador'}</label><input id="bcFParte" list="bcPartesDl" value="${rpEsc(m.parte)}"></div>
+        <div class="form-field"><label>Descrição</label><input id="bcFDesc" value="${rpEsc(m.desc||tx.desc)}"></div>
+        <div class="form-field"><label>Centro de custo</label><select id="bcFCc">${COST_CENTERS.map(c=>`<option ${c===m.cc?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="form-field"><label>Forma</label><select id="bcFForma">${(debito?PAYMENT_METHODS:RECEIVE_METHODS).concat(['Cartão']).filter((v,i,a)=>a.indexOf(v)===i).map(c=>`<option ${c===m.forma?'selected':''}>${c}</option>`).join('')}</select></div>
+      </div>
+      <label style="font-size:12.5px;display:block;margin-top:10px;"><input type="checkbox" id="bcFLembrar" ${m.lembrar?'checked':''}> Lembrar: nas próximas importações, sugerir esta mesma classificação para linhas parecidas</label>
+      <div class="rp-hint" style="margin-top:8px;">Cria o lançamento já baixado e conciliado em ${rpEsc(tx.conta)}, na data do extrato.</div>`;
+  } else if(m.mode==='transf'){
+    const cands = bcTransfCandidatas(tx), outras = BANK_ACCOUNTS.filter(c=>c!==tx.conta);
+    painel = `${cands.length ? `<div class="form-field"><label>Transferência já lançada no sistema</label><select id="bcFTf"><option value="">— criar uma nova —</option>${cands.map(t=>`<option value="${t.id}" ${m.tf===t.id?'selected':''}>${fmtDateBR(t.data)} · ${rpEsc(t.origem)} → ${rpEsc(t.destino)} · ${fmtCurrency(t.valor)}</option>`).join('')}</select></div>` : ''}
+      <div class="form-field" style="margin-top:8px;"><label>${debito?'Conta de destino':'Conta de origem'} (a outra ponta da transferência)</label><select id="bcFOutra">${outras.map(c=>`<option ${c===m.outra?'selected':''}>${rpEsc(c)}</option>`).join('')}</select></div>
+      ${outras.length ? '' : '<div class="imp-err">Cadastre a outra conta em Configurações > Contas bancárias.</div>'}
+      <div class="rp-hint" style="margin-top:8px;">Transferência entre contas da própria empresa não é receita nem despesa: só move o saldo de uma conta para outra.</div>`;
+  } else {
+    painel = `<div class="form-field"><label>Motivo</label><input id="bcFMotivo" value="${rpEsc(m.motivo)}"></div><div class="rp-hint" style="margin-top:8px;">A linha sai da lista de pendentes e <b>não</b> altera o saldo do sistema. Use só para o que não deve ser controlado aqui. Para retirada do sócio, prefira "Novo lançamento" com a conta de adiantamento a sócios, assim o saldo do banco continua batendo.</div>`;
+  }
+  body.innerHTML = `<div style="background:#fafafb;border:1px solid var(--border-color);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:13px;"><b>${rpEsc(tx.desc)}</b>${tx.doc?` · <span style="color:var(--text-tertiary);">${rpEsc(tx.doc)}</span>`:''}<div style="font-size:12px;color:var(--text-secondary);margin-top:2px;">${rpEsc(tx.conta)} · ${fmtDateBR(tx.data)} · <b style="color:${debito?'#b42318':'#0f6e45'};">${debito?'−':'+'}${fmtCurrency(Math.abs(tx.valor))}</b></div></div>
+    <div class="tabs-row" style="margin-bottom:12px;"><div class="tabs-list">${modos.map(([k,n])=>`<button class="tab-btn ${m.mode===k?'active':''}" data-mode="${k}">${n}</button>`).join('')}</div></div>${painel}`;
+  foot.innerHTML = `<span></span><div class="mt-btns"><button class="btn" id="bcCancel">Cancelar</button><button class="btn btn-dark" id="bcOk">Conciliar</button></div>`;
+  const keep = ()=>{ const g = id=>body.querySelector('#'+id);
+    if(g('bcFConta')){ m.conta = bcContaFromText(g('bcFConta').value, debito) || m.conta; m.parte = g('bcFParte').value; m.desc = g('bcFDesc').value; m.cc = g('bcFCc').value; m.forma = g('bcFForma').value; m.lembrar = g('bcFLembrar').checked; }
+    if(g('bcFOutra')) m.outra = g('bcFOutra').value; if(g('bcFTf')) m.tf = g('bcFTf').value; if(g('bcFMotivo')) m.motivo = g('bcFMotivo').value;
+    const r = body.querySelector('input[name=bcT]:checked'); if(r) m.sel = r.value; };
+  body.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click', ()=>{ keep(); m.mode = b.dataset.mode; bcModalRender(); }));
+  body.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click', ()=>{ keep(); m.conta = b.dataset.preset; if(b.dataset.preset==='1.01.05.004' && !m.parte) m.parte = 'Sócios'; if(b.dataset.preset==='1.01.05.004') m.parte = 'Retiradas do sócio'; if(b.dataset.preset==='2.01.05.006') m.parte = 'Sócios'; bcModalRender(); }));
+  const bq = body.querySelector('#bcBusca2'); if(bq) bq.addEventListener('input', e=>{ keep(); m.busca = e.target.value; const pos = e.target.selectionStart; bcModalRender(); const n = document.getElementById('bcBusca2'); n.focus(); n.setSelectionRange(pos,pos); });
+  foot.querySelector('#bcCancel').addEventListener('click', ()=>document.getElementById('bcOverlay').classList.remove('open'));
+  foot.querySelector('#bcOk').addEventListener('click', ()=>{
+    keep();
+    if(m.mode==='titulo'){
+      if(!m.sel){ showToast('Escolha o título.'); return; }
+      const [tipo, tid] = m.sel.split(':'), t = bcTitulos(tx).find(x=>x.tipo===tipo && x.id===tid);
+      if(t && !t.exato && !confirm(`O valor do título (${fmtCurrency(tipo==='ap'?t.a.valor:t.a.valor)}) é diferente do extrato (${fmtCurrency(Math.abs(tx.valor))}). Registrar o valor do extrato como ${debito?'pago':'recebido'}?`)) return;
+      bcLinkTitulo(tx, tipo, tid);
+    } else if(m.mode==='novo'){
+      if(!m.conta){ showToast('Informe a conta contábil (escolha na lista).'); return; }
+      if(!contaServe(m.conta, debito?'pagar':'receber')){ showToast('Essa conta não serve para '+(debito?'saídas':'entradas')+'.'); return; }
+      if(!String(m.parte||'').trim()){ showToast('Informe o '+(debito?'fornecedor':'cliente')+'.'); return; }
+      bcCriarLancamento(tx, m);
+    } else if(m.mode==='transf'){
+      if(m.tf){ const tf = TRANSFERS.find(x=>x.id===m.tf); if(tf) bcLinkTransf(tx, tf); }
+      else { if(!m.outra){ showToast('Escolha a outra conta.'); return; } bcCriarTransf(tx, m.outra); }
+    } else {
+      tx.status = 'conciliado'; tx.vinc = {tipo:'ignorar', motivo:m.motivo||''};
+    }
+    bcSaveAll(); document.getElementById('bcOverlay').classList.remove('open'); showToast('Conciliado.'); renderConciliacao();
+  });
+}
+
+/* ---------- janela: importar extrato ---------- */
+let bcImp = null;
+function bcImpOpen(){
+  if(denyIfReadOnly()) return;
+  if(!state.filters.empresaId){ showToast('Escolha uma empresa.'); return; }
+  if(!document.getElementById('bcImpOverlay')){
+    const d = document.createElement('div'); d.className = 'modal-overlay'; d.id = 'bcImpOverlay';
+    d.innerHTML = `<div class="modal modal-xl"><div class="modal-header"><div class="mt-wrap"><div class="modal-title">Importar extrato bancário</div></div>
+      <button class="modal-close" id="bcImpClose"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div>
+      <div class="modal-body" id="bcImpBody"></div><div class="modal-footer split" id="bcImpFooter"></div></div>`;
+    document.body.appendChild(d);
+    d.querySelector('#bcImpClose').addEventListener('click', ()=>d.classList.remove('open')); d.addEventListener('click', e=>{ if(e.target===d) d.classList.remove('open'); });
+  }
+  bcImp = {conta:bcConta || BANK_ACCOUNTS[0], nova:'', parsed:null, arquivo:'', msg:'', usarSaldo:false};
+  bcImpRender(); document.getElementById('bcImpOverlay').classList.add('open');
+}
+function bcImpContaFinal(){ return bcImp.conta==='__nova__' ? bcImp.nova.trim() : bcImp.conta; }
+function bcImpRender(){
+  const body = document.getElementById('bcImpBody'), foot = document.getElementById('bcImpFooter'), emp = state.filters.empresaId, p = bcImp.parsed;
+  let prev = '';
+  if(p){
+    const conta = bcImpContaFinal(), keys = conta ? bcKeys(p.tx, emp, conta) : [], ex = new Set(BANKTX.map(t=>t.key)), novos = keys.filter(k=>!ex.has(k)).length;
+    const dIni = p.ini ? new Date(new Date(p.ini+'T00:00:00').getTime()-864e5) : null, dIniIso = dIni ? fmtDateISO(dIni) : '';
+    const cfg = ((BANKBAL[emp]||{})[conta]) || {};
+    const divergente = p.saldoIni!==null && p.saldoIni!==undefined && cfg.saldoInicial!==undefined && cfg.data===dIniIso && Math.abs(cfg.saldoInicial-p.saldoIni)>0.005;
+    const sugerir = p.saldoIni!==null && p.saldoIni!==undefined && (cfg.saldoInicial===undefined || divergente || (cfg.data && dIniIso < cfg.data));
+    if(bcImp.usarSaldo===null || bcImp.usarSaldoAuto!==conta){ bcImp.usarSaldo = !!sugerir; bcImp.usarSaldoAuto = conta; }
+    prev = `<div style="border:1px solid var(--border-color);border-radius:8px;padding:12px 14px;margin-top:12px;font-size:13px;line-height:1.7;">
+      <b>${rpEsc(bcImp.arquivo)}</b>${p.banco?` · ${rpEsc(p.banco)}`:''}<br>
+      ${p.tx.length} lançamento(s) de ${fmtDateBR(p.ini)} a ${fmtDateBR(p.fim)} · <b>${novos}</b> novo(s)${p.tx.length-novos?` · ${p.tx.length-novos} já importado(s) antes (serão ignorados)`:''}<br>
+      Entradas ${fmtCurrency(bcR2(p.tx.filter(x=>x.valor>0).reduce((t,x)=>t+x.valor,0)))} · Saídas ${fmtCurrency(bcR2(p.tx.filter(x=>x.valor<0).reduce((t,x)=>t+Math.abs(x.valor),0)))}
+      ${p.saldoIni!==null&&p.saldoIni!==undefined?`<br>Saldo anterior ${fmtCurrency(p.saldoIni)} → saldo final ${p.saldoFim!==null&&p.saldoFim!==undefined?fmtCurrency(p.saldoFim):'—'} ${p.confere===true?'<span style="color:#0f6e45;font-weight:700;">✓ confere com a soma dos lançamentos</span>':p.confere===false?'<span style="color:#b42318;font-weight:700;">✗ não confere com a soma dos lançamentos — confira se o arquivo está completo</span>':''}`:''}
+      ${p.saldoIni!==null&&p.saldoIni!==undefined ? `<div style="margin-top:8px;"><label><input type="checkbox" id="bcImpSaldo" ${bcImp.usarSaldo?'checked':''}> Definir o saldo inicial de <b>${rpEsc(conta||'—')}</b> como <b>${fmtCurrency(p.saldoIni)}</b> em ${fmtDateBR(dIniIso)}</label>
+        ${cfg.saldoInicial!==undefined?`<div style="font-size:12px;color:${divergente?'#b42318':'var(--text-secondary)'};">Hoje no sistema: ${fmtCurrency(cfg.saldoInicial)} em ${cfg.data?fmtDateBR(cfg.data):'—'}${divergente?' — diferente do extrato':''}</div>`:''}</div>` : ''}
+      </div>`;
+  }
+  body.innerHTML = `<div style="font-size:12.5px;color:var(--text-secondary);line-height:1.5;">Anexe o extrato do banco: <b>PDF baixado do internet banking</b> (com texto, lido aqui no navegador, sem IA), <b>OFX</b> ou <b>CSV</b>. Linhas já importadas antes são reconhecidas e não duplicam.</div>
+    <div class="form-grid" style="margin-top:12px;"><div class="form-field"><label>Conta bancária</label><select id="bcImpConta">${BANK_ACCOUNTS.map(c=>`<option ${c===bcImp.conta?'selected':''}>${rpEsc(c)}</option>`).join('')}<option value="__nova__" ${bcImp.conta==='__nova__'?'selected':''}>+ Nova conta…</option></select></div>
+      ${bcImp.conta==='__nova__' ? `<div class="form-field"><label>Nome da nova conta</label><input id="bcImpNova" value="${rpEsc(bcImp.nova)}" placeholder="Ex.: PJBank (Conta Digital)"></div>` : ''}
+      <div class="form-field"><label>Arquivo</label><input type="file" id="bcImpFile" accept=".pdf,.ofx,.qfx,.csv,.txt"></div></div>
+    ${bcImp.msg?`<div class="imp-err" style="margin-top:10px;">${rpEsc(bcImp.msg)}</div>`:''}${prev}`;
+  foot.innerHTML = `<span></span><div class="mt-btns"><button class="btn" id="bcImpCancel">Cancelar</button><button class="btn btn-dark" id="bcImpOk" ${p&&p.tx.length&&bcImpContaFinal()?'':'disabled'}>Importar</button></div>`;
+  body.querySelector('#bcImpConta').addEventListener('change', e=>{ bcImp.conta = e.target.value; bcImpRender(); });
+  const nv = body.querySelector('#bcImpNova'); if(nv) nv.addEventListener('input', e=>{ bcImp.nova = e.target.value; });
+  if(nv) nv.addEventListener('change', ()=>bcImpRender());
+  const ck = body.querySelector('#bcImpSaldo'); if(ck) ck.addEventListener('change', e=>{ bcImp.usarSaldo = e.target.checked; });
+  body.querySelector('#bcImpFile').addEventListener('change', e=>{ const f = e.target.files[0]; if(f) bcImpLoad(f); });
+  foot.querySelector('#bcImpCancel').addEventListener('click', ()=>document.getElementById('bcImpOverlay').classList.remove('open'));
+  foot.querySelector('#bcImpOk').addEventListener('click', bcImpConfirm);
+}
+async function bcImpLoad(file){
+  bcImp.msg = 'Lendo o arquivo…'; bcImp.parsed = null; bcImp.arquivo = file.name; bcImpRender();
+  try{
+    let parsed; const nm = file.name.toLowerCase();
+    if(/\.pdf$/.test(nm)){
+      const lines = await pdfTextLines(file); parsed = bcParseLines(lines); parsed.banco = bcDetectBank(lines.map(r=>r.join(' ')).join(' '));
+    } else {
+      const buf = await file.arrayBuffer(); let txt = new TextDecoder('utf-8').decode(buf);
+      if(txt.includes('�')) txt = new TextDecoder('windows-1252').decode(buf);
+      parsed = /<OFX|OFXHEADER/i.test(txt) ? bcParseOfx(txt) : bcParseCsv(txt); parsed.banco = bcDetectBank(txt.slice(0,4000));
+    }
+    if(!parsed.tx.length){ bcImp.msg = 'Não encontrei lançamentos neste arquivo. Se for PDF, confira se é o extrato baixado do banco (com texto) e não uma foto/imagem.'; bcImpRender(); return; }
+    if(parsed.banco){ const c = BANK_ACCOUNTS.find(x=>cxNormalizeText(x).includes(cxNormalizeText(parsed.banco))); if(c) bcImp.conta = c; }
+    bcImp.parsed = parsed; bcImp.msg = ''; bcImp.usarSaldo = null; bcImpRender();
+  }catch(e){ bcImp.msg = 'Não consegui ler o arquivo: '+e.message; bcImpRender(); }
+}
+function bcImpConfirm(){
+  const emp = state.filters.empresaId, p = bcImp.parsed; let conta = bcImpContaFinal(); if(!p || !conta) return;
+  if(!BANK_ACCOUNTS.includes(conta)){ BANK_ACCOUNTS.push(conta); saveBankAccounts(); }
+  const keys = bcKeys(p.tx, emp, conta), ex = new Set(BANKTX.map(t=>t.key)), stamp = Date.now(); let n = 0;
+  p.tx.forEach((x,i)=>{
+    if(ex.has(keys[i])) return;
+    BANKTX.push({id:'BT'+stamp+String(i).padStart(4,'0'), empresaId:emp, conta, data:x.data, desc:x.desc, doc:x.doc, valor:x.valor, saldo:x.saldo, seq:i, key:keys[i], status:'pendente', vinc:null, importadoEm:new Date().toISOString()}); n++;
+  });
+  if(bcImp.usarSaldo && p.saldoIni!==null && p.saldoIni!==undefined){
+    const dIni = fmtDateISO(new Date(new Date(p.ini+'T00:00:00').getTime()-864e5)), o = (BANKBAL[emp] = BANKBAL[emp] || {}); const cfg = (o[conta] = o[conta] || {});
+    cfg.saldoInicial = p.saldoIni; cfg.data = dIni; saveBankBal();
+  }
+  const ult = [...p.tx].reverse().find(x=>x.saldo!==null && x.saldo!==undefined);
+  if(ult){ const o = (BANKBAL[emp] = BANKBAL[emp] || {}); const cfg = (o[conta] = o[conta] || {}); cfg.extrato = ult.saldo; cfg.extData = ult.data; saveBankBal(); }
+  saveBankTx(); bcConta = conta; bcTab = 'pendentes'; bcBusca = '';
+  document.getElementById('bcImpOverlay').classList.remove('open');
+  showToast(`${n} lançamento(s) do extrato importado(s).`);
+  if(currentPageKey!=='conciliacao') navigateTo('conciliacao'); else renderConciliacao();
+}
+
 let currentPageKey = 'visao-geral';
 const PAGES = {
   'visao-geral': renderVisaoGeral,
   'lancamentos': renderLancamentos,
   'contas-pagar': renderContasPagar,
   'contas-receber': renderContasReceber,
+  'conciliacao': renderConciliacao,
   'dre': renderDRE,
   'balanco': renderBalanco,
   'relatorios': renderRelatorios,
