@@ -8726,20 +8726,21 @@ function bcCriarTransf(tx, outra){
     descricao:'Transferência entre contas (conciliação)', observacoes:tx.desc, conc:{[tx.conta]:tx.id}};
   TRANSFERS.unshift(tf); tx.status = 'conciliado'; tx.vinc = {tipo:'transf', id:tf.id, criada:true}; return tf;
 }
+function bcContaDespesa(c){ const a = contaByCod(c); return !!a && !a.sistema && a.dem==='DRE' && a.nat==='D'; }
 function bcCriarLancamento(tx, f){
-  const emp = tx.empresaId, v = Math.abs(tx.valor), debito = tx.valor<0, tipo = debito ? 'pagar' : 'receber';
+  const emp = tx.empresaId, v = Math.abs(tx.valor), entrada = tx.valor>0, estorno = entrada && bcContaDespesa(f.conta), debito = tx.valor<0 || estorno, tipo = debito ? 'pagar' : 'receber'; // entrada em conta de despesa = devolução (valor negativo na despesa)
   const prevEmp = state.filters.empresaId; state.filters.empresaId = emp;
   let p; try{ p = impFindOrCreateParty(tipo, f.parte||'Diversos').p; } finally { state.filters.empresaId = prevEmp; }
   const conta = f.conta || (debito ? 'PAG-AC' : 'REC-AC'), cc = f.cc || COST_CENTERS[0];
   if(!p.categoria || p.categoria===impAcOf(tipo)){ p.categoria = conta; p.planoContas = contaLabel(conta); p.centroCusto = cc; persist(debito?SUPPLIERS_KEY:CLIENTS_KEY, debito?SUPPLIERS:CLIENTS); }
   const id = (debito?'AP':'AR')+String(Date.now()).slice(-7)+Math.floor(Math.random()*900+100);
-  const base = {id, empresaId:emp, documento:tx.doc||('EXT-'+tx.id.slice(-6)), descricao:f.desc||tx.desc, competencia:monthOf(tx.data), emissao:tx.data, vencimento:tx.data, valor:v, categoria:conta,
+  const base = {id, empresaId:emp, documento:tx.doc||('EXT-'+tx.id.slice(-6)), descricao:f.desc||tx.desc, competencia:monthOf(tx.data), emissao:tx.data, vencimento:tx.data, valor:estorno?-v:v, categoria:conta,
     planoContas:contaLabel(conta), centroCusto:cc, contaBancaria:tx.conta, observacoes:'Lançado na conciliação bancária: '+tx.desc, status:'conciliado', anexos:[], conciliacao:tx.id, origemExtrato:true};
   if(debito){ state.accounts.unshift(Object.assign(base, {fornecedorId:p.id, formaPagamento:f.forma||'PIX', pixCodigo:'', dataPagamento:tx.data})); }
   else { RECEIVABLES.unshift(Object.assign(base, {clienteId:p.id, formaRecebimento:f.forma||'PIX', repasse:0, dataRecebimento:tx.data, valorRecebido:v})); }
   tx.status = 'conciliado'; tx.vinc = {tipo: debito?'novo-ap':'novo-ar', id, conta};
   if(f.lembrar){
-    const key = bcRuleKey(tx.desc), dir = debito?'D':'C';
+    const key = bcRuleKey(tx.desc), dir = tx.valor<0 ? 'D' : 'C';
     if(key){
       let r = BANKRULES.find(x=>x.empresaId===emp && x.key===key && x.dir===dir);
       if(!r){ r = {id:'RG'+Date.now()+Math.floor(Math.random()*900), empresaId:emp, key, dir, vezes:0}; BANKRULES.push(r); }
@@ -8917,7 +8918,7 @@ function renderConciliacao(){
 /* ---------- janela: conciliar uma linha ---------- */
 let bcM = null;
 const BC_PRESETS_D = [['Repasse a proprietário','2.01.08.012'],['Pessoal / retirada do sócio','1.01.05.004'],['Combustíveis','6.06.014'],['Manutenção de veículos','6.06.006'],['Copa e refeições','6.02.020'],['Comissões comerciais','6.04.011'],['Plano de saúde','6.01.015']];
-const BC_PRESETS_C = [['Aluguel / valores de terceiros','2.01.08.012'],['Aporte / depósito do sócio','2.01.05.006'],['Taxa de administração','4.01.008'],['Outras receitas','4.01.024']];
+const BC_PRESETS_C = [['Devolução de comissão','6.04.011'],['Aluguel / valores de terceiros','2.01.08.012'],['Aporte / depósito do sócio','2.01.05.006'],['Taxa de administração','4.01.008'],['Outras receitas','4.01.024']];
 function bcEnsureModal(){
   if(document.getElementById('bcOverlay')) return;
   const d = document.createElement('div'); d.className = 'modal-overlay'; d.id = 'bcOverlay';
@@ -8945,7 +8946,7 @@ function bcOpen(id){
   bcModalRender(); document.getElementById('bcOverlay').classList.add('open');
 }
 function bcContaOpts(debito){
-  const list = debito ? contasPagar() : contasReceber();
+  const list = debito ? contasPagar() : contasReceber().concat(PLANO.filter(a=>contaAtiva(a) && bcContaDespesa(a.cod)));
   return `<datalist id="bcContasDl">${list.map(a=>`<option value="${rpEsc(a.sistema?'A classificar':a.cod+' · '+a.nome)}"></option>`).join('')}</datalist>`;
 }
 function bcContaFromText(txt, debito){
@@ -9011,7 +9012,7 @@ function bcModalRender(){
       bcLinkTitulo(tx, tipo, tid);
     } else if(m.mode==='novo'){
       if(!m.conta){ showToast('Informe a conta contábil (escolha na lista).'); return; }
-      if(!contaServe(m.conta, debito?'pagar':'receber')){ showToast('Essa conta não serve para '+(debito?'saídas':'entradas')+'.'); return; }
+      if(!contaServe(m.conta, debito?'pagar':'receber') && !(!debito && bcContaDespesa(m.conta))){ showToast('Essa conta não serve para '+(debito?'saídas':'entradas')+'.'); return; }
       if(!String(m.parte||'').trim()){ showToast('Informe o '+(debito?'fornecedor':'cliente')+'.'); return; }
       bcCriarLancamento(tx, m);
     } else if(m.mode==='transf'){
