@@ -7803,11 +7803,14 @@ async function imobziSyncAuto(opts){
     const anoIni = corte || `${y}-01-01`, antes = iso(new Date(new Date(ini+'T12:00:00').getTime()-864e5));
     const chamadas = [{acao:'imobzi_faturas', inicio:ini, fim, status:'all'}];
     if(antes >= anoIni) chamadas.push({acao:'imobzi_faturas', inicio:anoIni, fim:antes, status:'pending'});
+    if(corte) chamadas.push({acao:'imobzi_faturas', inicio:corte, fim:iso(TODAY), status:'paid', period:'paid_at', soPagasApos:corte});
     let faturas = [], canceladas = [], falhas = 0;
     for(const c of chamadas){
       const j = await rpPost(c);
       if(!j.ok) throw new Error(j.erro || 'erro no Apps Script');
-      faturas = faturas.concat(j.faturas||[]); canceladas = canceladas.concat(j.canceladas||[]); falhas += (j.falhas||[]).length;
+      let fl = j.faturas||[];
+      if(c.period==='paid_at') fl = fl.filter(f=>f.pago_em && f.pago_em>=c.soPagasApos && !faturas.some(x=>x.id===f.id)); // o servidor antigo ignora 'period' e devolve o mesmo que já veio
+      faturas = faturas.concat(fl); if(c.period!=='paid_at') canceladas = canceladas.concat(j.canceladas||[]); falhas += (j.falhas||[]).length;
     }
     let loc = [];
     const hojeIso = iso(TODAY);
@@ -8551,6 +8554,8 @@ function bcNum(t){
   if(n.includes(',')) n = n.replace(/\./g,'').replace(',','.'); else if(/^\d{1,3}(\.\d{3})+$/.test(n)) n = n.replace(/\./g,'');
   const v = parseFloat(n); return isNaN(v) ? NaN : (neg ? -v : v);
 }
+function bcDiaAnterior(iso){ return fmtDateISO(new Date(new Date(iso+'T00:00:00').getTime()-864e5)); }
+function bcDataSaldoIni(p){ return p.dataSaldoIni || (p.ini ? bcDiaAnterior(p.ini) : ''); }
 function bcDetectBank(txt){
   const t = cxNormalizeText(txt);
   const bancos = [['sicredi','Sicredi'],['pjbank','PJBank'],['banco do brasil','Banco do Brasil'],['bradesco','Bradesco'],['itau','Itaú'],['santander','Santander'],['caixa economica','Caixa'],['nubank','Nubank'],['inter','Inter'],['sicoob','Sicoob']];
@@ -8569,12 +8574,15 @@ function bcFinish(r){
   return r;
 }
 function bcParseLines(lines){
-  const tx = []; let saldoIni = null, saldoFim = null;
+  const tx = []; let saldoIni = null, saldoFim = null, dataSaldoIni = '', periodoIni = '';
   const re = /^(\d{2}\/\d{2}(?:\/\d{2,4})?)\s+(.*?)\s+(-?[\d.]*\d,\d{2}\s*[CD]?)(?:\s+(-?[\d.]*\d,\d{2}\s*[CD]?))?$/;
   lines.forEach(c=>{
     let row = c.map(x=>String(x).trim());
+    const pm = row.join(' ').match(/per[ií]odo[^\d]*(\d{2}\/\d{2}\/\d{4})\s*(?:a|até|-)\s*(\d{2}\/\d{2}\/\d{4})/i); if(pm && !periodoIni) periodoIni = bcDate(pm[1]);
     if(/^SALDO( ANTERIOR| INICIAL)?$/i.test(row[0]) && row.length>=2 && bcIsMoney(row[row.length-1])){ if(saldoIni===null) saldoIni = bcNum(row[row.length-1]); return; }
     if(row.length<3 && /^\d{2}\/\d{2}/.test(row[0])){ const m = row.join(' ').match(re); if(m) row = [m[1], m[2], m[3]].concat(m[4]?[m[4]]:[]); }
+    const sl = row.findIndex(x=>/^SALDO (ANTERIOR|INICIAL|FINAL)/i.test(x));
+    if(sl>=0 && bcIsMoney(row[row.length-1])){ const n = bcNum(row[row.length-1]); if(/FINAL/i.test(row[sl])) saldoFim = n; else if(saldoIni===null){ saldoIni = n; dataSaldoIni = bcDate(row[0]); } return; }
     const d = bcDate(row[0]); if(!d || row.length<3) return;
     const nums = [];
     for(let i=row.length-1; i>=1 && nums.length<2; i--){ if(!bcIsMoney(row[i])) break; nums.unshift({i, n:bcNum(row[i])}); }
@@ -8582,9 +8590,12 @@ function bcParseLines(lines){
     const valor = nums[0].n, saldo = nums.length>1 ? nums[1].n : null;
     let cells = row.slice(1, nums[0].i), doc = '';
     if(cells.length>1 && /^[A-Z0-9_\-\/.]{5,}$/.test(cells[cells.length-1]) && !/\s/.test(cells[cells.length-1])) doc = cells.pop();
+    if(!valor) return;
     tx.push({data:d, desc:cells.join(' ').replace(/\s+/g,' ').trim(), doc, valor:bcR2(valor), saldo:saldo===null?null:bcR2(saldo)});
   });
-  return bcFinish({tx, saldoIni, saldoFim:null});
+  const r = bcFinish({tx, saldoIni, saldoFim});
+  r.dataSaldoIni = dataSaldoIni || (periodoIni ? bcDiaAnterior(periodoIni) : '');
+  return r;
 }
 function bcParseOfx(txt){
   const tx = [], tag = (b,t)=>{ const r = b.match(new RegExp('<'+t+'>([^<\\r\\n]*)','i')); return r ? r[1].trim() : ''; };
@@ -8644,6 +8655,7 @@ function bcNameSim(nome, desc){
   const set = new Set(impNorm(desc).split(' '));
   return toks.filter(t=>set.has(t)).length / toks.length;
 }
+const BC_TARIFA_MAX = 5; // diferença máxima (R$) aceita entre a fatura e o crédito líquido de tarifa bancária
 function bcTitulos(tx){
   const emp = tx.empresaId, v = Math.abs(tx.valor), out = [];
   const pool = tx.valor<0 ? state.accounts.filter(a=>a.empresaId===emp).map(a=>({tipo:'ap', a})) : RECEIVABLES.filter(r=>r.empresaId===emp).map(a=>({tipo:'ar', a}));
@@ -8652,12 +8664,14 @@ function bcTitulos(tx){
     const parte = bcTitleParty(tipo, a), dataRef = tipo==='ap' ? (a.dataPagamento||a.vencimento) : (a.dataRecebimento||a.vencimento);
     const valores = tipo==='ap' ? [a.valorPago!==undefined?a.valorPago:a.valor] : [a.valorRecebido||a.valor, a.valor];
     const exato = valores.some(x=>Math.abs(x-v)<0.011);
+    const quase = !exato && tipo==='ar' && valores.some(x=>x-v>0.011 && x-v<=BC_TARIFA_MAX); // crédito líquido da tarifa do boleto
     let score = 0;
-    if(exato) score += 60;
+    if(exato) score += 60; else if(quase) score += 52;
     const sim = bcNameSim(parte, tx.desc); score += Math.round(sim*35);
     const dd = bcDias(dataRef, tx.data); score += dd<=3 ? 15 : dd<=10 ? 8 : dd<=31 ? 2 : 0;
     if(['pago','recebido','parcial','aguardando_conciliacao'].includes(a.status)) score += 5;
-    out.push({tipo, id:a.id, a, parte, dataRef, exato, score, sim});
+    if((a.contaBancaria||BANK_ACCOUNTS[0])!==tx.conta) score -= 12; // o título foi lançado em outra conta bancária
+    out.push({tipo, id:a.id, a, parte, dataRef, exato, quase, score, sim});
   });
   return out.sort((x,y)=>y.score-x.score || (x.dataRef<y.dataRef?-1:1));
 }
@@ -8673,16 +8687,16 @@ function bcOutraConta(tx){
 function bcSugestao(tx){
   const co = COMPANIES.find(c=>c.id===tx.empresaId) || {}, cnpj = String(co.cnpj||'').replace(/\D/g,'');
   const tr = bcTransfCandidatas(tx)[0];
-  if(tr) return {tipo:'transf', tf:tr, label:`Transferência já lançada: ${tr.origem} → ${tr.destino}`, score:100};
-  const tits = bcTitulos(tx), best = tits[0], second = tits[1];
-  if(best && best.exato && best.score>=65 && (!second || second.score < best.score-10)) return {tipo:best.tipo, id:best.id, label:`${best.tipo==='ap'?'Pagar':'Receber'}: ${best.parte||'—'} · ${best.a.descricao||''} · venc. ${fmtDateBR(best.a.vencimento)}`, score:best.score, auto:true};
-  const regra = bcFindRule(tx);
-  if(regra) return {tipo:'regra', regra, label:`Lançar como ${contaNome(regra.conta)} — ${regra.parte} (regra aprendida)`, score:70, auto:true};
+  if(tr) return {tipo:'transf', tf:tr, label:`Transferência já lançada: ${tr.origem} → ${tr.destino}`, score:100, auto:true};
   if(cnpj && cnpj.length>=11 && String(tx.desc).replace(/\D/g,'').includes(cnpj) && BANK_ACCOUNTS.length>1){
     const outra = bcOutraConta(tx);
     return {tipo:'transf-nova', outra, label:`Transferência ${tx.valor>0?'de':'para'} ${outra} (CNPJ da própria empresa)`, score:75, auto:true};
   }
-  if(best && best.exato) return {tipo:best.tipo, id:best.id, label:`Possível: ${best.parte||'—'} · ${best.a.descricao||''} (há mais de um título com esse valor)`, score:best.score, auto:false};
+  const tits = bcTitulos(tx), best = tits[0], second = tits[1];
+  if(best && (best.exato||best.quase) && best.score>=65 && (!second || second.score < best.score-10)) return {tipo:best.tipo, id:best.id, label:`${best.tipo==='ap'?'Pagar':'Receber'}: ${best.parte||'—'} · ${best.a.descricao||''} · venc. ${fmtDateBR(best.a.vencimento)}${best.quase?` (líquido de tarifa de ${fmtCurrency(bcR2(best.a.valor-Math.abs(tx.valor)))})`:''}`, score:best.score, auto:true};
+  const regra = bcFindRule(tx);
+  if(regra) return {tipo:'regra', regra, label:`Lançar como ${contaNome(regra.conta)} — ${regra.parte} (regra aprendida)`, score:70, auto:true};
+  if(best && (best.exato||best.quase)) return {tipo:best.tipo, id:best.id, label:`Possível: ${best.parte||'—'} · ${best.a.descricao||''} (há mais de um título com esse valor)`, score:best.score, auto:false};
   return null;
 }
 
@@ -8695,7 +8709,7 @@ function bcLinkTitulo(tx, tipo, id){
                            : {status:a.status, data:a.dataRecebimento||null, valorRecebido:a.valorRecebido, conta:a.contaBancaria};
   a.contaBancaria = tx.conta; a.conciliacao = tx.id;
   if(tipo==='ap'){ a.status = 'conciliado'; a.dataPagamento = tx.data; if(Math.abs(a.valor-v)>0.005) a.valorPago = v; else delete a.valorPago; }
-  else { a.status = v < a.valor-0.005 ? 'parcial' : 'conciliado'; a.dataRecebimento = tx.data; a.valorRecebido = v; }
+  else { a.status = a.valor-v > BC_TARIFA_MAX ? 'parcial' : 'conciliado'; a.dataRecebimento = tx.data; a.valorRecebido = v; if(a.valor-v>0.005 && a.valor-v<=BC_TARIFA_MAX) a.tarifaBancaria = bcR2(a.valor-v); }
   tx.status = 'conciliado'; tx.vinc = {tipo, id, prev};
   return true;
 }
@@ -8733,7 +8747,7 @@ function bcDesfazer(tx){
   if(v.tipo==='ap' || v.tipo==='ar'){
     const a = v.tipo==='ap' ? state.accounts.find(x=>x.id===v.id) : RECEIVABLES.find(x=>x.id===v.id);
     if(a){
-      a.status = v.prev.status; a.contaBancaria = v.prev.conta; delete a.conciliacao;
+      a.status = v.prev.status; a.contaBancaria = v.prev.conta; delete a.conciliacao; delete a.tarifaBancaria;
       if(v.tipo==='ap'){ a.dataPagamento = v.prev.data; if(v.prev.valorPago===undefined) delete a.valorPago; else a.valorPago = v.prev.valorPago; }
       else { a.dataRecebimento = v.prev.data; a.valorRecebido = v.prev.valorRecebido; }
     }
@@ -8786,6 +8800,8 @@ function renderConciliacao(){
   const ate = ult ? ult.data : fmtDateISO(TODAY), sis = bankSaldo(emp, bcConta, ate);
   const cfg = (BANKBAL[emp]||{})[bcConta] || {};
   const dif = ult ? bcR2(sis.saldo - ult.saldo) : null;
+  const netSem = bcR2(semExt.filter(x=>x.data<=ate).reduce((t,x)=>t+(x.tipo==='ar'?x.valor:-x.valor),0));
+  const dif2 = dif===null ? null : bcR2(dif - netSem), explicada = dif!==null && Math.abs(dif)>=0.005 && Math.abs(dif2)<0.005;
   const sug = new Map(pend.map(t=>[t.id, bcSugestao(t)]));
   const auto = pend.filter(t=>{ const s = sug.get(t.id); return s && s.auto; });
   const entP = bcR2(pend.filter(t=>t.valor>0).reduce((s,t)=>s+t.valor,0)), saiP = bcR2(pend.filter(t=>t.valor<0).reduce((s,t)=>s+Math.abs(t.valor),0));
@@ -8830,7 +8846,8 @@ function renderConciliacao(){
     <div class="vg-kpi-grid">
       ${kpi('Saldo do extrato', ult?fmtCurrency(ult.saldo):'—', ult?`em ${fmtDateBR(ult.data)}`:'importe um extrato')}
       ${kpi('Saldo no sistema', fmtCurrency(sis.saldo), cfg.saldoInicial!==undefined?`saldo inicial ${fmtCurrency(cfg.saldoInicial)} em ${cfg.data?fmtDateBR(cfg.data):'—'}`:'<b style="color:#b42318;">defina o saldo inicial</b> (importe um extrato com saldo ou use Configurações)')}
-      ${kpi('Diferença', dif===null?'—':(Math.abs(dif)<0.005?'<span style="color:#0f6e45;">Confere</span>':'<span style="color:#b42318;">'+fmtCurrency(dif)+'</span>'), dif===null?'':'sistema − extrato')}
+      ${kpi('Diferença', dif===null?'—':(Math.abs(dif)<0.005||explicada?'<span style="color:#0f6e45;">Confere</span>':'<span style="color:#b42318;">'+fmtCurrency(dif)+'</span>'),
+        dif===null?'':explicada?`${fmtCurrency(netSem)} baixados no sistema, ainda sem extrato (compensação)`:(netSem?`sistema − extrato · sem extrato: ${fmtCurrency(netSem)}`:'sistema − extrato'))}
       ${kpi('Pendentes de conciliar', String(pend.length), `entradas ${fmtCurrency(entP)} · saídas ${fmtCurrency(saiP)}`)}
     </div>
     <div class="panel" style="margin-top:14px;">
@@ -8878,8 +8895,8 @@ function renderConciliacao(){
 
 /* ---------- janela: conciliar uma linha ---------- */
 let bcM = null;
-const BC_PRESETS_D = [['Pessoal / retirada do sócio','1.01.05.004'],['Combustíveis','6.06.014'],['Manutenção de veículos','6.06.006'],['Copa e refeições','6.02.020'],['Comissões comerciais','6.04.011'],['Plano de saúde','6.01.015']];
-const BC_PRESETS_C = [['Aporte / depósito do sócio','2.01.05.006'],['Taxa de administração','4.01.008'],['Outras receitas','4.01.024']];
+const BC_PRESETS_D = [['Repasse a proprietário','2.01.08.012'],['Pessoal / retirada do sócio','1.01.05.004'],['Combustíveis','6.06.014'],['Manutenção de veículos','6.06.006'],['Copa e refeições','6.02.020'],['Comissões comerciais','6.04.011'],['Plano de saúde','6.01.015']];
+const BC_PRESETS_C = [['Aluguel / valores de terceiros','2.01.08.012'],['Aporte / depósito do sócio','2.01.05.006'],['Taxa de administração','4.01.008'],['Outras receitas','4.01.024']];
 function bcEnsureModal(){
   if(document.getElementById('bcOverlay')) return;
   const d = document.createElement('div'); d.className = 'modal-overlay'; d.id = 'bcOverlay';
@@ -8969,7 +8986,7 @@ function bcModalRender(){
     if(m.mode==='titulo'){
       if(!m.sel){ showToast('Escolha o título.'); return; }
       const [tipo, tid] = m.sel.split(':'), t = bcTitulos(tx).find(x=>x.tipo===tipo && x.id===tid);
-      if(t && !t.exato && !confirm(`O valor do título (${fmtCurrency(tipo==='ap'?t.a.valor:t.a.valor)}) é diferente do extrato (${fmtCurrency(Math.abs(tx.valor))}). Registrar o valor do extrato como ${debito?'pago':'recebido'}?`)) return;
+      if(t && !t.exato && !(t.quase) && !confirm(`O valor do título (${fmtCurrency(tipo==='ap'?t.a.valor:t.a.valor)}) é diferente do extrato (${fmtCurrency(Math.abs(tx.valor))}). Registrar o valor do extrato como ${debito?'pago':'recebido'}?`)) return;
       bcLinkTitulo(tx, tipo, tid);
     } else if(m.mode==='novo'){
       if(!m.conta){ showToast('Informe a conta contábil (escolha na lista).'); return; }
@@ -9008,7 +9025,7 @@ function bcImpRender(){
   let prev = '';
   if(p){
     const conta = bcImpContaFinal(), keys = conta ? bcKeys(p.tx, emp, conta) : [], ex = new Set(BANKTX.map(t=>t.key)), novos = keys.filter(k=>!ex.has(k)).length;
-    const dIni = p.ini ? new Date(new Date(p.ini+'T00:00:00').getTime()-864e5) : null, dIniIso = dIni ? fmtDateISO(dIni) : '';
+    const dIniIso = bcDataSaldoIni(p);
     const cfg = ((BANKBAL[emp]||{})[conta]) || {};
     const divergente = p.saldoIni!==null && p.saldoIni!==undefined && cfg.saldoInicial!==undefined && cfg.data===dIniIso && Math.abs(cfg.saldoInicial-p.saldoIni)>0.005;
     const sugerir = p.saldoIni!==null && p.saldoIni!==undefined && (cfg.saldoInicial===undefined || divergente || (cfg.data && dIniIso < cfg.data));
@@ -9061,7 +9078,7 @@ function bcImpConfirm(){
     BANKTX.push({id:'BT'+stamp+String(i).padStart(4,'0'), empresaId:emp, conta, data:x.data, desc:x.desc, doc:x.doc, valor:x.valor, saldo:x.saldo, seq:i, key:keys[i], status:'pendente', vinc:null, importadoEm:new Date().toISOString()}); n++;
   });
   if(bcImp.usarSaldo && p.saldoIni!==null && p.saldoIni!==undefined){
-    const dIni = fmtDateISO(new Date(new Date(p.ini+'T00:00:00').getTime()-864e5)), o = (BANKBAL[emp] = BANKBAL[emp] || {}); const cfg = (o[conta] = o[conta] || {});
+    const dIni = bcDataSaldoIni(p), o = (BANKBAL[emp] = BANKBAL[emp] || {}); const cfg = (o[conta] = o[conta] || {});
     cfg.saldoInicial = p.saldoIni; cfg.data = dIni; saveBankBal();
   }
   const ult = [...p.tx].reverse().find(x=>x.saldo!==null && x.saldo!==undefined);
