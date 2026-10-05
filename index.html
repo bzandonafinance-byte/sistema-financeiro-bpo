@@ -7922,7 +7922,7 @@ function impApply(sel, emp, anexosBase, opts){
       const valor = parseMoney(r.valor), id = String(stamp).slice(-6)+String(i).padStart(3,'0');
       const doc = r.doc || 'IMP-'+id, anexos = anexosBase;
       const baixa = r.baixa, exist = r.imobziId ? (r.tipo==='pagar' ? state.accounts.find(a=>a.imobziId===r.imobziId) : RECEIVABLES.find(a=>a.imobziId===r.imobziId)) : null;
-      const emConc = x=>['aguardando_conciliacao','conciliado'].includes(x.status);
+      const emConc = x=>['aguardando_conciliacao','conciliado'].includes(x.status) || !!x.conciliacao;
       if(r.tipo==='pagar'){
         const camp = {faturaId:r.faturaId||undefined, fornecedorId:p.id, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), vencimento:r.venc, valor, categoria:conta, formaPagamento:r.forma, planoContas:contaLabel(conta)};
         if(exist){
@@ -7953,7 +7953,7 @@ function impApply(sel, emp, anexosBase, opts){
     saveAccounts(state.accounts); saveReceivables(); if(learned){ persist(SUPPLIERS_KEY, SUPPLIERS); persist(CLIENTS_KEY, CLIENTS); }
 
     /* Sincronização: repasses que sumiram da fatura e faturas canceladas no Imobzi */
-    const emConcl = x=>['aguardando_conciliacao','conciliado'].includes(x.status);
+    const emConcl = x=>['aguardando_conciliacao','conciliado'].includes(x.status) || !!x.conciliacao;
     if(opts.faturas){
       const apIds = new Set(sel.filter(r=>r.tipo==='pagar').map(r=>r.imobziId));
       state.accounts.forEach(a=>{ if(a.faturaId && opts.faturas.has(a.faturaId) && !apIds.has(a.imobziId) && !['pago','cancelado'].includes(a.status) && !emConcl(a)){ a.status = 'cancelado'; nCanc++; } });
@@ -8662,7 +8662,8 @@ function bcTitulos(tx){
   pool.forEach(({tipo, a})=>{
     if(['cancelado','conciliado'].includes(a.status)) return;
     const parte = bcTitleParty(tipo, a), dataRef = tipo==='ap' ? (a.dataPagamento||a.vencimento) : (a.dataRecebimento||a.vencimento);
-    const valores = tipo==='ap' ? [a.valorPago!==undefined?a.valorPago:a.valor] : [a.valorRecebido||a.valor, a.valor];
+    const jaPago = (a.concs||[]).reduce((t,x)=>t+x.v,0);
+    const valores = (tipo==='ap' ? [a.valorPago!==undefined?a.valorPago:a.valor] : [a.valorRecebido||a.valor, a.valor]).concat(jaPago>0 ? [bcR2(a.valor-jaPago)] : []);
     const exato = valores.some(x=>Math.abs(x-v)<0.011);
     const quase = !exato && tipo==='ar' && valores.some(x=>x-v>0.011 && x-v<=BC_TARIFA_MAX); // crédito líquido da tarifa do boleto
     let score = 0;
@@ -8702,15 +8703,20 @@ function bcSugestao(tx){
 
 /* ---------- gravar / desfazer vínculos ---------- */
 function bcSaveAll(){ saveAccounts(state.accounts); saveReceivables(); saveBankTx(); saveTransfers(); }
+function bcRecalc(a, tipo){
+  const total = bcR2(a.concs.reduce((t,x)=>t+x.v,0)), ult = a.concs[a.concs.length-1], data = a.concs.map(x=>x.data).sort().pop();
+  a.contaBancaria = ult.conta; a.conciliacao = ult.id; delete a.tarifaBancaria;
+  if(tipo==='ap'){ a.status = 'conciliado'; a.dataPagamento = data; if(Math.abs(a.valor-total)>0.005) a.valorPago = total; else delete a.valorPago; }
+  else { a.status = a.valor-total > BC_TARIFA_MAX ? 'parcial' : 'conciliado'; a.dataRecebimento = data; a.valorRecebido = total; if(a.valor-total>0.005 && a.valor-total<=BC_TARIFA_MAX) a.tarifaBancaria = bcR2(a.valor-total); }
+}
 function bcLinkTitulo(tx, tipo, id){
   const a = tipo==='ap' ? state.accounts.find(x=>x.id===id) : RECEIVABLES.find(x=>x.id===id); if(!a) return false;
-  const v = Math.abs(tx.valor);
-  const prev = tipo==='ap' ? {status:a.status, data:a.dataPagamento||null, valorPago:a.valorPago, conta:a.contaBancaria}
-                           : {status:a.status, data:a.dataRecebimento||null, valorRecebido:a.valorRecebido, conta:a.contaBancaria};
-  a.contaBancaria = tx.conta; a.conciliacao = tx.id;
-  if(tipo==='ap'){ a.status = 'conciliado'; a.dataPagamento = tx.data; if(Math.abs(a.valor-v)>0.005) a.valorPago = v; else delete a.valorPago; }
-  else { a.status = a.valor-v > BC_TARIFA_MAX ? 'parcial' : 'conciliado'; a.dataRecebimento = tx.data; a.valorRecebido = v; if(a.valor-v>0.005 && a.valor-v<=BC_TARIFA_MAX) a.tarifaBancaria = bcR2(a.valor-v); }
-  tx.status = 'conciliado'; tx.vinc = {tipo, id, prev};
+  const v = Math.abs(tx.valor); a.concs = a.concs || [];
+  const prev = a.concs.length ? null : (tipo==='ap' ? {status:a.status, data:a.dataPagamento||null, valorPago:a.valorPago, conta:a.contaBancaria}
+                                                     : {status:a.status, data:a.dataRecebimento||null, valorRecebido:a.valorRecebido, conta:a.contaBancaria});
+  a.concs.push({id:tx.id, v, data:tx.data, conta:tx.conta, prev});
+  bcRecalc(a, tipo);
+  tx.status = 'conciliado'; tx.vinc = {tipo, id};
   return true;
 }
 function bcLinkTransf(tx, tf){ tf.conc = tf.conc || {}; tf.conc[tx.conta] = tx.id; tx.status = 'conciliado'; tx.vinc = {tipo:'transf', id:tf.id, criada:false}; return true; }
@@ -8746,7 +8752,22 @@ function bcDesfazer(tx){
   const v = tx.vinc; if(!v){ tx.status = 'pendente'; return; }
   if(v.tipo==='ap' || v.tipo==='ar'){
     const a = v.tipo==='ap' ? state.accounts.find(x=>x.id===v.id) : RECEIVABLES.find(x=>x.id===v.id);
-    if(a){
+    if(a && a.concs){
+      const i = a.concs.findIndex(x=>x.id===tx.id);
+      if(i>=0){
+        const e = a.concs.splice(i,1)[0];
+        if(e.prev && a.concs.length) a.concs[0].prev = e.prev;
+        if(a.concs.length) bcRecalc(a, v.tipo);
+        else {
+          const pv = e.prev; delete a.concs; delete a.conciliacao; delete a.tarifaBancaria;
+          if(pv){
+            a.status = pv.status; a.contaBancaria = pv.conta;
+            if(v.tipo==='ap'){ a.dataPagamento = pv.data; if(pv.valorPago===undefined) delete a.valorPago; else a.valorPago = pv.valorPago; }
+            else { a.dataRecebimento = pv.data; a.valorRecebido = pv.valorRecebido; }
+          }
+        }
+      }
+    } else if(a && v.prev){
       a.status = v.prev.status; a.contaBancaria = v.prev.conta; delete a.conciliacao; delete a.tarifaBancaria;
       if(v.tipo==='ap'){ a.dataPagamento = v.prev.data; if(v.prev.valorPago===undefined) delete a.valorPago; else a.valorPago = v.prev.valorPago; }
       else { a.dataRecebimento = v.prev.data; a.valorRecebido = v.prev.valorRecebido; }
