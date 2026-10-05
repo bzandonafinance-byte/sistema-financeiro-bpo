@@ -1048,6 +1048,9 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .rp-tbl{table-layout:fixed;}
 .rp-tbl th:nth-child(1){width:86px;} .rp-tbl th:nth-child(2){width:24%;} .rp-tbl th:nth-child(4){width:16%;} .rp-tbl th:nth-child(5){width:112px;}
 .rp-tbl td.r,.rp-tbl th.r{white-space:nowrap;}
+.rp-paper.rp-wide{max-width:1240px;}
+.rp-tbl.inc-tbl th:nth-child(1){width:84px;} .rp-tbl.inc-tbl th:nth-child(2){width:84px;} .rp-tbl.inc-tbl th:nth-child(3){width:104px;} .rp-tbl.inc-tbl th:nth-child(4){width:24%;} .rp-tbl.inc-tbl th:nth-child(5){width:92px;} .rp-tbl.inc-tbl th:nth-child(6){width:104px;}
+.rp-tbl.inc-tbl td{vertical-align:top;white-space:normal;} .rp-tbl.inc-tbl td.r{white-space:nowrap;}
 
 .explore-banner{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#fff7e0;border:1px solid #f1deaa;color:#6b4e00;border-radius:6px;padding:10px 14px;font-size:12.5px;margin-bottom:14px;}
 .exb-actions{display:flex;gap:8px;}
@@ -2182,7 +2185,7 @@ function loadOrSeedArray(key, seedFn){
   try{ localStorage.setItem(key, JSON.stringify(seeded)); }catch(e){}
   return seeded;
 }
-function persist(key, data){ try{ localStorage.setItem(key, JSON.stringify(data)); }catch(e){} }
+function persist(key, data){ try{ localStorage.setItem(key, JSON.stringify(data)); }catch(e){} try{ if(RP_SYNC_KEYS.has(key)) rpSyncSoon(); }catch(e){} }
 
 const SUPPLIERS_KEY = 'bpo_financeiro_suppliers_v1';
 const CLIENTS_KEY = 'bpo_financeiro_clients_v1';
@@ -5092,7 +5095,7 @@ const ENVIO_KEY = 'bpo_financeiro_envio_v1';
 function envioCfg(){ try{ return JSON.parse(localStorage.getItem(ENVIO_KEY)||'{}'); }catch(e){ return {}; } }
 function envioSave(c){ try{ localStorage.setItem(ENVIO_KEY, JSON.stringify(c)); }catch(e){} }
 const RP_BRAND = 'Bzandona Soluções Financeiras';
-const RP_APPS_SCRIPT = "const SENHA = 'COLE-AQUI-A-MESMA-SENHA-DO-SISTEMA';\n\nfunction doPost(e) {\n  try {\n    const d = JSON.parse(e.postData.contents);\n    if (d.token !== SENHA) return saida({ ok: false, erro: 'Senha inválida' });\n    if (d.acao === 'ler_relatorio') return saida(lerRelatorio(d));\n    const pdf = Utilities.newBlob(Utilities.base64Decode(d.pdfBase64), 'application/pdf', d.filename);\n    MailApp.sendEmail({\n      to: d.to, cc: d.cc || '', subject: d.subject, htmlBody: d.html,\n      attachments: [pdf], name: 'Bzandona Soluções Financeiras'\n    });\n    return saida({ ok: true });\n  } catch (err) {\n    return saida({ ok: false, erro: String(err) });\n  }\n}\n\n// Leitura de relatório (PDF ou imagem) com a IA da Anthropic.\n// A chave fica em: Configurações do projeto > Propriedades do script > ANTHROPIC_KEY\nfunction lerRelatorio(d) {\n  const chave = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');\n  if (!chave) return { ok: false, erro: 'Falta a chave ANTHROPIC_KEY nas Propriedades do script' };\n  const arquivo = d.mime === 'application/pdf'\n    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: d.dataBase64 } }\n    : { type: 'image', source: { type: 'base64', media_type: d.mime, data: d.dataBase64 } };\n  const dica = d.dica === 'pagar' ? 'todas as linhas são contas a pagar'\n    : d.dica === 'receber' ? 'todas as linhas são contas a receber' : 'detecte pelo contexto';\n  const instrucoes = d.modo === 'documento' ? instrucoesDocumento(dica) : [\n    'Você lê relatórios financeiros brasileiros de contas a pagar e/ou a receber (podem ser escaneados ou fotos).',\n    'Extraia UMA linha para cada conta listada. Ignore resumos, totais, subtotais, cabeçalhos e quadros de divergências.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"fornecedor ou cliente\",\"descricao\":\"texto\",\"valor\":1234.56,\"forma\":\"PIX ou null\",\"documento\":\"número ou null\",\"situacao\":\"projecao, paga ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Se a linha for apenas projeção/estimativa (ainda não é uma conta real) use situacao \"projecao\"; se já estiver paga/recebida use \"paga\"; senão null.',\n    'Regras: tipo é \"pagar\" ou \"receber\" (use as seções do relatório; sem seções, ' + dica + ').',\n    'Datas no formato AAAA-MM-DD (o relatório usa dia/mês/ano). Valor como número com ponto decimal, sem R$.',\n    'Não invente dados: campo ausente = null. Se algum nome ou número estiver ilegível ou duvidoso, inclua a linha e explique em \"observacoes\".'\n  ].join('\\n');\n  const resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {\n    method: 'post', contentType: 'application/json', muteHttpExceptions: true,\n    headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01' },\n    payload: JSON.stringify({\n      model: 'claude-sonnet-5-5', max_tokens: 32000,\n      messages: [{ role: 'user', content: [arquivo, { type: 'text', text: instrucoes }] }]\n    })\n  });\n  const corpo = JSON.parse(resp.getContentText());\n  if (resp.getResponseCode() !== 200) return { ok: false, erro: (corpo.error && corpo.error.message) || ('Erro ' + resp.getResponseCode()) };\n  const texto = corpo.content.map(function (c) { return c.text || ''; }).join('');\n  const ini = texto.indexOf('{'), fim = texto.lastIndexOf('}');\n  if (ini < 0 || fim < 0) return { ok: false, erro: 'A IA não devolveu dados legíveis' };\n  const dados = JSON.parse(texto.slice(ini, fim + 1));\n  return { ok: true, linhas: dados.linhas || [], observacoes: dados.observacoes || '' };\n}\n\n// Um único documento (boleto, nota fiscal, fatura ou recibo) para preencher um lançamento.\nfunction instrucoesDocumento(dica) {\n  return [\n    'Você lê UM documento financeiro brasileiro (boleto bancário, nota fiscal, fatura ou recibo), digital, escaneado ou foto.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"nome\",\"descricao\":\"texto curto\",\"valor\":1234.56,\"forma\":\"Boleto ou null\",\"documento\":\"número ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Regras: devolva exatamente UMA linha. ' + dica + '.',\n    'parte = em conta a pagar, o beneficiário/cedente do boleto ou o prestador/emitente da nota; em conta a receber, o cliente/tomador/sacado.',\n    'vencimento = data de vencimento (na nota sem vencimento, use a data de emissão). Formato AAAA-MM-DD; o documento usa dia/mês/ano.',\n    'valor = valor total do documento, número com ponto decimal, sem R$. forma = \"Boleto\" se for boleto. documento = número da nota ou do documento.',\n    'descricao = o que está sendo cobrado, em poucas palavras. Não invente: campo ausente = null; se algo estiver duvidoso, explique em \"observacoes\".'\n  ].join('\\n');\n}\n\nfunction saida(o) {\n  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);\n}\n";
+const RP_APPS_SCRIPT = "const SENHA = 'COLE-AQUI-A-MESMA-SENHA-DO-SISTEMA';\n\nfunction doPost(e) {\n  try {\n    const d = JSON.parse(e.postData.contents);\n    if (d.token !== SENHA) return saida({ ok: false, erro: 'Senha inválida' });\n    if (d.acao === 'ler_relatorio') return saida(lerRelatorio(d));\n    if (d.acao === 'sync') return saida(salvarSnapshot(d.snapshot));\n    if (d.acao === 'ativar_diario') return saida(ativarDiario());\n    if (d.acao === 'desativar_diario') return saida(desativarDiario());\n    if (d.acao === 'enviar_diario_agora') return saida(enviarRelatorioDiario());\n    const pdf = Utilities.newBlob(Utilities.base64Decode(d.pdfBase64), 'application/pdf', d.filename);\n    MailApp.sendEmail({\n      to: d.to, cc: d.cc || '', subject: d.subject, htmlBody: d.html,\n      attachments: [pdf], name: 'Bzandona Soluções Financeiras'\n    });\n    return saida({ ok: true });\n  } catch (err) {\n    return saida({ ok: false, erro: String(err) });\n  }\n}\n\n// Leitura de relatório (PDF ou imagem) com a IA da Anthropic.\n// A chave fica em: Configurações do projeto > Propriedades do script > ANTHROPIC_KEY\nfunction lerRelatorio(d) {\n  const chave = PropertiesService.getScriptProperties().getProperty('ANTHROPIC_KEY');\n  if (!chave) return { ok: false, erro: 'Falta a chave ANTHROPIC_KEY nas Propriedades do script' };\n  const arquivo = d.mime === 'application/pdf'\n    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: d.dataBase64 } }\n    : { type: 'image', source: { type: 'base64', media_type: d.mime, data: d.dataBase64 } };\n  const dica = d.dica === 'pagar' ? 'todas as linhas são contas a pagar'\n    : d.dica === 'receber' ? 'todas as linhas são contas a receber' : 'detecte pelo contexto';\n  const instrucoes = d.modo === 'documento' ? instrucoesDocumento(dica) : [\n    'Você lê relatórios financeiros brasileiros de contas a pagar e/ou a receber (podem ser escaneados ou fotos).',\n    'Extraia UMA linha para cada conta listada. Ignore resumos, totais, subtotais, cabeçalhos e quadros de divergências.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"fornecedor ou cliente\",\"descricao\":\"texto\",\"valor\":1234.56,\"forma\":\"PIX ou null\",\"documento\":\"número ou null\",\"situacao\":\"projecao, paga ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Se a linha for apenas projeção/estimativa (ainda não é uma conta real) use situacao \"projecao\"; se já estiver paga/recebida use \"paga\"; senão null.',\n    'Regras: tipo é \"pagar\" ou \"receber\" (use as seções do relatório; sem seções, ' + dica + ').',\n    'Datas no formato AAAA-MM-DD (o relatório usa dia/mês/ano). Valor como número com ponto decimal, sem R$.',\n    'Não invente dados: campo ausente = null. Se algum nome ou número estiver ilegível ou duvidoso, inclua a linha e explique em \"observacoes\".'\n  ].join('\\n');\n  const resp = UrlFetchApp.fetch('https://api.anthropic.com/v1/messages', {\n    method: 'post', contentType: 'application/json', muteHttpExceptions: true,\n    headers: { 'x-api-key': chave, 'anthropic-version': '2023-06-01' },\n    payload: JSON.stringify({\n      model: 'claude-sonnet-5-5', max_tokens: 32000,\n      messages: [{ role: 'user', content: [arquivo, { type: 'text', text: instrucoes }] }]\n    })\n  });\n  const corpo = JSON.parse(resp.getContentText());\n  if (resp.getResponseCode() !== 200) return { ok: false, erro: (corpo.error && corpo.error.message) || ('Erro ' + resp.getResponseCode()) };\n  const texto = corpo.content.map(function (c) { return c.text || ''; }).join('');\n  const ini = texto.indexOf('{'), fim = texto.lastIndexOf('}');\n  if (ini < 0 || fim < 0) return { ok: false, erro: 'A IA não devolveu dados legíveis' };\n  const dados = JSON.parse(texto.slice(ini, fim + 1));\n  return { ok: true, linhas: dados.linhas || [], observacoes: dados.observacoes || '' };\n}\n\n// Um único documento (boleto, nota fiscal, fatura ou recibo) para preencher um lançamento.\nfunction instrucoesDocumento(dica) {\n  return [\n    'Você lê UM documento financeiro brasileiro (boleto bancário, nota fiscal, fatura ou recibo), digital, escaneado ou foto.',\n    'Responda SOMENTE com JSON neste formato:',\n    '{\"linhas\":[{\"tipo\":\"pagar\",\"vencimento\":\"AAAA-MM-DD\",\"parte\":\"nome\",\"descricao\":\"texto curto\",\"valor\":1234.56,\"forma\":\"Boleto ou null\",\"documento\":\"número ou null\"}],\"observacoes\":\"dúvidas de leitura\"}',\n    'Regras: devolva exatamente UMA linha. ' + dica + '.',\n    'parte = em conta a pagar, o beneficiário/cedente do boleto ou o prestador/emitente da nota; em conta a receber, o cliente/tomador/sacado.',\n    'vencimento = data de vencimento (na nota sem vencimento, use a data de emissão). Formato AAAA-MM-DD; o documento usa dia/mês/ano.',\n    'valor = valor total do documento, número com ponto decimal, sem R$. forma = \"Boleto\" se for boleto. documento = número da nota ou do documento.',\n    'descricao = o que está sendo cobrado, em poucas palavras. Não invente: campo ausente = null; se algo estiver duvidoso, explique em \"observacoes\".'\n  ].join('\\n');\n}\n\nfunction saida(o) {\n  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);\n}\n\n// ===== Envio diário automático (todo dia às 8h) =====\n// O sistema sincroniza os títulos em aberto (acao 'sync'); o gatilho das 8h monta e envia o relatório.\nconst ARQUIVO_SNAPSHOT = 'BPO_Financeiro_snapshot.json';\nconst HORA_ENVIO = 8;\nconst FUSO = 'America/Sao_Paulo';\n\n// Rode esta função UMA vez no editor (botão Executar) para autorizar Drive, gatilhos e e-mail.\nfunction autorizar() {\n  DriveApp.getRootFolder();\n  ScriptApp.getProjectTriggers();\n  MailApp.getRemainingDailyQuota();\n}\n\nfunction acharSnapshot() {\n  const it = DriveApp.getFilesByName(ARQUIVO_SNAPSHOT);\n  return it.hasNext() ? it.next() : null;\n}\n\nfunction salvarSnapshot(s) {\n  if (!s || !s.pagar || !s.receber) return { ok: false, erro: 'Dados vazios' };\n  s.recebidoEm = new Date().toISOString();\n  const texto = JSON.stringify(s);\n  const arq = acharSnapshot();\n  if (arq) arq.setContent(texto); else DriveApp.createFile(ARQUIVO_SNAPSHOT, texto, MimeType.PLAIN_TEXT);\n  return { ok: true, pagar: s.pagar.length, receber: s.receber.length };\n}\n\nfunction ativarDiario() {\n  desativarDiario();\n  ScriptApp.newTrigger('enviarRelatorioDiario').timeBased().everyDays(1).atHour(HORA_ENVIO).inTimezone(FUSO).create();\n  return { ok: true, ativo: true };\n}\n\nfunction desativarDiario() {\n  ScriptApp.getProjectTriggers().forEach(function (t) {\n    if (t.getHandlerFunction() === 'enviarRelatorioDiario') ScriptApp.deleteTrigger(t);\n  });\n  return { ok: true, ativo: false };\n}\n\nfunction enviarRelatorioDiario() {\n  const arq = acharSnapshot();\n  if (!arq) return { ok: false, erro: 'Ainda não há dados sincronizados. Abra o sistema e clique em Sincronizar.' };\n  const s = JSON.parse(arq.getBlob().getDataAsString());\n  const hoje = Utilities.formatDate(new Date(), FUSO, 'yyyy-MM-dd');\n  let enviados = 0;\n  const semEmail = [];\n  (s.empresas || []).forEach(function (c) {\n    const para = String(c.email || '').replace(/;/g, ',').trim();\n    if (!para) { semEmail.push(c.nome); return; }\n    const d = montarDiario(s, c, hoje);\n    const pdf = Utilities.newBlob(htmlDiario(d, false), 'text/html', 'relatorio.html').getAs('application/pdf')\n      .setName('relatorio_financeiro_diario_' + hoje + '.pdf');\n    MailApp.sendEmail({\n      to: para, subject: 'Relatório Financeiro Diário — ' + c.nome + ' — ' + dataBR(hoje),\n      htmlBody: htmlDiario(d, true), attachments: [pdf], name: 'Bzandona Soluções Financeiras'\n    });\n    enviados++;\n  });\n  return { ok: true, enviados: enviados, semEmail: semEmail };\n}\n\nfunction montarDiario(s, c, hoje) {\n  const ordena = function (a, b) { return a.v < b.v ? -1 : a.v > b.v ? 1 : (a.p < b.p ? -1 : 1); };\n  const so = function (lista) { return lista.filter(function (x) { return x.e === c.id && x.v <= hoje; }).sort(ordena); };\n  const soma = function (l) { return l.reduce(function (t, x) { return t + x.$; }, 0); };\n  const pa = so(s.pagar), re = so(s.receber);\n  const pagar = pa.filter(function (x) { return x.v === hoje; }), pagarVenc = pa.filter(function (x) { return x.v < hoje; });\n  const receber = re.filter(function (x) { return x.v === hoje; }), receberVenc = re.filter(function (x) { return x.v < hoje; });\n  return {\n    empresa: c, hoje: hoje, sync: s.recebidoEm || s.geradoEm,\n    pagar: pagar, pagarVenc: pagarVenc, receber: receber, receberVenc: receberVenc,\n    tpHoje: soma(pagar), tpVenc: soma(pagarVenc), trHoje: soma(receber), trVenc: soma(receberVenc)\n  };\n}\n\nfunction htmlDiario(d, email) {\n  const tp = d.tpHoje + d.tpVenc, tr = d.trHoje + d.trVenc;\n  const tbl = function (titulo, linhas, total) {\n    const cel = 'padding:6px;border-bottom:1px solid #eee;';\n    return '<h3 style=\"margin:18px 0 6px;font-size:14px;color:#17283b;\">' + titulo + '</h3>' +\n      '<table style=\"width:100%;border-collapse:collapse;font-size:12px;\"><tr style=\"background:#f3f4f7;\">' +\n      '<th style=\"padding:6px;text-align:left;\">Vencimento</th><th style=\"padding:6px;text-align:left;\">Fornecedor / Cliente</th>' +\n      '<th style=\"padding:6px;text-align:left;\">Descrição</th><th style=\"padding:6px;text-align:left;\">Forma</th><th style=\"padding:6px;text-align:right;\">Valor</th></tr>' +\n      (linhas.length ? linhas.map(function (x) {\n        return '<tr><td style=\"' + cel + '\">' + dataBR(x.v) + '</td><td style=\"' + cel + '\">' + esc(x.p) + '</td><td style=\"' + cel + '\">' + esc(x.d) +\n          '</td><td style=\"' + cel + '\">' + esc(x.f) + '</td><td style=\"' + cel + 'text-align:right;\">' + moeda(x.$) + '</td></tr>';\n      }).join('') : '<tr><td colspan=\"5\" style=\"padding:8px;color:#888;\">Nenhuma conta para hoje.</td></tr>') +\n      '<tr><td colspan=\"4\" style=\"padding:6px;text-align:right;font-weight:bold;\">' + linhas.length + (linhas.length === 1 ? ' CONTA' : ' CONTAS') + ' | TOTAL</td>' +\n      '<td style=\"padding:6px;text-align:right;font-weight:bold;\">' + moeda(total) + '</td></tr></table>';\n  };\n  const liquido = tr - tp;\n  return '<div style=\"font-family:Arial,sans-serif;max-width:760px;color:#1e2632;\">' +\n    '<p style=\"font-size:14px;\">Olá' + (d.empresa.responsavel ? ', ' + esc(String(d.empresa.responsavel).split(' ')[0]) : '') + ',<br><br>' +\n    'Segue o relatório financeiro de hoje (' + dataBR(d.hoje) + ') com as contas a pagar e a receber da ' + esc(d.empresa.nome) + '.</p>' +\n    '<p style=\"font-size:14px;\"><b>A pagar (hoje + vencidas): ' + moeda(tp) + ' &nbsp;|&nbsp; A receber (hoje + vencidas): ' + moeda(tr) + '</b></p>' +\n    tbl('Contas a pagar — hoje', d.pagar, d.tpHoje) +\n    (d.pagarVenc.length ? tbl('Contas a pagar — vencidas (não baixadas)', d.pagarVenc, d.tpVenc) : '') +\n    tbl('Contas a receber — hoje', d.receber, d.trHoje) +\n    (d.receberVenc.length ? tbl('Contas a receber — vencidas (não baixadas)', d.receberVenc, d.trVenc) : '') +\n    '<p style=\"font-size:14px;margin-top:16px;\"><b>Movimento líquido previsto: ' + moeda(liquido) + '</b></p>' +\n    '<p style=\"font-size:11px;color:#6b7a90;\">Contas vencidas são as com vencimento anterior a hoje que ainda não foram baixadas (pagas ou recebidas) no sistema. ' +\n    'Posição com base nos dados sincronizados do sistema em ' + dataHoraBR(d.sync) + '.' + (email ? ' O relatório também segue em anexo (PDF).' : '') + '<br>Bzandona Soluções Financeiras</p></div>';\n}\n\nfunction esc(t) { return String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }\nfunction dataBR(iso) { const p = String(iso).split('-'); return p[2] + '/' + p[1] + '/' + p[0]; }\nfunction dataHoraBR(iso) { return iso ? Utilities.formatDate(new Date(iso), FUSO, 'dd/MM/yyyy HH:mm') : '—'; }\nfunction moeda(v) {\n  const p = Math.abs(v).toFixed(2).split('.');\n  return (v < 0 ? '-' : '') + 'R$ ' + p[0].replace(/\\B(?=(\\d{3})+(?!\\d))/g, '.') + ',' + p[1];\n}\n";
 
 function rpData(){
   const emp = state.filters.empresaId;
@@ -5269,6 +5272,7 @@ function rpEnsureModals(){
         <li>Copie a <b>URL do app da Web</b> e cole abaixo, junto com a mesma senha.</li>
         <li><i>Opcional, para ler <b>PDF/foto</b> (importação em lote e boleto/nota fiscal):</i> em <b>Configurações do projeto &gt; Propriedades do script</b>, adicione a propriedade <b>ANTHROPIC_KEY</b> com a sua chave de API da Anthropic. Ao atualizar o código depois, use <b>Implantar &gt; Gerenciar implantações &gt; editar &gt; Nova versão</b>.</li>
       </ol>
+      <div class="rp-hint" style="margin:-4px 0 12px;line-height:1.6;"><b>Para o envio automático diário (8h):</b> depois de colar o código novo, no editor escolha a função <b>autorizar</b> e clique em <b>Executar</b> (aceite as permissões de Drive, e-mail e gatilhos). Em seguida, <b>Implantar &gt; Gerenciar implantações &gt; editar &gt; Nova versão</b> e, no sistema, em Relatórios, clique em <b>Ativar envio diário às 8h</b>.</div>
       <button class="cx-btn" id="rpCopyCode" style="margin-bottom:14px;">Copiar código do Apps Script</button>
       <div class="form-grid">
         <div class="form-field col-span-2"><label>URL do app da Web</label><input type="text" id="rpCfgUrl" placeholder="https://script.google.com/macros/s/.../exec"></div>
@@ -5291,7 +5295,7 @@ function rpEnsureModals(){
     const url = document.getElementById('rpCfgUrl').value.trim(), token = document.getElementById('rpCfgToken').value.trim();
     if(!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec/.test(url)){ showToast('Cole a URL completa do app da Web (termina em /exec).'); return; }
     if(!token){ showToast('Informe a senha.'); return; }
-    envioSave({url, token}); closeCfg(); showToast('Configuração salva.'); if(currentPageKey==='relatorios') renderRelatorios();
+    envioSave(Object.assign({}, envioCfg(), {url, token})); closeCfg(); showToast('Configuração salva.'); if(currentPageKey==='relatorios') renderRelatorios();
   });
   document.getElementById('rpSendGo').addEventListener('click', rpSendNow);
   document.getElementById('rpGmailGo').addEventListener('click', rpOpenGmail);
@@ -5301,22 +5305,6 @@ function rpOpenConfig(){
   const c = envioCfg();
   document.getElementById('rpCfgUrl').value = c.url||''; document.getElementById('rpCfgToken').value = c.token||'';
   document.getElementById('rpCfgOverlay').classList.add('open');
-}
-function rpOpenSend(){
-  if(!rpEnsureLibs()) return;
-  rpEnsureModals();
-  const auto = !!envioCfg().url;
-  document.getElementById('rpSendGo').style.display = auto ? '' : 'none';
-  document.getElementById('rpFileHint').textContent = auto ? 'PDF gerado na hora com os dados de hoje' : 'O PDF será baixado; arraste-o para o e-mail que abrir no Gmail';
-  const d = rpData();
-  const to = d.company && d.company.email ? d.company.email : '';
-  document.getElementById('rpTo').value = to;
-  document.getElementById('rpToHint').textContent = to ? 'E-mail do cadastro da empresa (você pode ajustar).' : 'A empresa não tem e-mail cadastrado — informe o destinatário.';
-  document.getElementById('rpSubject').value = `Relatório Financeiro Diário — ${d.company?d.company.nome:''} — ${d.dateBR}`;
-  const nome = d.company && d.company.responsavel ? d.company.responsavel.split(' ')[0] : '';
-  document.getElementById('rpMsg').value = `Olá${nome?', '+nome:''},\n\nSegue em anexo o relatório financeiro de hoje (${d.dateBR}) com as contas a pagar e a receber da ${d.company?d.company.nome:'empresa'}.\n\nQualquer dúvida, estamos à disposição.`;
-  document.getElementById('rpFile').textContent = rpFilename(d);
-  document.getElementById('rpSendOverlay').classList.add('open');
 }
 function rpPlainBody(d, msg){
   const line = r=>`- ${fmtDateBR(r.venc)} | ${r.party} | ${r.desc} | ${fmtCurrency(r.valor)}`;
@@ -5328,28 +5316,280 @@ function rpPlainBody(d, msg){
   }
   return body;
 }
+/* ================================================================
+   RELATÓRIO DE INCONSISTÊNCIAS — para pedir ao cliente a correção
+   Lê lançamentos (pagar/receber) e cadastros e aponta o que está faltando,
+   duplicado ou sem sentido. Sai em tela, PDF, Excel (com coluna de resposta)
+   e e-mail.
+   ================================================================ */
+let rpTab = 'diario', incSev = '', incCat = '';
+const INC_TAXA_MIN = 5, INC_TAXA_MAX = 15;   // faixa esperada da taxa de administração (% do aluguel)
+const INC_CATS = {
+  vencido:   {ord:1,  sev:'Média', titulo:'Contas vencidas e não baixadas', pedido:'Informar se já foi pago/recebido (data e valor) ou a nova data de vencimento.'},
+  semrep:    {ord:2,  sev:'Alta',  titulo:'Aluguéis sem repasse informado', pedido:'Confirmar o valor do repasse ao proprietário desses contratos (ou se o imóvel é próprio, sem repasse).'},
+  repdif:    {ord:3,  sev:'Alta',  titulo:'Repasse do aluguel diferente do repasse a pagar', pedido:'Conferir os valores do aluguel e do repasse e informar qual está correto.'},
+  reporf:    {ord:4,  sev:'Média', titulo:'Repasses a pagar sem aluguel correspondente', pedido:'Enviar a fatura/recebimento do aluguel desse contrato ou confirmar em que período foi recebido.'},
+  taxa:      {ord:5,  sev:'Média', titulo:'Taxa de administração fora do padrão', pedido:'Confirmar o valor do aluguel e do repasse (a taxa ficou fora da faixa esperada).'},
+  classif:   {ord:6,  sev:'Média', titulo:'Lançamentos sem conta contábil', pedido:'Informar a natureza (conta contábil) correta destes lançamentos.'},
+  dup:       {ord:7,  sev:'Alta',  titulo:'Possíveis lançamentos duplicados', pedido:'Confirmar se são lançamentos diferentes ou duplicados (e qual excluir).'},
+  valor:     {ord:8,  sev:'Alta',  titulo:'Valores inválidos', pedido:'Informar o valor correto do lançamento.'},
+  baixa:     {ord:9,  sev:'Média', titulo:'Pagamentos/recebimentos incompletos', pedido:'Informar a data e o valor efetivamente pagos/recebidos.'},
+  datas:     {ord:10, sev:'Média', titulo:'Datas fora do esperado', pedido:'Confirmar a data de vencimento correta.'},
+  pagto:     {ord:11, sev:'Média', titulo:'Pagamentos sem dados do beneficiário', pedido:'Enviar a chave PIX ou os dados bancários do beneficiário.'},
+  nf:        {ord:12, sev:'Baixa', titulo:'Contas a pagar sem nota fiscal / documento', pedido:'Enviar a nota fiscal, boleto ou comprovante e o número do documento.'},
+  cadastro:  {ord:13, sev:'Média', titulo:'Cadastros incompletos', pedido:'Enviar os dados que faltam (CPF/CNPJ, e-mail e telefone).'},
+  caddup:    {ord:14, sev:'Média', titulo:'Possíveis cadastros duplicados', pedido:'Confirmar se são a mesma pessoa/empresa para unificarmos o cadastro.'},
+  empresa:   {ord:15, sev:'Baixa', titulo:'Dados da empresa', pedido:'Informar o e-mail de contato da empresa.'},
+};
+const INC_SEV_ORD = {Alta:0, Média:1, Baixa:2};
+function rpEsc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function incNorm(s){ return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9 ]+/g,' ').replace(/\b(ltda|me|epp|eireli|sa|s a|cia|e|de|da|do|dos|das)\b/g,' ').replace(/\s+/g,' ').trim(); }
+
+function rpIncData(){
+  const emp = state.filters.empresaId, company = companyById(emp), today = fmtDateISO(TODAY);
+  const items = [];
+  const ac = {pagar:impAcOf('pagar'), receber:impAcOf('receber')};
+  const dias = (a,b)=>Math.round((new Date(a+'T00:00:00')-new Date(b+'T00:00:00'))/864e5);
+  const refOf = x=>{ const d = String(x.documento||''); return /^IMP-/.test(d) ? '—' : (d||'—'); };
+  const AP = state.accounts.filter(a=>(!emp||a.empresaId===emp) && !['cancelado','reprovado'].includes(a.status));
+  const AR = RECEIVABLES.filter(r=>(!emp||r.empresaId===emp) && r.status!=='cancelado');
+  const pParty = a=>(supplierById(a.fornecedorId)||{}).nome||'—', cParty = r=>(clientById(r.clienteId)||{}).nome||'—';
+  const addL = (cat, tipo, x, party, problema, extra)=>items.push(Object.assign({cat, sev:INC_CATS[cat].sev, tipo, ref:refOf(x), parte:party, venc:x.vencimento||'', valor:x.valor, problema, id:x.id}, extra||{}));
+  const contratoAR = r=>(/^Contrato (\d+)$/.exec(r.documento||'')||[])[1];
+  const contratoAP = a=>a.categoria===CONTA_REPASSE ? (/(\d+)\s*$/.exec(a.descricao||'')||[])[1] : null;
+
+  /* Aluguel x repasse (por contrato, vencimentos até 10 dias de distância) */
+  const repAP = AP.filter(a=>contratoAP(a)); repAP.forEach(a=>a._u = false);
+  const arContrato = new Set();
+  AR.filter(contratoAR).sort((a,b)=>a.vencimento<b.vencimento?-1:1).forEach(r=>{
+    const c = contratoAR(r); arContrato.add(c);
+    const pool = repAP.filter(a=>contratoAP(a)===c && !a._u && Math.abs(dias(a.vencimento, r.vencimento))<=10); pool.forEach(a=>a._u = true);
+    const soma = Math.round(pool.reduce((t,a)=>t+a.valor,0)*100)/100, rep = r.repasse||0, nome = cParty(r);
+    if(rep>0){
+      if(rep>r.valor+0.005) addL('repdif','Receber',r,nome,`Repasse (${fmtCurrency(rep)}) maior que o valor do aluguel (${fmtCurrency(r.valor)}).`);
+      else {
+        if(!pool.length) addL('repdif','Receber',r,nome,`Aluguel com repasse de ${fmtCurrency(rep)}, mas não há repasse a pagar lançado para o contrato ${c}.`);
+        else if(Math.abs(soma-rep)>0.015) addL('repdif','Receber',r,nome,`Repasse do aluguel ${fmtCurrency(rep)} difere dos repasses a pagar ${fmtCurrency(soma)} (diferença de ${fmtCurrency(Math.abs(soma-rep))}).`);
+        const taxa = (r.valor-rep)/r.valor*100;
+        if(taxa<INC_TAXA_MIN || taxa>INC_TAXA_MAX) addL('taxa','Receber',r,nome,`Taxa de administração de ${taxa.toFixed(1).replace('.',',')}% (${fmtCurrency(r.valor-rep)}) — esperado entre ${INC_TAXA_MIN}% e ${INC_TAXA_MAX}%.`);
+      }
+    } else {
+      addL('semrep','Receber',r,nome, pool.length ? `Há repasse a pagar de ${fmtCurrency(soma)} para o contrato ${c}, mas o repasse do aluguel não foi informado.` : `Aluguel do contrato ${c} sem repasse informado e sem repasse a pagar lançado.`);
+    }
+  });
+  repAP.filter(a=>!a._u).forEach(a=>addL('reporf','Pagar',a,pParty(a),`Repasse do contrato ${contratoAP(a)} sem aluguel correspondente lançado no sistema.`));
+
+  /* Classificação contábil */
+  AP.filter(a=>a.categoria===ac.pagar).forEach(a=>addL('classif','Pagar',a,pParty(a),'Sem conta contábil ("A classificar").'));
+  AR.filter(r=>r.categoria===ac.receber && !(contratoAR(r) && !(r.repasse>0))).forEach(r=>addL('classif','Receber',r,cParty(r),'Sem conta contábil ("A classificar").'));
+
+  /* Vencidos */
+  const venc = (x,tipo,party)=>{ if(cxEffStatus(x)==='Vencido'){ const n = dias(today, x.vencimento); addL('vencido',tipo,x,party,`Vencida há ${n} dia${n===1?'':'s'} e ainda não baixada.`); items[items.length-1].sev = n>30 ? 'Alta' : 'Média'; } };
+  AP.forEach(a=>venc(a,'Pagar',pParty(a))); AR.forEach(r=>venc(r,'Receber',cParty(r)));
+
+  /* Duplicidades */
+  const dupes = (list, tipo, partyFn)=>{
+    const g = {}; list.forEach(x=>{ const k = [partyFn(x), x.valor, x.vencimento, incNorm(x.descricao)].join('|'); (g[k] = g[k]||[]).push(x); });
+    Object.values(g).filter(a=>a.length>1).forEach(a=>a.forEach(x=>addL('dup',tipo,x,partyFn(x),`Possível duplicidade: ${a.length} lançamentos iguais (mesmo favorecido, valor, vencimento e descrição).`)));
+  };
+  dupes(AP,'Pagar',pParty); dupes(AR,'Receber',cParty);
+
+  /* Valores, datas, baixas */
+  const lim = TODAY.getFullYear()+2;
+  const chk = (x,tipo,party)=>{
+    if(!(x.valor>0)) addL('valor',tipo,x,party,'Valor zerado, negativo ou vazio.');
+    const y = parseInt((x.vencimento||'').slice(0,4),10);
+    if(!x.vencimento || isNaN(y) || y<2020 || y>lim) addL('datas',tipo,x,party,`Vencimento fora do esperado (${x.vencimento?fmtDateBR(x.vencimento):'em branco'}).`);
+  };
+  AP.forEach(a=>chk(a,'Pagar',pParty(a))); AR.forEach(r=>chk(r,'Receber',cParty(r)));
+  AP.filter(a=>['pago','aguardando_conciliacao','conciliado'].includes(a.status) && !a.dataPagamento).forEach(a=>addL('baixa','Pagar',a,pParty(a),'Marcada como paga, mas sem data de pagamento.'));
+  AR.filter(r=>['recebido','parcial','aguardando_conciliacao','conciliado'].includes(r.status)).forEach(r=>{
+    if(!r.dataRecebimento || !(r.valorRecebido>0)) addL('baixa','Receber',r,cParty(r),'Marcada como recebida, mas sem data ou valor recebido.');
+    else if(r.valorRecebido < r.valor-0.005) addL('baixa','Receber',r,cParty(r),`Recebimento parcial: recebido ${fmtCurrency(r.valorRecebido)} de ${fmtCurrency(r.valor)} (saldo ${fmtCurrency(r.valor-r.valorRecebido)}).`);
+  });
+
+  /* Pagamento sem dados do beneficiário / sem documento fiscal (só contas a pagar em aberto, exceto repasses) */
+  AP.filter(a=>lancStatusDisplay(a.status)==='Em aberto' || cxEffStatus(a)==='Vencido').forEach(a=>{
+    const s = supplierById(a.fornecedorId)||{}, f = String(a.formaPagamento||'');
+    if(/pix/i.test(f) && !s.pix && !a.pixCodigo) addL('pagto','Pagar',a,pParty(a),'Pagamento via PIX sem chave PIX informada.');
+    else if(/transfer|ted|doc/i.test(f) && !s.banco) addL('pagto','Pagar',a,pParty(a),'Pagamento por transferência sem dados bancários do beneficiário.');
+  });
+  AP.filter(a=>a.categoria!==CONTA_REPASSE && (!String(a.documento||'').trim() || (/^IMP-/.test(a.documento) && !(a.anexos||[]).some(x=>x.tipo!=='Relatório importado'))))
+    .forEach(a=>addL('nf','Pagar',a,pParty(a),'Sem número de documento / nota fiscal e sem anexo.'));
+
+  /* Cadastros */
+  const parties = [...SUPPLIERS.filter(s=>(!emp||s.empresaId===emp) && !/^f-manual/.test(s.id) && s.status!=='Inativo').map(p=>({p, k:'Fornecedor'})),
+                   ...CLIENTS.filter(c=>(!emp||c.empresaId===emp) && c.status!=='Inativo').map(p=>({p, k:'Cliente'}))];
+  const vz = v=>!String(v||'').replace(/[—\-\s]/g,'');
+  parties.forEach(({p,k})=>{
+    const falta = []; if(vz(p.cnpj)) falta.push('CPF/CNPJ'); if(vz(p.email)) falta.push('e-mail'); if(vz(p.telefone)) falta.push('telefone');
+    if(falta.length) items.push({cat:'cadastro', sev: vz(p.cnpj) ? 'Média' : 'Baixa', tipo:'Cadastro de '+k.toLowerCase(), ref:'—', parte:p.nome, venc:'', valor:null, problema:'Falta: '+falta.join(', ')+'.', id:p.id});
+  });
+  const gp = {}; parties.forEach(({p,k})=>{ const n = incNorm(p.nome); if(n) (gp[k+'|'+n] = gp[k+'|'+n]||[]).push(p); const d = String(p.cnpj||'').replace(/\D/g,''); if(d.length>=11) (gp[k+'#'+d] = gp[k+'#'+d]||[]).push(p); });
+  const vistos = new Set();
+  Object.entries(gp).filter(([,a])=>a.length>1).forEach(([key,a])=>{ const ids = a.map(x=>x.id).sort().join(','); if(vistos.has(ids)) return; vistos.add(ids);
+    items.push({cat:'caddup', sev:INC_CATS.caddup.sev, tipo:'Cadastro de '+(key.startsWith('Cliente')?'cliente':'fornecedor'), ref:'—', parte:a.map(x=>x.nome).join('  /  '), venc:'', valor:null, problema:key.includes('#')?'Mesmo CPF/CNPJ em mais de um cadastro.':'Nomes iguais ou muito parecidos.', id:ids}); });
+  if(company && !String(company.email||'').trim()) items.push({cat:'empresa', sev:INC_CATS.empresa.sev, tipo:'Empresa', ref:'—', parte:company.nome, venc:'', valor:null, problema:'Empresa sem e-mail cadastrado (usado no envio dos relatórios).', id:company.id});
+
+  items.forEach(i=>{ i.pedido = INC_CATS[i.cat].pedido; i.catTitulo = INC_CATS[i.cat].titulo; });
+  items.sort((a,b)=> INC_SEV_ORD[a.sev]-INC_SEV_ORD[b.sev] || INC_CATS[a.cat].ord-INC_CATS[b.cat].ord || String(a.parte).localeCompare(String(b.parte),'pt-BR') || String(a.venc).localeCompare(String(b.venc)));
+  const mon = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
+  const cnt = s=>items.filter(i=>i.sev===s).length;
+  return {company, nome:(company?company.nome:'TODAS AS EMPRESAS').toUpperCase(), today, dateBR:fmtDateBR(today),
+    dateLabel:`${String(TODAY.getDate()).padStart(2,'0')} ${mon[TODAY.getMonth()]} ${TODAY.getFullYear()}`,
+    items, alta:cnt('Alta'), media:cnt('Média'), baixa:cnt('Baixa'), nAP:AP.length, nAR:AR.length, nCad:parties.length};
+}
+function rpIncGroups(d, sev, cat){
+  const g = {}; d.items.filter(i=>(!sev||i.sev===sev) && (!cat||i.cat===cat)).forEach(i=>(g[i.cat] = g[i.cat]||[]).push(i));
+  return Object.keys(g).sort((a,b)=>INC_CATS[a].ord-INC_CATS[b].ord).map(k=>({cat:k, info:INC_CATS[k], rows:g[k]}));
+}
+const incSevCls = s=> s==='Alta' ? 'badge-red' : s==='Média' ? 'badge-amber' : 'badge-gray';
+function rpIncResumo(d){ return d.items.length ? `${d.items.length} apontamento${d.items.length===1?'':'s'}: ${d.alta} de gravidade alta, ${d.media} média e ${d.baixa} baixa.` : 'Nenhuma inconsistência encontrada.'; }
+
+function rpIncSectionHTML(g){
+  return `<div class="rp-sec">${rpEsc(g.info.titulo.toUpperCase())} <span class="badge ${incSevCls(g.info.sev)}" style="margin-left:6px;vertical-align:middle;">${g.rows.length}</span></div>
+    <div class="rp-hint" style="margin:-4px 0 8px;"><b>O que precisamos:</b> ${rpEsc(g.info.pedido)}</div>
+    <table class="rp-tbl inc-tbl"><thead><tr><th>Gravidade</th><th>Tipo</th><th>Referência</th><th>Fornecedor / Cliente</th><th>Vencimento</th><th class="r">Valor</th><th>Problema encontrado</th></tr></thead>
+    <tbody>${g.rows.map(r=>`<tr><td><span class="badge ${incSevCls(r.sev)}">${r.sev}</span></td><td>${rpEsc(r.tipo)}</td><td>${rpEsc(r.ref)}</td><td>${rpEsc(r.parte)}</td><td>${r.venc?fmtDateBR(r.venc):'—'}</td><td class="r">${r.valor==null?'—':fmtCurrency(r.valor)}</td><td style="white-space:normal;">${rpEsc(r.problema)}</td></tr>`).join('')}</tbody></table>`;
+}
+function rpIncPreviewHTML(d){
+  const groups = rpIncGroups(d, incSev, incCat);
+  const catOpts = Object.keys(INC_CATS).filter(k=>d.items.some(i=>i.cat===k)).sort((a,b)=>INC_CATS[a].ord-INC_CATS[b].ord);
+  return `<div class="rp-paper rp-wide">
+    <div class="rp-top"><span class="rp-brand">${RP_BRAND}</span><span class="rp-kind">RELATÓRIO DE INCONSISTÊNCIAS</span></div>
+    <div class="rp-company"><div><div class="rp-cname">${rpEsc(d.nome)}</div><div class="rp-muted">Itens que precisam de correção ou informação do cliente</div></div>
+      <div class="r"><div class="rp-date">${d.dateLabel}</div><div class="rp-muted">${d.nAP} contas a pagar · ${d.nAR} a receber · ${d.nCad} cadastros analisados</div></div></div>
+    <div class="rp-sec first">RESUMO</div>
+    <div class="rp-sum">
+      <div><span>TOTAL DE APONTAMENTOS</span><b>${d.items.length}</b><em>${d.items.length?'a corrigir pelo cliente':'tudo certo'}</em></div>
+      <div><span>GRAVIDADE ALTA</span><b>${d.alta}</b><em>afetam valores/DRE — resolver primeiro</em></div>
+      <div><span>MÉDIA / BAIXA</span><b>${d.media} / ${d.baixa}</b><em>cadastro, documentos e classificação</em></div>
+    </div>
+    <div class="cx-filters" style="padding:10px 0;border:0;">
+      <select class="cx-select" id="incSev"><option value="">Todas as gravidades</option>${['Alta','Média','Baixa'].map(s=>`<option ${incSev===s?'selected':''}>${s}</option>`).join('')}</select>
+      <select class="cx-select" id="incCat"><option value="">Todas as categorias</option>${catOpts.map(k=>`<option value="${k}" ${incCat===k?'selected':''}>${INC_CATS[k].titulo}</option>`).join('')}</select>
+    </div>
+    ${groups.length ? groups.map(rpIncSectionHTML).join('') : `<div class="cx-empty">${d.items.length?'Nenhum apontamento com esses filtros.':'Nenhuma inconsistência encontrada. 🎉'}</div>`}
+    <div class="rp-note">Relatório gerado em ${d.dateBR}. Os apontamentos refletem os lançamentos e cadastros registrados no sistema até agora; ao corrigir, eles saem da lista na próxima emissão. A taxa de administração é considerada fora do padrão quando está abaixo de ${INC_TAXA_MIN}% ou acima de ${INC_TAXA_MAX}% do aluguel.</div>
+  </div>`;
+}
+function rpIncPDF(d){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'pt', format:'a4', orientation:'landscape'});
+  const W = 841.89, M = 36, CW = W-2*M;
+  const NAVY = [23,40,59], GRAY = [107,122,144], LINE = [226,229,234], PALE = [243,244,247];
+  let y = 44;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...NAVY); doc.text(RP_BRAND, M, y);
+  doc.setFontSize(9.5); doc.setTextColor(...GRAY); doc.text('RELATÓRIO DE INCONSISTÊNCIAS', W-M, y, {align:'right'});
+  y += 32; doc.setFontSize(20); doc.setTextColor(...NAVY); doc.setFont('helvetica','bold');
+  while(doc.getTextWidth(d.nome) > CW-150 && doc.getFontSize()>11) doc.setFontSize(doc.getFontSize()-1);
+  doc.text(d.nome, M, y); doc.setFontSize(14); doc.text(d.dateLabel, W-M, y-2, {align:'right'});
+  y += 16; doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...GRAY);
+  doc.text('Itens que precisam de correção ou informação do cliente', M, y); doc.text(rpIncResumo(d), W-M, y, {align:'right'});
+  y += 9; doc.setDrawColor(...LINE); doc.setLineWidth(.8); doc.line(M, y, W-M, y); y += 22;
+  const groups = rpIncGroups(d, '', '');
+  if(!groups.length){ doc.setFontSize(11); doc.setTextColor(...NAVY); doc.text('Nenhuma inconsistência encontrada nos lançamentos e cadastros analisados.', M, y+10); return doc; }
+  groups.forEach(g=>{
+    if(y > 500){ doc.addPage(); y = 44; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...NAVY); doc.text(`${g.info.titulo.toUpperCase()} (${g.rows.length})`, M, y);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...GRAY);
+    const ped = doc.splitTextToSize('O que precisamos: '+g.info.pedido, CW); doc.text(ped, M, y+13);
+    doc.autoTable({
+      startY: y+13+ped.length*10, margin:{left:M,right:M}, theme:'plain',
+      head:[['Gravidade','Tipo','Referência','Fornecedor / Cliente','Venc.','Valor','Problema encontrado']],
+      body:g.rows.map(r=>[r.sev, r.tipo, r.ref, r.parte, r.venc?fmtDateBR(r.venc):'—', r.valor==null?'—':fmtCurrency(r.valor), r.problema]),
+      styles:{font:'helvetica', fontSize:8, textColor:[30,38,50], cellPadding:{top:5,bottom:5,left:5,right:5}, lineWidth:0, overflow:'linebreak'},
+      headStyles:{fillColor:PALE, textColor:[30,38,50], fontStyle:'bold'},
+      columnStyles:{0:{cellWidth:48}, 1:{cellWidth:62}, 2:{cellWidth:70}, 3:{cellWidth:150}, 4:{cellWidth:50}, 5:{cellWidth:62, halign:'right'}, 6:{cellWidth:CW-48-62-70-150-50-62}},
+      didParseCell:h=>{ if(h.section==='head' && h.column.index===5) h.cell.styles.halign='right'; if(h.section==='body' && h.column.index===0){ h.cell.styles.fontStyle='bold'; h.cell.styles.textColor = h.cell.raw==='Alta'?[180,35,24]:h.cell.raw==='Média'?[181,71,8]:GRAY; } },
+      didDrawCell:h=>{ if(h.section!=='head'){ doc.setDrawColor(...LINE); doc.setLineWidth(.6); doc.line(h.cell.x, h.cell.y+h.cell.height, h.cell.x+h.cell.width, h.cell.y+h.cell.height); } },
+    });
+    y = doc.lastAutoTable.finalY + 24;
+  });
+  if(y > 540){ doc.addPage(); y = 44; }
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...GRAY);
+  doc.text(doc.splitTextToSize(`Relatório gerado em ${d.dateBR}. Os apontamentos refletem os lançamentos e cadastros registrados no sistema até a emissão; ao corrigir, eles saem da lista na próxima emissão. A taxa de administração é considerada fora do padrão quando está abaixo de ${INC_TAXA_MIN}% ou acima de ${INC_TAXA_MAX}% do aluguel.`, CW), M, y);
+  return doc;
+}
+function rpIncXLSX(d){
+  if(typeof XLSX==='undefined'){ showToast('Biblioteca de planilha não carregou. Verifique a internet e recarregue.'); return; }
+  const aoa = [['Gravidade','Categoria','Tipo','Referência','Fornecedor / Cliente','Vencimento','Valor','Problema encontrado','O que precisamos do cliente','Resposta / correção do cliente']];
+  d.items.forEach(i=>aoa.push([i.sev, i.catTitulo, i.tipo, i.ref, i.parte, i.venc?fmtDateBR(i.venc):'', i.valor==null?'':i.valor, i.problema, i.pedido, '']));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:10},{wch:38},{wch:16},{wch:14},{wch:36},{wch:12},{wch:12},{wch:70},{wch:60},{wch:40}];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Inconsistências');
+  XLSX.writeFile(wb, rpIncFilename(d).replace(/\.pdf$/,'.xlsx'));
+}
+function rpSlug(d){ return (d.company?d.company.nome:'empresa').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'_'); }
+function rpIncFilename(d){ return `relatorio_inconsistencias_${rpSlug(d)}_${d.today}.pdf`; }
+function rpIncEmailHTML(d, msg){
+  const groups = rpIncGroups(d,'','');
+  const tbl = g=>`<h3 style="margin:18px 0 4px;font-size:14px;color:#17283b;">${rpEsc(g.info.titulo)} (${g.rows.length})</h3><p style="margin:0 0 6px;font-size:12px;color:#6b7a90;"><b>O que precisamos:</b> ${rpEsc(g.info.pedido)}</p>
+    <table style="width:100%;border-collapse:collapse;font-size:12px;"><tr style="background:#f3f4f7;"><th style="padding:5px;text-align:left;">Fornecedor / Cliente</th><th style="padding:5px;text-align:left;">Ref.</th><th style="padding:5px;text-align:right;">Valor</th><th style="padding:5px;text-align:left;">Problema</th></tr>
+    ${g.rows.slice(0,40).map(r=>`<tr><td style="padding:5px;border-bottom:1px solid #eee;">${rpEsc(r.parte)}</td><td style="padding:5px;border-bottom:1px solid #eee;">${rpEsc(r.ref)}</td><td style="padding:5px;border-bottom:1px solid #eee;text-align:right;">${r.valor==null?'—':fmtCurrency(r.valor)}</td><td style="padding:5px;border-bottom:1px solid #eee;">${rpEsc(r.problema)}</td></tr>`).join('')}</table>${g.rows.length>40?`<p style="font-size:12px;color:#6b7a90;">... e mais ${g.rows.length-40} (veja o PDF anexo).</p>`:''}`;
+  return `<div style="font-family:Arial,sans-serif;max-width:720px;color:#1e2632;"><p style="white-space:pre-line;font-size:14px;">${rpEsc(msg)}</p>
+    <p style="font-size:14px;"><b>${rpEsc(rpIncResumo(d))}</b></p>${groups.map(tbl).join('')}
+    <p style="font-size:12px;color:#6b7a90;margin-top:16px;">O relatório completo segue em anexo (PDF).<br>${RP_BRAND}</p></div>`;
+}
+function rpIncPlain(d, msg){
+  const groups = rpIncGroups(d,'','');
+  let body = `${msg}\n\n${rpIncResumo(d)}\n\n` + groups.map(g=>`${g.info.titulo.toUpperCase()} (${g.rows.length})\nO que precisamos: ${g.info.pedido}\n`+g.rows.map(r=>`- ${r.parte}${r.ref!=='—'?' ('+r.ref+')':''}${r.valor==null?'':' | '+fmtCurrency(r.valor)} | ${r.problema}`).join('\n')).join('\n\n') + `\n\n(O relatório completo em PDF está anexado.)\n\n${RP_BRAND}`;
+  if(encodeURIComponent(body).length > 5500) body = `${msg}\n\n${rpIncResumo(d)}\n\n(Os detalhes estão no PDF anexado.)\n\n${RP_BRAND}`;
+  return body;
+}
+
+/* ---------- Contexto do relatório em uso (diário ou inconsistências) ---------- */
+let rpCurCtx = null;
+function rpCtx(mode){
+  if(mode==='incons'){
+    const d = rpIncData(), nome = d.company?d.company.nome:'';
+    const pn = d.company && d.company.responsavel ? d.company.responsavel.split(' ')[0] : '';
+    return {mode, d, pdf:()=>rpIncPDF(d), filename:rpIncFilename(d), subject:`Inconsistências encontradas — ${nome} — ${d.dateBR}`,
+      msg:`Olá${pn?', '+pn:''},\n\nSegue em anexo o relatório das inconsistências encontradas nos lançamentos e cadastros da ${nome||'empresa'} (${d.dateBR}).\n\nPrecisamos que nos retornem os itens listados (informações ou correções) para finalizarmos a classificação, a conciliação e os relatórios.\n\nQualquer dúvida, estamos à disposição.`,
+      html:m=>rpIncEmailHTML(d,m), plain:m=>rpIncPlain(d,m), hint:'PDF gerado na hora com as inconsistências atuais'};
+  }
+  const d = rpData(), pn = d.company && d.company.responsavel ? d.company.responsavel.split(' ')[0] : '';
+  return {mode:'diario', d, pdf:()=>rpBuildPDF(d), filename:rpFilename(d), subject:`Relatório Financeiro Diário — ${d.company?d.company.nome:''} — ${d.dateBR}`,
+    msg:`Olá${pn?', '+pn:''},\n\nSegue em anexo o relatório financeiro de hoje (${d.dateBR}) com as contas a pagar e a receber da ${d.company?d.company.nome:'empresa'}.\n\nQualquer dúvida, estamos à disposição.`,
+    html:m=>rpEmailHTML(d,m), plain:m=>rpPlainBody(d,m), hint:'PDF gerado na hora com os dados de hoje'};
+}
+function rpOpenSend(mode){
+  if(!rpEnsureLibs()) return;
+  rpEnsureModals();
+  const ctx = rpCurCtx = rpCtx(mode || (rpTab==='incons'?'incons':'diario')), d = ctx.d;
+  const auto = !!envioCfg().url;
+  document.getElementById('rpSendGo').style.display = auto ? '' : 'none';
+  document.getElementById('rpFileHint').textContent = auto ? ctx.hint : 'O PDF será baixado; arraste-o para o e-mail que abrir no Gmail';
+  const to = d.company && d.company.email ? d.company.email : '';
+  document.getElementById('rpTo').value = to;
+  document.getElementById('rpToHint').textContent = to ? 'E-mail do cadastro da empresa (você pode ajustar).' : 'A empresa não tem e-mail cadastrado — informe o destinatário.';
+  document.getElementById('rpSubject').value = ctx.subject;
+  document.getElementById('rpMsg').value = ctx.msg;
+  document.getElementById('rpFile').textContent = ctx.filename;
+  document.getElementById('rpSendOverlay').classList.add('open');
+}
 function rpOpenGmail(){
-  const d = rpData();
+  const ctx = rpCurCtx || rpCtx('diario');
   const to = document.getElementById('rpTo').value.trim();
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to.split(/[;,]/)[0].trim())){ showToast('Informe um e-mail válido.'); return; }
   const conta = 'bzandonafinance@gmail.com';
   const url = 'https://mail.google.com/mail/' + (conta ? '?authuser='+encodeURIComponent(conta)+'&' : '?') +
     'view=cm&fs=1&tf=1&to='+encodeURIComponent(to.replace(/;/g,','))+'&su='+encodeURIComponent(document.getElementById('rpSubject').value)+
-    '&body='+encodeURIComponent(rpPlainBody(d, document.getElementById('rpMsg').value));
+    '&body='+encodeURIComponent(ctx.plain(document.getElementById('rpMsg').value));
   const w = window.open(url, '_blank');           // abre o Gmail com a mensagem pronta
-  if(rpEnsureLibs()) rpBuildPDF(d).save(rpFilename(d));  // baixa o PDF para anexar
+  if(rpEnsureLibs()) ctx.pdf().save(ctx.filename);  // baixa o PDF para anexar
   document.getElementById('rpSendOverlay').classList.remove('open');
   showToast(w ? 'Gmail aberto. Arraste o PDF baixado para o e-mail e clique em Enviar.' : 'O navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.');
 }
 async function rpSendNow(){
-  const cfg = envioCfg(), d = rpData();
+  const cfg = envioCfg(), ctx = rpCurCtx || rpCtx('diario'), d = ctx.d;
   const to = document.getElementById('rpTo').value.trim();
   if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to.split(/[;,]/)[0].trim())){ showToast('Informe um e-mail válido.'); return; }
   const btn = document.getElementById('rpSendGo'); btn.disabled = true; btn.textContent = 'Enviando...';
   try{
-    const doc = rpBuildPDF(d);
+    const doc = ctx.pdf();
     const pdfBase64 = doc.output('datauristring').split('base64,')[1];
-    const payload = {token:cfg.token, to:to.replace(/;/g,','), subject:document.getElementById('rpSubject').value, html:rpEmailHTML(d, document.getElementById('rpMsg').value), filename:rpFilename(d), pdfBase64};
+    const payload = {token:cfg.token, to:to.replace(/;/g,','), subject:document.getElementById('rpSubject').value, html:ctx.html(document.getElementById('rpMsg').value), filename:ctx.filename, pdfBase64};
     let ok = null, erro = '';
     try{
       const res = await fetch(cfg.url, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(payload)});
@@ -5358,7 +5598,7 @@ async function rpSendNow(){
     document.getElementById('rpSendOverlay').classList.remove('open');
     if(ok===false) showToast('Não enviou: '+(erro||'erro no Apps Script')+'.');
     else {
-      try{ localStorage.setItem(ENVIO_KEY, JSON.stringify(Object.assign({}, cfg, {last:{to, at:new Date().toISOString(), empresa:d.company?d.company.nome:''}}))); }catch(e){}
+      envioSave(Object.assign({}, envioCfg(), {last:{to, at:new Date().toISOString(), empresa:d.company?d.company.nome:'', tipo:ctx.mode}}));
       showToast(ok ? `Relatório enviado para ${to}.` : `Pedido de envio feito para ${to}. Não foi possível confirmar a resposta — confira em "Enviados" do Gmail.`);
       if(currentPageKey==='relatorios') renderRelatorios();
     }
@@ -5366,11 +5606,60 @@ async function rpSendNow(){
   btn.disabled = false; btn.textContent = 'Enviar agora';
 }
 
+/* ---------- Envio diário automático (8h): o sistema sincroniza os títulos em aberto com o Apps Script ---------- */
+const RP_SYNC_KEYS = new Set(['bpo_financeiro_contas_pagar_v1','bpo_financeiro_receivables_v1','bpo_financeiro_companies_v1','bpo_financeiro_suppliers_v1','bpo_financeiro_clients_v1']);
+let rpSyncTimer = null;
+function rpDiarioOn(){ const c = envioCfg(); return !!(c.url && c.token && c.diario); }
+function rpSyncSoon(){ if(!rpDiarioOn()) return; clearTimeout(rpSyncTimer); rpSyncTimer = setTimeout(()=>{ rpSync(true); }, 5000); }
+function rpSnapshot(){
+  const aberto = x=>{ const st = cxEffStatus(x); return st==='Em aberto' || st==='Vencido'; };
+  const pagar = state.accounts.filter(aberto).map(a=>({e:a.empresaId, v:a.vencimento, p:(supplierById(a.fornecedorId)||{}).nome||'—', d:a.descricao||'', f:a.formaPagamento||'—', $:a.valor}));
+  const receber = RECEIVABLES.filter(aberto).map(r=>({e:r.empresaId, v:r.vencimento, p:(clientById(r.clienteId)||{}).nome||'—', d:r.descricao||'', f:r.formaRecebimento||'—', $:r.valor}));
+  return {geradoEm:new Date().toISOString(), empresas:COMPANIES.map(c=>({id:c.id, nome:c.nome, email:c.email||'', responsavel:c.responsavel||''})), pagar, receber};
+}
+async function rpPost(obj){
+  const cfg = envioCfg();
+  const res = await fetch(cfg.url, {method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(Object.assign({token:cfg.token}, obj))});
+  return await res.json();
+}
+async function rpSync(silent){
+  try{
+    const j = await rpPost({acao:'sync', snapshot:rpSnapshot()});
+    if(j.ok){ envioSave(Object.assign({}, envioCfg(), {sync:new Date().toISOString()})); if(!silent) showToast('Dados sincronizados com o envio diário.'); }
+    else if(!silent) showToast('Não sincronizou: '+(j.erro||'erro no Apps Script')+'.');
+    if(currentPageKey==='relatorios') renderRelatorios();
+    return j;
+  }catch(e){ if(!silent) showToast('Não foi possível falar com o Apps Script ('+e.message+').'); return {ok:false}; }
+}
+async function rpDiarioToggle(on){
+  const cfg = envioCfg();
+  if(!cfg.url || !cfg.token){ showToast('Configure o envio de e-mail primeiro (Configurar envio).'); return; }
+  try{
+    const j = await rpPost({acao: on ? 'ativar_diario' : 'desativar_diario'});
+    if(!j.ok){ showToast('Não foi possível '+(on?'ativar':'desativar')+': '+(j.erro||'erro no Apps Script')+'. Se acabou de atualizar o código, veja as instruções em Configurar envio.'); return; }
+    envioSave(Object.assign({}, envioCfg(), {diario:!!on}));
+    if(on){ await rpSync(true); showToast('Envio diário ativado: todo dia às 8h, para o e-mail cadastrado da empresa.'); } else showToast('Envio diário desativado.');
+    if(currentPageKey==='relatorios') renderRelatorios();
+  }catch(e){ showToast('Não foi possível falar com o Apps Script: '+e.message); }
+}
+async function rpDiarioTeste(){
+  if(!rpDiarioOn()){ showToast('Ative o envio diário primeiro.'); return; }
+  showToast('Sincronizando e enviando o relatório de agora...');
+  const s = await rpSync(true); if(!s.ok){ showToast('Não sincronizou: '+(s.erro||'erro no Apps Script')+'.'); return; }
+  try{
+    const j = await rpPost({acao:'enviar_diario_agora'});
+    showToast(j.ok ? (j.enviados ? `Relatório enviado agora para ${j.enviados} empresa(s).` : 'Nada foi enviado: empresa sem e-mail cadastrado.') : 'Não enviou: '+(j.erro||'erro no Apps Script')+'.');
+  }catch(e){ showToast('Não foi possível falar com o Apps Script: '+e.message); }
+}
+
 function renderRelatorios(){
   const el = document.getElementById('page-relatorios');
   const d = rpData();
   const cfg = envioCfg();
   const last = cfg.last ? `Último envio: ${new Date(cfg.last.at).toLocaleString('pt-BR')} para ${cfg.last.to}` : '';
+  const inc = rpTab==='incons';
+  const di = rpIncData();
+  const syncTxt = cfg.sync ? `dados sincronizados em ${new Date(cfg.sync).toLocaleString('pt-BR')}` : 'ainda sem sincronização';
   el.innerHTML = `
     <div class="cx-head">
       <div>
@@ -5379,18 +5668,35 @@ function renderRelatorios(){
       </div>
       <div class="cx-head-actions">
         <button class="cx-btn" id="rpCfgBtn">${cxSvg('edit')} Configurar envio</button>
+        ${inc ? `<button class="cx-btn" id="rpXlsBtn">${cxSvg('down')} Baixar Excel</button>` : ''}
         <button class="cx-btn" id="rpPdfBtn">${cxSvg('down')} Baixar PDF</button>
         <button class="cx-btn accent big" id="rpSendBtn">${cxSvg('file')} Enviar por e-mail</button>
       </div>
     </div>
+    <div class="tabs-row" style="margin-bottom:12px;"><div class="tabs-list">
+      <button class="tab-btn ${inc?'':'active'}" data-tab="diario">Relatório diário</button>
+      <button class="tab-btn ${inc?'active':''}" data-tab="incons">Inconsistências${di.items.length?` (${di.items.length})`:''}</button>
+    </div></div>
     <div class="rp-bar">
       <span>Destinatário: <b>${d.company&&d.company.email?d.company.email:'— sem e-mail cadastrado —'}</b> (cadastro da empresa)</span>
       <span>${cfg.url ? (last||'Envio configurado.') : 'Envio ainda não configurado — clique em "Configurar envio".'}</span>
     </div>
-    ${rpPreviewHTML(d)}`;
+    ${inc ? '' : `<div class="rp-bar" style="align-items:center;">
+      <span>Envio automático todo dia às <b>08:00</b>: <b>${cfg.diario?'ativo':'desligado'}</b>${cfg.diario?` · ${syncTxt}`:''}</span>
+      <span style="display:flex;gap:8px;">${cfg.diario ? `<button class="cx-btn" id="rpDiaTeste">Enviar agora (teste)</button><button class="cx-btn" id="rpDiaSync">Sincronizar</button><button class="cx-btn" id="rpDiaOff">Desativar</button>` : `<button class="cx-btn" id="rpDiaOn">Ativar envio diário às 8h</button>`}</span>
+    </div>`}
+    ${inc ? rpIncPreviewHTML(di) : rpPreviewHTML(d)}`;
   el.querySelector('#rpCfgBtn').addEventListener('click', rpOpenConfig);
-  el.querySelector('#rpPdfBtn').addEventListener('click', rpDownload);
-  el.querySelector('#rpSendBtn').addEventListener('click', rpOpenSend);
+  el.querySelector('#rpPdfBtn').addEventListener('click', ()=>{ if(!rpEnsureLibs()) return; const c = rpCtx(inc?'incons':'diario'); c.pdf().save(c.filename); showToast('PDF gerado.'); });
+  el.querySelector('#rpSendBtn').addEventListener('click', ()=>rpOpenSend(inc?'incons':'diario'));
+  el.querySelectorAll('.tab-btn[data-tab]').forEach(b=>b.addEventListener('click', ()=>{ rpTab = b.dataset.tab; renderRelatorios(); }));
+  const on = el.querySelector('#rpDiaOn'); if(on) on.addEventListener('click', ()=>rpDiarioToggle(true));
+  const off = el.querySelector('#rpDiaOff'); if(off) off.addEventListener('click', ()=>rpDiarioToggle(false));
+  const sy = el.querySelector('#rpDiaSync'); if(sy) sy.addEventListener('click', ()=>rpSync(false));
+  const te = el.querySelector('#rpDiaTeste'); if(te) te.addEventListener('click', rpDiarioTeste);
+  const xl = el.querySelector('#rpXlsBtn'); if(xl) xl.addEventListener('click', ()=>rpIncXLSX(di));
+  const fs = el.querySelector('#incSev'); if(fs) fs.addEventListener('change', e=>{ incSev = e.target.value; renderRelatorios(); });
+  const fc = el.querySelector('#incCat'); if(fc) fc.addEventListener('change', e=>{ incCat = e.target.value; renderRelatorios(); });
 }
 
 
@@ -7739,6 +8045,7 @@ function startApp(){
   renderHeaderDate();
   renderFilterOptions();
   navigateTo('visao-geral');
+  setTimeout(()=>{ try{ rpSyncSoon(); }catch(e){} }, 2000);
 }
 function boot(){
   checkIdle();
