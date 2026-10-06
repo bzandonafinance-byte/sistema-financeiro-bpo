@@ -9294,15 +9294,24 @@ const bfCor = v=> Math.abs(v)<0.005 ? '' : (v>0 ? 'color:#0f6e45;' : 'color:#b42
 
 const bfCelula = v=>{ const n = Math.round(v*100)/100; return (n<0?'-':'') + 'R$ ' + Math.abs(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); };
 /* igual ao P&L do DRE: grupos recolhidos por padrão (só totais), seta em cada grupo e botão expandir/recolher */
-const bfAb = {budget:new Set(), forecast:new Set(), comp:new Set()};
+const bfAb = {budget:new Set(), forecast:new Set(), comp:new Set()}, bfModo = {budget:'resumo', forecast:'resumo', comp:'resumo'};
+/* resumo: Receita Bruta, Total Despesas, Ebtida e Lucro Liquido (última linha do modelo); detalhe: todas as linhas, grupos com seta */
+function bfResumoRow(b, r){
+  const n = bfNorm(r.nome), ultima = [...b.rows].reverse().find(x=>x.kind==='single');
+  return (r.kind==='grupo' && n==='receita bruta') || (r.kind==='single' && (/total.*desp/.test(n) || /ebtida|ebitda/.test(n))) || (ultima && r.id===ultima.id);
+}
+const bfNomeTab = r=> /lucro operacional|lucro liquido/.test(bfNorm(r.nome)) ? 'Lucro Liquido' : r.nome;
 function bfLinhasVisiveis(b, t){
   const out = [];
-  b.rows.forEach((r,i)=>{ if(r.kind==='item' && !bfAb[t].has(r.grupo)) return; out.push({r, i}); });
+  b.rows.forEach((r,i)=>{
+    if(bfModo[t]==='resumo'){ if(bfResumoRow(b, r)) out.push({r, i}); return; }
+    if(r.kind==='item' && !bfAb[t].has(r.grupo)) return; out.push({r, i});
+  });
   return out;
 }
-function bfSeta(b, r, t){ return r.kind==='grupo' ? `<span class="bf-tg" data-t="${t}" data-g="${r.id}" style="cursor:pointer;display:inline-block;width:14px;">${bfAb[t].has(r.id)?'▾':'▸'}</span>` : ''; }
-function bfBotaoToggle(t){ return `<button class="cx-btn bf-tt" data-t="${t}">${bfAb[t].size?'− Recolher':'+ Expandir'}</button>`; }
-function bfLinhaNome(b, r, t){ return `<td style="${r.kind==='item'?'padding-left:26px;':'font-weight:700;'}">${bfSeta(b,r,t)}${rpEsc(r.nome)}</td>`; }
+function bfSeta(b, r, t){ return r.kind==='grupo' && bfModo[t]!=='resumo' ? `<span class="bf-tg" data-t="${t}" data-g="${r.id}" style="cursor:pointer;display:inline-block;width:14px;">${bfAb[t].has(r.id)?'▾':'▸'}</span>` : ''; }
+function bfBotaoToggle(t){ return `<button class="cx-btn bf-tt" data-t="${t}">${bfModo[t]==='resumo'?'+ Detalhar':'− Resumo'}</button>`; }
+function bfLinhaNome(b, r, t){ return `<td style="${r.kind==='item'?'padding-left:26px;':'font-weight:700;'}">${bfSeta(b,r,t)}${rpEsc(bfNomeTab(r))}</td>`; }
 /* tabela no desenho da planilha: linhas × meses + Total; Forecast com células editáveis */
 function bfTabelaHTML(b, tipo){
   const leaf = b[tipo], meses = b.meses, tot = bfCalc(b.rows, leaf, meses), pm = meses.map(m=>bfCalc(b.rows, leaf, [m])), ed = tipo==='forecast' && canEdit();
@@ -9310,7 +9319,7 @@ function bfTabelaHTML(b, tipo){
   let h = `<thead><tr><th></th>${meses.map(m=>`<th class="num">${DG_MONTH_NAMES[parseInt(m.slice(5),10)-1]}</th>`).join('')}<th class="num">Total</th></tr>
     <tr class="bf-ano"><th></th>${meses.map(m=>`<th class="num">${m.slice(0,4)}</th>`).join('')}<th class="num">${y0}</th></tr></thead><tbody>`;
   bfLinhasVisiveis(b, tipo).forEach(({r,i})=>{
-    if(i>0 && r.kind!=='item') h += `<tr class="bf-sp"><td colspan="${ncol}"></td></tr>`;
+    if(i>0 && r.kind!=='item' && bfModo[tipo]!=='resumo') h += `<tr class="bf-sp"><td colspan="${ncol}"></td></tr>`;
     const forte = r.kind!=='item', cls = r.kind==='single' ? 'bf-total' : r.kind==='grupo' ? 'bf-grupo' : '';
     const cel = pm.map((x,j)=> (ed && r.kind==='item')
       ? `<td class="num"><input class="bf-cell" data-id="${r.id}" data-mes="${meses[j]}" value="${bfCelula((leaf[r.id]||{})[meses[j]]||0)}"></td>`
@@ -9326,7 +9335,7 @@ function bfCompHTML(b){
   let h = `<thead><tr><th></th>${meses.map(m=>`<th class="num">${DG_MONTH_NAMES[parseInt(m.slice(5),10)-1]}</th>`).join('')}<th class="num">Total</th><th class="num">% Total</th></tr>
     <tr class="bf-ano"><th></th>${meses.map(m=>`<th class="num">${m.slice(0,4)}</th>`).join('')}<th class="num">${meses[0].slice(0,4)}</th><th class="num"></th></tr></thead><tbody>`;
   bfLinhasVisiveis(b, 'comp').forEach(({r,i})=>{
-    if(i>0 && r.kind!=='item') h += `<tr class="bf-sp"><td colspan="${meses.length+3}"></td></tr>`;
+    if(i>0 && r.kind!=='item' && bfModo.comp!=='resumo') h += `<tr class="bf-sp"><td colspan="${meses.length+3}"></td></tr>`;
     const forte = r.kind!=='item', cls = r.kind==='single' ? 'bf-total' : r.kind==='grupo' ? 'bf-grupo' : '', st = forte?'font-weight:700;':'';
     const cel = meses.map((m,j)=>{ const v = (FM[j][r.id]||0)-(BM[j][r.id]||0); return `<td class="num" style="${bfCor(v)}${st}">${Math.abs(v)<0.005?'–':bfCelula(v)}</td>`; }).join('');
     const bud = B[r.id]||0, v = (F[r.id]||0)-bud, pct = Math.abs(bud)>=0.005 ? v/Math.abs(bud) : null;
@@ -9337,22 +9346,21 @@ function bfCompHTML(b){
 function renderBudget(){
   const el = document.getElementById('page-budget'), emp = state.filters.empresaId;
   if(!emp){ el.innerHTML = pageHeaderHTML('Budget & Forecast','Escolha uma empresa.'); return; }
-  const co = companyById(emp) || {}, b = BF[emp], algumAberto = b && Object.values(bfAb).some(x=>x.size);
+  const co = companyById(emp) || {}, b = BF[emp], detalhando = b && Object.values(bfModo).some(x=>x==='detalhe');
   const topo = `<div class="cx-head"><div><div class="cx-title">Budget &amp; Forecast</div><div class="cx-crumb">Demonstrativos &nbsp;/&nbsp; <b>Budget &amp; Forecast</b>${co.nome?` &nbsp;·&nbsp; ${rpEsc(co.nome)}`:''}</div></div>
-    <div class="cx-head-actions">${b?`<button class="cx-btn" id="bfTodos">${algumAberto?'− Recolher tudo':'+ Expandir tudo'}</button><button class="cx-btn" id="bfMapBtn">Mapear contas</button>`:''}<button class="cx-btn accent big" id="bfUpBtn">${cxSvg('down')} Importar planilha</button></div></div>`;
+    <div class="cx-head-actions">${b?`<button class="cx-btn" id="bfTodos">${detalhando?'− Resumo geral':'+ Detalhar tudo'}</button><button class="cx-btn" id="bfMapBtn">Mapear contas</button>`:''}<button class="cx-btn accent big" id="bfUpBtn">${cxSvg('down')} Importar planilha</button></div></div>`;
   if(!b){
     el.innerHTML = topo + `<div class="panel"><div class="cx-empty" style="padding:36px 16px;line-height:1.7;">Ainda não há Budget para esta empresa.<br>Clique em <b>Importar planilha</b> e escolha o CSV (linhas à esquerda, meses nas colunas).<br><span class="rp-hint">O Budget aparece aqui em cima, o Forecast logo abaixo e, no fim, a Variação (Forecast − Budget). O comparativo com o Actual fica no DRE Gerencial.</span></div></div>`;
     el.querySelector('#bfUpBtn').addEventListener('click', bfUpOpen); return;
   }
   el.innerHTML = topo + `
     <div class="panel"><div class="subpanel-header"><div class="subpanel-title">Budget</div><span class="dg-note">Planilha: ${rpEsc(b.arquivo||'—')}${b.atualizadoEm?' · '+new Date(b.atualizadoEm).toLocaleDateString('pt-BR'):''}</span>${bfBotaoToggle('budget')}</div>${bfTabelaHTML(b,'budget')}</div>
-    <div class="panel" style="margin-top:16px;"><div class="subpanel-header"><div class="subpanel-title">Forecast</div><span class="dg-note">${canEdit()?'Abra um grupo e clique em uma célula para ajustar o valor':'somente leitura'}</span>${bfBotaoToggle('forecast')}</div>${bfTabelaHTML(b,'forecast')}</div>
+    <div class="panel" style="margin-top:16px;"><div class="subpanel-header"><div class="subpanel-title">Forecast</div><span class="dg-note">${canEdit()?'Para ajustar valores: Detalhar, abrir o grupo e clicar na célula':'somente leitura'}</span>${bfBotaoToggle('forecast')}</div>${bfTabelaHTML(b,'forecast')}</div>
     <div class="panel" style="margin-top:16px;"><div class="subpanel-header"><div class="subpanel-title">Variação</div><span class="dg-note">Forecast − Budget</span>${bfBotaoToggle('comp')}</div>
-      ${bfCompHTML(b)}<div class="rp-hint" style="margin:8px 14px;">Variação = Forecast − Budget: positivo (verde) significa Forecast melhor que o Budget (mais receita ou menos custo); vermelho, pior. % Total = Variação do total ÷ |Budget|. Clique na seta de um grupo para ver as linhas.</div></div>`;
+      ${bfCompHTML(b)}<div class="rp-hint" style="margin:8px 14px;">Variação = Forecast − Budget: positivo (verde) significa Forecast melhor que o Budget (mais receita ou menos custo); vermelho, pior. % Total = Variação do total ÷ |Budget|. Em Detalhar, clique na seta do grupo para ver as linhas.</div></div>`;
   el.querySelector('#bfUpBtn').addEventListener('click', bfUpOpen);
   const m1 = el.querySelector('#bfMapBtn'); if(m1) m1.addEventListener('click', bfMapOpen);
-  const todos = ()=>b.rows.filter(r=>r.kind==='grupo').map(r=>r.id);
-  const alterna = ts=>{ const abre = !ts.some(t=>bfAb[t].size); ts.forEach(t=>{ bfAb[t].clear(); if(abre) todos().forEach(g=>bfAb[t].add(g)); }); renderBudget(); };
+  const alterna = ts=>{ const detalhar = ts.every(t=>bfModo[t]==='resumo'); ts.forEach(t=>{ bfModo[t] = detalhar ? 'detalhe' : 'resumo'; bfAb[t].clear(); }); renderBudget(); };
   el.querySelector('#bfTodos').addEventListener('click', ()=>alterna(['budget','forecast','comp']));
   el.querySelectorAll('.bf-tt').forEach(x=>x.addEventListener('click', ()=>alterna([x.dataset.t])));
   el.querySelectorAll('.bf-tg').forEach(x=>x.addEventListener('click', ()=>{ const t = x.dataset.t, g = x.dataset.g; bfAb[t].has(g) ? bfAb[t].delete(g) : bfAb[t].add(g); renderBudget(); }));
@@ -9397,7 +9405,7 @@ function bfDreHTML(b, mes){
       <div class="subpanel-header"><div class="subpanel-title">DRE Gerencial — ${cxMonthLabel(mes)}</div><span class="dg-note">${temB ? 'Estrutura da planilha de Budget · valores em R$' : 'Sem Budget para este mês (a planilha cobre '+b.meses.map(cxMonthLabel).join(', ')+')'}</span>
         <button class="cx-btn" id="bfdAbrir" style="margin-left:10px;">${dreBfAbertos.size?'− Recolher tudo':'+ Expandir tudo'}</button></div>
       <div class="cx-table-wrap" style="overflow-x:auto;"><table class="cx-table bf-tbl bf-pl"><thead><tr><th>Descrição</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variação</th><th class="num">% Variação</th></tr></thead><tbody>${corpo.join('')}</tbody></table></div>
-      <div class="rp-hint" style="margin:8px 14px;line-height:1.5;">Linhas e grupos iguais aos da planilha de Budget; o Actual vem das contas ligadas a cada linha (Budget &amp; Forecast &gt; Mapear contas), por competência. Variação = Actual − Budget: positivo (verde) é melhor que o orçado. Clique na seta do grupo para ver as linhas.</div></div>`;
+      </div>`;
   return {html, kpis, rows};
 }
 /* P&L do DRE Gerencial: Budget | Forecast | Actual | B/(W) | %B/(W) com as linhas da planilha */
@@ -9408,7 +9416,7 @@ function bfPlDRE(pp){
   const todos = []; { let [y,m] = pp.cur[0].split('-').map(Number); const [y2,m2] = pp.cur[1].split('-').map(Number); while(y<y2 || (y===y2 && m<=m2)){ todos.push(`${y}-${String(m).padStart(2,'0')}`); m++; if(m>12){ m = 1; y++; } } }
   const meses = todos.filter(m=>b.meses.includes(m));
   const tog = `<div class="pl-toggle">${['mensal','trimestral','anual'].map(k=>`<button data-mode="${k}" class="${dgPlMode===k?'active':''}">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div>`;
-  const cab = `<div class="pl-head"><div><div class="subpanel-title" style="font-size:15px;">P&amp;L — Budget × Forecast × Actual</div><div class="pl-sub">${pp.sub}${meses.length && meses.length<todos.length ? ' · Budget cobre '+meses.map(cxMonthLabel).join(', ') : ''}</div></div>${tog}</div>`;
+  const cab = `<div class="pl-head"><div><div class="subpanel-title" style="font-size:15px;">P&amp;L — Budget × Forecast × Actual</div><div class="pl-sub">${pp.sub}${meses.length && meses.length<todos.length ? ' · Budget cobre '+meses.map(cxMonthLabel).join(', ') : ''}</div></div><div style="display:flex;gap:10px;align-items:center;"><button class="cx-btn" id="bfpAbrir">${plBfAbertos.size?'− Recolher tudo':'+ Expandir tudo'}</button>${tog}</div></div>`;
   if(!meses.length) return {html:`<div class="panel dg-col" style="grid-column:1/-1;">${cab}<div class="cx-empty" style="padding:24px;">Não há Budget para este período. A planilha cobre ${b.meses.map(cxMonthLabel).join(', ')}.</div></div>`, linhas:[]};
   const D = bfDados(b, {meses}), temA = !!D.A, linhas = [];
   const vis = r=> Math.abs(D.B[r.id])>=0.005 || Math.abs(D.F[r.id])>=0.005 || (temA && Math.abs(D.A[r.id])>=0.005);
@@ -9436,7 +9444,7 @@ function bfPlDRE(pp){
   const notas = [D.elapsed.length && D.elapsed.length<meses.length ? `B/(W) compara o Actual com o Budget dos meses já ocorridos (${D.elapsed.map(cxMonthLabel).join(', ')}).` : '', D.elapsed.includes(CUR_MONTH) ? `${cxMonthFull(CUR_MONTH)} em andamento: Actual até hoje.` : '', !temA ? 'Período ainda não iniciado: sem Actual.' : ''].filter(Boolean).join(' ');
   const html = `<div class="panel dg-col" style="grid-column:1/-1;">${cab}${aviso}
     <div class="cx-table-wrap" style="overflow-x:auto;"><table class="cx-table bf-tbl bf-pl"><thead><tr><th>${rpEsc(pp.sub)}</th><th class="num">Budget</th><th class="num">Forecast</th><th class="num">Actual</th><th class="num">B/(W)</th><th class="num">%B/(W)</th></tr></thead><tbody>${corpo.join('')}</tbody></table></div>
-    <div class="rp-hint" style="margin-top:8px;line-height:1.5;">Clique na seta do grupo para ver as linhas. <b>B/(W)</b> = Actual − Budget (verde: melhor que o orçado; vermelho: pior). <b>%B/(W)</b> = B/(W) ÷ |Budget|. ${notas} · <a href="#" id="bfpAbrir">${plBfAbertos.size?'Recolher tudo':'Expandir tudo'}</a></div></div>`;
+  </div>`;
   return {html, linhas, b, rows};
 }
 /* ---- janela: subir planilha ---- */
@@ -9500,7 +9508,7 @@ function bfUpConfirm(){
   if(dest==='ambos'){ novo.budget = copia(p.vals); novo.forecast = copia(p.vals); }
   else if(dest==='budget'){ novo.budget = copia(p.vals); novo.forecast = copia(ant.forecast); }
   else { novo.forecast = copia(p.vals); novo.budget = copia(ant.budget); }
-  BF[emp] = novo; saveBF(); plBfAbertos.clear(); Object.values(bfAb).forEach(x=>x.clear());
+  BF[emp] = novo; saveBF(); plBfAbertos.clear(); Object.values(bfAb).forEach(x=>x.clear()); Object.keys(bfModo).forEach(k=>bfModo[k]='resumo');
   const ov = document.getElementById('bfUpOv'); if(ov) ov.classList.remove('open'); showToast(`Planilha importada (${dest==='ambos'?'Budget e Forecast':dest==='budget'?'Budget':'Forecast'}).`);
   if(currentPageKey!=='budget') navigateTo('budget'); else renderBudget();
 }
