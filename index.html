@@ -4570,7 +4570,9 @@ function submitRecForm(opts){
     const venc = new Date(vencimento+'T00:00:00');
     const r = RECEIVABLES.find(x=>x.id===rState.editingId);
     const status = ['recebido','parcial','cancelado','aguardando_conciliacao','conciliado'].includes(r.status) ? r.status : (venc<TODAY ? 'vencido' : 'a_vencer');
+    const compMudou = !!r.imobziId && JSON.stringify(r.itens||[])!==JSON.stringify(itens||[]);
     Object.assign(r, {empresaId,clienteId,documento,descricao,competencia,emissao,vencimento,valor,repasse,categoria,centroCusto,formaRecebimento,contaBancaria,observacoes,status,planoContas,itens});
+    if(compMudou) r.itensManual = true; // composição ajustada à mão: a sincronização do Imobzi não sobrescreve
     showToast('Recebimento atualizado.');
   } else if(parcelado){
     const qtd = parseInt(document.getElementById('rQtdParcelas').value,10);
@@ -7961,7 +7963,9 @@ function impApply(sel, emp, anexosBase, opts){
           itens:impItens(r,valor,conta), categoria:conta, formaRecebimento:r.forma, planoContas:contaLabel(conta)};
         const stAberto = new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer';
         if(exist){
+          const man = exist.itensManual ? {itens:exist.itens, repasse:exist.repasse} : null;
           Object.assign(exist, camp);
+          if(man){ exist.itens = man.itens; exist.repasse = man.repasse; }
           if(!emConc(exist) && !(['recebido','parcial'].includes(exist.status) && !baixa)){ exist.status = baixa ? 'recebido' : stAberto; exist.dataRecebimento = baixa ? baixa.data : null; exist.valorRecebido = baixa ? baixa.valor : null; }
           if(!emConc(exist) && (envioCfg().imobzi||{}).contaReceb) exist.contaBancaria = imobziContaReceb();
           nUp++;
