@@ -9300,7 +9300,7 @@ function bfResumoRow(b, r){
   const n = bfNorm(r.nome), ultima = [...b.rows].reverse().find(x=>x.kind==='single');
   return (r.kind==='grupo' && n==='receita bruta') || (r.kind==='single' && (/total.*desp/.test(n) || /ebtida|ebitda/.test(n))) || (ultima && r.id===ultima.id);
 }
-const bfNomeTab = r=> /lucro operacional|lucro liquido/.test(bfNorm(r.nome)) ? 'Lucro Liquido' : r.nome;
+const bfNomeTab = r=> /lucro operacional|lucro liquido/.test(bfNorm(r.nome)) ? 'Lucro Operacional' : r.nome;
 function bfLinhasVisiveis(b, t){
   const out = [];
   b.rows.forEach((r,i)=>{
