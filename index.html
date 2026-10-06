@@ -8252,24 +8252,7 @@ function renderDRE(){
   const plCur = dgPeriod(pp.cur[0], pp.cur[1]), plPre = dgPeriod(pp.pre[0], pp.pre[1]);
   const plHTML = PL_ROWS.map(r=>plRowHTML(r, plCur, plPre)).join('');
   const plBf = bfPlDRE(pp); // com Budget carregado, o P&L vira Budget | Forecast | Actual | B/(W) | %B/(W)
-  const bfB = BF[state.filters.empresaId], bfMeses = bfB ? [dgMonth].filter(m=>bfB.meses.includes(m)) : [], bud = bfMeses.length ? bfDreBudget(bfB, bfMeses) : null;
-  const dgRowCmp = (label, vB, vA, cls)=>{
-    const v = vA - vB, pc = Math.abs(vB)>=0.005 ? v/Math.abs(vB) : NaN, cor = Math.abs(v)<0.005 ? '' : bfCor(v);
-    return `<tr class="${cls}"><td class="dg-label">${label}</td><td class="dg-num ${vB<0?'neg':''}">${cxMoney(vB)}</td><td class="dg-num ${vA<0?'neg':''}">${cxMoney(vA)}</td>
-      <td class="dg-num" style="${cor}">${Math.abs(v)<0.005?'–':cxMoney(v)}</td><td class="dg-pct" style="${isFinite(pc)?bfCor(pc):''}">${isFinite(pc)?cxPct(pc,true):'—'}</td></tr>`;
-  };
-  const rowsCmp = bfB ? DG_ROWS.map(r=>{
-    const sg = r.neg ? -1 : 1, B0 = bud ? bud[r.key]*sg : 0;
-    let html = dgRowCmp(r.label, B0, cur[r.key]*sg, ['dg-row', r.style?('dg-'+r.style):''].join(' '));
-    if(r.kids) r.kids.groups.forEach(g=>{ const vA = (cur[r.kids.src][g]||0)*sg, vB = bud ? (bud[r.kids.src][g]||0)*sg : 0; if(Math.abs(vA)>0.004 || Math.abs(vB)>0.004) html += dgRowCmp(contaGrupoNome(g), vB, vA, 'dg-row dg-indent'); });
-    return html;
-  }).join('') : '';
-  const dreCmpHTML = bfB ? `<div class="panel dg-col" style="grid-column:1/-1;">
-        <div class="subpanel-header"><div class="subpanel-title">DRE Gerencial × Budget — ${cxMonthLabel(dgMonth)}</div><span class="dg-note">${bud ? 'Valores em R$' : 'Sem Budget para este mês (a planilha cobre '+bfB.meses.map(cxMonthLabel).join(', ')+')'}</span></div>
-        <table class="dg-table"><colgroup><col><col style="width:120px;"><col style="width:120px;"><col style="width:120px;"><col style="width:100px;"></colgroup>
-          <thead><tr><th>Descrição</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variação</th><th class="num">% Variação</th></tr></thead>
-          <tbody>${rowsCmp}</tbody></table>
-        <div class="rp-hint" style="margin-top:8px;">Variação = Actual − Budget: positivo (verde) é melhor que o orçado. O Budget é distribuído nas mesmas contas do Actual (por competência), para a comparação ser linha a linha.</div></div>` : '';
+  const bfB = BF[state.filters.empresaId], bfDre = bfB ? bfDreHTML(bfB, dgMonth) : null, dreCmpHTML = bfDre ? bfDre.html : '', kpisUse = bfDre && bfDre.kpis.length ? bfDre.kpis : kpis;
 
   // Receita e despesa por categoria
   const rr = dgCatRange(dgCatRecMode), dr = dgCatRange(dgCatDespMode);
@@ -8295,7 +8278,7 @@ function renderDRE(){
       </div>
     </div>
     <div class="vg-kpi-grid cx-kpis">
-      ${kpis.map(k=>`
+      ${kpisUse.map(k=>`
         <div class="vg-kpi-card">
           <div class="vg-kpi-top"><div class="vg-kpi-icon"><svg viewBox="0 0 24 24">${ICONS[k.icon]}</svg></div><div class="vg-kpi-title">${k.t}</div></div>
           <div class="vg-kpi-value">${fmtCurrency(k.v)}</div>
@@ -8351,7 +8334,9 @@ function renderDRE(){
   el.querySelector('#dgMonth').addEventListener('change', e=>{ dgMonth=e.target.value; renderDRE(); });
   el.querySelectorAll('.pl-toggle button').forEach(b=>b.addEventListener('click', ()=>{ dgPlMode=b.dataset.mode; renderDRE(); }));
   el.querySelectorAll('.bfp-tg').forEach(t=>t.addEventListener('click', ()=>{ plBfAbertos.has(t.dataset.g) ? plBfAbertos.delete(t.dataset.g) : plBfAbertos.add(t.dataset.g); renderDRE(); }));
-  const bfa = el.querySelector('#bfpAbrir'); if(bfa) bfa.addEventListener('click', e=>{ e.preventDefault(); if(plBfAbertos.size) plBfAbertos.clear(); else plBf.b.rows.filter(r=>r.kind==='grupo').forEach(r=>plBfAbertos.add(r.id)); renderDRE(); });
+  el.querySelectorAll('.bfd-tg').forEach(t=>t.addEventListener('click', ()=>{ dreBfAbertos.has(t.dataset.g) ? dreBfAbertos.delete(t.dataset.g) : dreBfAbertos.add(t.dataset.g); renderDRE(); }));
+  const bfd = el.querySelector('#bfdAbrir'); if(bfd) bfd.addEventListener('click', ()=>{ if(dreBfAbertos.size) dreBfAbertos.clear(); else bfDre.rows.filter(r=>r.kind==='grupo').forEach(r=>dreBfAbertos.add(r.id)); renderDRE(); });
+  const bfa = el.querySelector('#bfpAbrir'); if(bfa) bfa.addEventListener('click', e=>{ e.preventDefault(); if(plBfAbertos.size) plBfAbertos.clear(); else plBf.rows.filter(r=>r.kind==='grupo').forEach(r=>plBfAbertos.add(r.id)); renderDRE(); });
   const bfm = el.querySelector('#bfpMap'); if(bfm) bfm.addEventListener('click', e=>{ e.preventDefault(); bfMapOpen(); });
   el.querySelector('#dgCatRecSel').addEventListener('change', e=>{ dgCatRecMode=e.target.value; renderDRE(); });
   el.querySelector('#dgCatDespSel').addEventListener('change', e=>{ dgCatDespMode=e.target.value; renderDRE(); });
@@ -9272,15 +9257,24 @@ function bfActual(b, meses){
   const add = (id, mes, v)=>{ leaf[id] = leaf[id] || {}; leaf[id][mes] = (leaf[id][mes]||0) + v; };
   state.accounts.filter(a=>a.empresaId===emp && !['cancelado','reprovado'].includes(a.status) && meses.includes(a.competencia)).forEach(a=>{
     const id = achar('P', a.categoria);
-    if(id) add(id, a.competencia, -a.valor); else if(!contaEhBP(a.categoria)) nao['P|'+a.categoria] = (nao['P|'+a.categoria]||0) - a.valor;
+    if(id) add(id, a.competencia, -a.valor); else if(!contaEhBP(a.categoria)){ nao['P|'+a.categoria] = (nao['P|'+a.categoria]||0) - a.valor; add('nmP', a.competencia, -a.valor); }
   });
   RECEIVABLES.filter(r=>r.empresaId===emp && r.status!=='cancelado' && meses.includes(r.competencia)).forEach(r=>{
     arParts(r).emp.forEach(pt=>{
       const v = Math.max(0, pt.v); if(!v) return; const id = achar('R', pt.conta);
-      if(id) add(id, r.competencia, v); else if(!contaEhBP(pt.conta)) nao['R|'+pt.conta] = (nao['R|'+pt.conta]||0) + v;
+      if(id) add(id, r.competencia, v); else if(!contaEhBP(pt.conta)){ nao['R|'+pt.conta] = (nao['R|'+pt.conta]||0) + v; add('nmR', r.competencia, v); }
     });
   });
   return {leaf, nao};
+}
+/* estrutura do modelo + linhas sintéticas para o realizado sem conta mapeada (assim o DRE fecha com todo o realizado) */
+function bfEstrutura(b){
+  const rows = b.rows.slice();
+  const gR = rows.find(r=>r.kind==='grupo' && bfNorm(r.nome)==='receita bruta');
+  if(gR){ let last = -1; rows.forEach((r,i)=>{ if(r.kind==='item' && r.grupo===gR.id) last = i; }); rows.splice(last+1, 0, {id:'nmR', nome:'Receitas sem linha no modelo (a mapear)', kind:'item', grupo:gR.id, lado:'R', sint:true}); }
+  const iT = rows.findIndex(r=>r.kind==='single' && /total.*desp/.test(bfNorm(r.nome)));
+  if(iT>=0) rows.splice(iT, 0, {id:'gnm', nome:'Despesas sem linha no modelo (a mapear)', kind:'grupo', sint:true}, {id:'nmP', nome:'Contas sem mapeamento', kind:'item', grupo:'gnm', lado:'P', sint:true});
+  return rows;
 }
 /* ---- períodos ---- */
 function bfOpcoes(b){
@@ -9291,7 +9285,8 @@ function bfOpcoes(b){
 function bfDados(b, op){
   const elapsed = op.meses.filter(m=>m<=CUR_MONTH);
   const ac = elapsed.length ? bfActual(b, elapsed) : {leaf:{}, nao:{}};
-  const B = bfCalc(b.rows, b.budget, op.meses), F = bfCalc(b.rows, b.forecast, op.meses), A = elapsed.length ? bfCalc(b.rows, ac.leaf, elapsed) : null, Be = elapsed.length ? bfCalc(b.rows, b.budget, elapsed) : null;
+  const rows = bfEstrutura(b);
+  const B = bfCalc(rows, b.budget, op.meses), F = bfCalc(rows, b.forecast, op.meses), A = elapsed.length ? bfCalc(rows, ac.leaf, elapsed) : null, Be = elapsed.length ? bfCalc(rows, b.budget, elapsed) : null;
   return {B, F, A, Be, nao:ac.nao, elapsed};
 }
 const bfFmt = v=> (Math.abs(v)<0.005) ? '–' : cxMoney(v);
@@ -9369,25 +9364,44 @@ function renderBudget(){
     });
   });
 }
-/* Budget no formato do DRE (mesmas contas/grupos do Actual): cada linha do Budget cai no grupo DRE da sua 1ª conta mapeada */
-const BF_GRUPO_DRE = {'receita bruta':'4.01','deducoes de vendas':'4.02','cmv/csp - custo mercadovia vendida / servico prestado':'5.03','despesas de vendas e logistica':'6.04','despesas com pessoal':'6.01',
-  'despesas com ocupacao':'6.02','despesas com marketing':'6.04','despesas administrativas':'6.02','telecomunicacoes (fixo, movel, internet)':'6.05','despesas financeiras':'6.10'};
-function bfDreBudget(b, meses){
-  const tot = bfCalc(b.rows, b.budget, meses), P = {}, R = {};
-  b.rows.filter(r=>r.kind==='item').forEach(r=>{
-    const v = tot[r.id]||0; if(Math.abs(v)<0.005) return;
-    const cods = b.map[r.id]||[]; let g;
-    if(cods.length){ if(contaEhBP(cods[0])) return; g = contaGrupoCod(cods[0]); }
-    else { const gr = b.rows.find(x=>x.id===r.grupo); g = BF_GRUPO_DRE[bfNorm(gr?gr.nome:'')]; }
-    if(!g) return;
-    if((r.lado||'P')==='R') R[g] = (R[g]||0) + v; else P[g] = (P[g]||0) - v;
+/* DRE Gerencial nas linhas do modelo (planilha): Budget | Actual | Variação | % Variação, no mês escolhido */
+let dreBfAbertos = new Set();
+function bfDreHTML(b, mes){
+  const rows = bfEstrutura(b), temB = b.meses.includes(mes), ac = bfActual(b, [mes]);
+  const A = bfCalc(rows, ac.leaf, [mes]), B = temB ? bfCalc(rows, b.budget, [mes]) : bfCalc(rows, {}, [mes]);
+  const nm = r=>bfNorm(r.nome), single = rx=>rows.find(r=>r.kind==='single' && rx.test(nm(r)));
+  const rl = single(/receita liquida/), rlA = rl ? A[rl.id] : 0;
+  const kpis = [['Receita Líquida',/receita liquida/,'dollar-sign'],['Margem de Contribuição',/margem/,'bar-chart'],['EBITDA',/ebtida|ebitda/,'list'],['Lucro Operacional',/lucro operacional/,'check-square'],['Total Despesas',/total.*desp/,'arrow-down-circle']]
+    .map(([t,rx,icon])=>{ const r = single(rx); return r ? {t, v:A[r.id], m:(rlA>0 ? A[r.id]/rlA : NaN), icon} : null; }).filter(Boolean);
+  const vis = r=> Math.abs(B[r.id])>=0.005 || Math.abs(A[r.id])>=0.005;
+  const linha = r=>{
+    const bud = B[r.id], ac1 = A[r.id], v = ac1-bud, pct = Math.abs(bud)>=0.005 ? v/Math.abs(bud) : null, forte = r.kind!=='item', st = forte?'font-weight:700;':'';
+    const ab = r.kind==='grupo' ? `<span class="bfd-tg" data-g="${r.id}" style="cursor:pointer;display:inline-block;width:14px;">${dreBfAbertos.has(r.id)?'▾':'▸'}</span>` : '';
+    return `<tr class="${r.kind==='single'?'bf-total':r.kind==='grupo'?'bf-grupo':''}"><td style="${r.kind==='item'?'padding-left:26px;':''}${st}">${ab}${rpEsc(r.nome)}</td>
+      <td class="num" style="${st}">${bfFmt(bud)}</td><td class="num" style="${st}">${bfFmt(ac1)}</td>
+      <td class="num" style="${bfCor(v)}${st}">${Math.abs(v)<0.005?'–':bfFmt(v)}</td><td class="num" style="${pct===null?'':bfCor(pct)}${st}">${pct===null?'—':cxPct(pct,true)}</td></tr>`;
+  };
+  const corpo = [];
+  rows.forEach(r=>{
+    if(r.kind==='item') return;
+    if(r.kind==='grupo'){
+      const kids = rows.filter(k=>k.grupo===r.id && vis(k));
+      if(!vis(r) && !kids.length) return;
+      corpo.push(linha(r)); if(dreBfAbertos.has(r.id)) kids.forEach(k=>corpo.push(linha(k)));
+    } else corpo.push(linha(r));
   });
-  return dgFromMaps(P, R);
+  const html = `<div class="panel dg-col" style="grid-column:1/-1;">
+      <div class="subpanel-header"><div class="subpanel-title">DRE Gerencial — ${cxMonthLabel(mes)}</div><span class="dg-note">${temB ? 'Estrutura da planilha de Budget · valores em R$' : 'Sem Budget para este mês (a planilha cobre '+b.meses.map(cxMonthLabel).join(', ')+')'}</span>
+        <button class="cx-btn" id="bfdAbrir" style="margin-left:10px;">${dreBfAbertos.size?'− Recolher tudo':'+ Expandir tudo'}</button></div>
+      <div class="cx-table-wrap" style="overflow-x:auto;"><table class="cx-table bf-tbl bf-pl"><thead><tr><th>Descrição</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variação</th><th class="num">% Variação</th></tr></thead><tbody>${corpo.join('')}</tbody></table></div>
+      <div class="rp-hint" style="margin:8px 14px;line-height:1.5;">Linhas e grupos iguais aos da planilha de Budget; o Actual vem das contas ligadas a cada linha (Budget &amp; Forecast &gt; Mapear contas), por competência. Variação = Actual − Budget: positivo (verde) é melhor que o orçado. Clique na seta do grupo para ver as linhas.</div></div>`;
+  return {html, kpis, rows};
 }
 /* P&L do DRE Gerencial: Budget | Forecast | Actual | B/(W) | %B/(W) com as linhas da planilha */
 let plBfAbertos = new Set();
 function bfPlDRE(pp){
   const b = BF[state.filters.empresaId]; if(!b) return null;
+  const rows = bfEstrutura(b);
   const todos = []; { let [y,m] = pp.cur[0].split('-').map(Number); const [y2,m2] = pp.cur[1].split('-').map(Number); while(y<y2 || (y===y2 && m<=m2)){ todos.push(`${y}-${String(m).padStart(2,'0')}`); m++; if(m>12){ m = 1; y++; } } }
   const meses = todos.filter(m=>b.meses.includes(m));
   const tog = `<div class="pl-toggle">${['mensal','trimestral','anual'].map(k=>`<button data-mode="${k}" class="${dgPlMode===k?'active':''}">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div>`;
@@ -9404,15 +9418,15 @@ function bfPlDRE(pp){
       <td class="num" style="${bw===null?'':bfCor(bw)}${st}">${bw===null?'—':bfFmt(bw)}</td><td class="num" style="${pct===null?'':bfCor(pct)}${st}">${pct===null?'—':cxPct(pct,true)}</td></tr>`;
   };
   const corpo = [];
-  b.rows.forEach(r=>{
+  rows.forEach(r=>{
     if(r.kind==='item') return;
     if(r.kind==='grupo'){
-      const kids = b.rows.filter(k=>k.grupo===r.id && vis(k));
+      const kids = rows.filter(k=>k.grupo===r.id && vis(k));
       if(!vis(r) && !kids.length) return;
       corpo.push(linha(r)); if(plBfAbertos.has(r.id)) kids.forEach(k=>corpo.push(linha(k)));
     } else corpo.push(linha(r));
   });
-  b.rows.forEach(r=>{ const bud = D.B[r.id], ac = temA ? D.A[r.id] : null, be = temA ? D.Be[r.id] : null, bw = temA ? ac-be : null, q = x=>Math.round(x*100)/100;
+  rows.forEach(r=>{ const bud = D.B[r.id], ac = temA ? D.A[r.id] : null, be = temA ? D.Be[r.id] : null, bw = temA ? ac-be : null, q = x=>Math.round(x*100)/100;
     linhas.push({Linha:(r.kind==='item'?'   ':'')+r.nome, Budget:q(bud), Forecast:q(D.F[r.id]), Actual:temA?q(ac):null, 'B/(W)':bw===null?null:q(bw), '%B/(W) (%)':(temA && Math.abs(be)>=0.005)?Math.round(bw/Math.abs(be)*1000)/10:null}); });
   const nao = Object.entries(D.nao).filter(([k,v])=>Math.abs(v)>=0.005), naoTot = nao.reduce((t,[k,v])=>t+v,0);
   const aviso = nao.length ? `<div class="rp-hint" style="background:#fff6df;border:1px solid #f6e7bd;color:#6b4a00;border-radius:6px;padding:8px 10px;margin:8px 0;">${fmtCurrency(Math.abs(naoTot))} do realizado não está ligado a nenhuma linha do Budget (${nao.slice(0,4).map(([k,v])=>`${rpEsc(contaNome(k.split('|')[1]))} ${cxMoney(v)}`).join(' · ')}${nao.length>4?' …':''}) e não entra no Actual. <a href="#" id="bfpMap">Mapear contas</a></div>` : '';
@@ -9420,7 +9434,7 @@ function bfPlDRE(pp){
   const html = `<div class="panel dg-col" style="grid-column:1/-1;">${cab}${aviso}
     <div class="cx-table-wrap" style="overflow-x:auto;"><table class="cx-table bf-tbl bf-pl"><thead><tr><th>${rpEsc(pp.sub)}</th><th class="num">Budget</th><th class="num">Forecast</th><th class="num">Actual</th><th class="num">B/(W)</th><th class="num">%B/(W)</th></tr></thead><tbody>${corpo.join('')}</tbody></table></div>
     <div class="rp-hint" style="margin-top:8px;line-height:1.5;">Clique na seta do grupo para ver as linhas. <b>B/(W)</b> = Actual − Budget (verde: melhor que o orçado; vermelho: pior). <b>%B/(W)</b> = B/(W) ÷ |Budget|. ${notas} · <a href="#" id="bfpAbrir">${plBfAbertos.size?'Recolher tudo':'Expandir tudo'}</a></div></div>`;
-  return {html, linhas, b};
+  return {html, linhas, b, rows};
 }
 /* ---- janela: subir planilha ---- */
 let bfUp = null;
