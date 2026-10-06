@@ -1979,6 +1979,20 @@ function catAtiva(c){ try{ const m = CATEGORY_META.find(x=>x.nome===c); return !
 const PLANO_KEY = 'bpo_financeiro_plano_contas_v2';
 const PLANO = loadOrSeedArray(PLANO_KEY, ()=>PLANO_SEED.map(r=>({cod:r[0], nome:r[1], pai:r[2], nivel:r[3], tipo:r[4], nat:r[5], dem:r[6], grupo:r[7], sub:r[8], aceita:r[9]===1, status:'Ativa'})));
 function savePlano(){ persist(PLANO_KEY, PLANO); }
+/* contas criadas depois do plano inicial: garante que existam também em quem já tem o plano salvo no navegador */
+const PLANO_EXTRAS = [
+  {cod:'6.02.030', nome:'Consultas de Crédito e Cadastro', pai:'6.02', nivel:3, tipo:'A', nat:'D', dem:'DRE', grupo:'Despesas', sub:'Despesas Administrativas', aceita:true, status:'Ativa', depois:'6.02.029'},
+];
+(function(){
+  let mudou = false;
+  PLANO_EXTRAS.forEach(x=>{
+    if(PLANO.some(a=>a.cod===x.cod)) return;
+    const {depois, ...conta} = x, i = PLANO.findIndex(a=>a.cod===depois);
+    if(i>=0) PLANO.splice(i+1, 0, conta); else PLANO.push(conta);
+    mudou = true;
+  });
+  if(mudou){ try{ savePlano(); }catch(e){} }
+})();
 const CONTAS_AC = [
   {cod:'PAG-AC', nome:'A classificar (despesa)', tipo:'A', nat:'D', dem:'DRE', grupo:'A classificar', sub:'', aceita:true, status:'Ativa', sistema:true},
   {cod:'REC-AC', nome:'A classificar (receita)', tipo:'A', nat:'C', dem:'DRE', grupo:'A classificar', sub:'', aceita:true, status:'Ativa', sistema:true},
@@ -9173,6 +9187,18 @@ function bcImpConfirm(){
 const BF_KEY = 'bpo_financeiro_budget_v1';
 const BF = (()=>{ try{ return JSON.parse(localStorage.getItem(BF_KEY)||'{}') || {}; }catch(e){ return {}; } })();
 function saveBF(){ persist(BF_KEY, BF); }
+/* a linha "Análise cadastral / consultas" passa a receber também a conta Consultas de Crédito e Cadastro (6.02.030) */
+(function(){
+  let mudou = false;
+  Object.values(BF).forEach(b=>{
+    if(!b || !b.rows || !b.map) return;
+    b.rows.filter(r=>r.kind==='item' && bfNorm(r.nome)==='analise cadastral / consultas').forEach(r=>{
+      const m = b.map[r.id] || [];
+      if(!m.includes('6.02.030')){ b.map[r.id] = ['6.02.030'].concat(m); mudou = true; }
+    });
+  });
+  if(mudou){ try{ saveBF(); }catch(e){} }
+})();
 const BF_MESES = {janeiro:1,fevereiro:2,marco:3,abril:4,maio:5,junho:6,julho:7,agosto:8,setembro:9,outubro:10,novembro:11,dezembro:12};
 
 function bfNum(t){
@@ -9220,7 +9246,7 @@ const BF_MAPA = {
   'receita bruta|outras receitas operacionais':['4.01.024','4.03','4.04.002'],
   'deducoes de vendas|pis':['4.02.009'], 'deducoes de vendas|cofins':['4.02.010'], 'deducoes de vendas|iss':['4.02.008'], 'deducoes de vendas|das':['4.02.011'],
   'deducoes de vendas|estornos e cancelamentos':['4.02.001','4.02.002'], 'deducoes de vendas|descontos concedidos':['4.02.004'],
-  'taxas bancarias / boletos / cobranca':['6.10.006','6.10.007'], 'pjbank / intermediacao financeira':['5.06.005'], 'analise cadastral / consultas':['5.05.002'],
+  'taxas bancarias / boletos / cobranca':['6.10.006','6.10.007'], 'pjbank / intermediacao financeira':['5.06.005'], 'analise cadastral / consultas':['6.02.030','5.05.002'],
   'vistorias / servicos de locacao':['5.03.010'], 'seguro-fianca':['6.07.004'], 'outros custos diretos':['5.06.008'],
   'premiacao dos colaboradores':['6.04.012'], 'reembolso despesas viagens e veiculos':['6.06.006','6.06.014','6.06.013','6.02.024'],
   'correio e malotes':['6.02.010'], 'fretes e motoboy':['5.04.001'], 'comissao dos parceiros':['6.04.011'],
