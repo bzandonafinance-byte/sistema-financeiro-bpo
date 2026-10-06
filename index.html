@@ -1103,6 +1103,11 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .imp-zoom{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);white-space:nowrap;}
 .imp-zoom .btn{height:26px;padding:0 9px;} .imp-zoom b{min-width:38px;text-align:center;color:var(--text-primary);}
 .imp-tbl select[data-k=tipo]{min-width:108px;padding:0 4px;}
+.bf-tbl td,.bf-tbl th{white-space:nowrap;}
+.bf-tbl tbody tr{cursor:default;}
+.bf-grupo td{background:#fafafb;}
+.bf-total td{background:#f1f2f4;border-top:1px solid var(--border-color-strong);}
+.bf-tbl .num{font-variant-numeric:tabular-nums;}
 .bc-bar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:6px 0 10px;}
 .bc-move{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;}
 </style>
@@ -1347,6 +1352,7 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
     <div class="page-section" id="page-dashboard-gerencial"></div>
     <div class="page-section" id="page-dre"></div>
     <div class="page-section" id="page-balanco"></div>
+    <div class="page-section" id="page-budget"></div>
     <div class="page-section" id="page-relatorios"></div>
     <div class="page-section" id="page-configuracoes"></div>
 
@@ -1917,6 +1923,7 @@ const NAV_ITEMS = [
   {key:'conciliacao', label:'Conciliação bancária', icon:'check-square'},
   {key:'dre', label:'DRE Gerencial', icon:'bar-chart'},
   {key:'balanco', label:'Balanço Patrimonial', icon:'building'},
+  {key:'budget', label:'Budget & Forecast', icon:'bar-chart'},
   {key:'relatorios', label:'Relatórios', icon:'file'},
   {key:'configuracoes', label:'Configurações', icon:'settings'},
 ];
@@ -9137,6 +9144,295 @@ function bcImpConfirm(){
   if(currentPageKey!=='conciliacao') navigateTo('conciliacao'); else renderConciliacao();
 }
 
+/* ================================================================
+   SECTION: PAGE — Budget & Forecast (P&L: Budget | Forecast | Actual | B/(W) | %B/(W))
+   A planilha (CSV com o layout do P&L) define as linhas e os valores de Budget/Forecast.
+   O Actual vem do mesmo lugar do DRE (Contas a Pagar/Receber por competência), ligado por um
+   mapeamento linha → contas do plano (editável). B/(W) = Actual − Budget (receita +, custo −).
+   ================================================================ */
+const BF_KEY = 'bpo_financeiro_budget_v1';
+const BF = (()=>{ try{ return JSON.parse(localStorage.getItem(BF_KEY)||'{}') || {}; }catch(e){ return {}; } })();
+function saveBF(){ persist(BF_KEY, BF); }
+const BF_MESES = {janeiro:1,fevereiro:2,marco:3,abril:4,maio:5,junho:6,julho:7,agosto:8,setembro:9,outubro:10,novembro:11,dezembro:12};
+let bfPeriodo = '', bfZeros = false, bfFechados = new Set(), bfEditar = false;
+
+function bfNum(t){
+  const s = String(t==null?'':t).trim(); if(!s) return null;
+  const neg = /-/.test(s) || /^\(.*\)$/.test(s);
+  const v = parseFloat(s.replace(/[^\d,]/g,'').replace(',','.'));
+  return isNaN(v) ? null : (neg ? -v : v);
+}
+/* ---- leitura da planilha ---- */
+function bfParse(text){
+  const linhas = text.replace(/\r/g,'').split('\n').map(l=>l.split(';').map(c=>c.trim()));
+  const hi = linhas.findIndex(r=>r.some(c=>BF_MESES[cxNormalizeText(c)]));
+  if(hi<0) throw new Error('não achei os meses (Outubro, Novembro...) no cabeçalho da planilha');
+  const head = linhas[hi], anos = linhas[hi+1] || [], cols = [];
+  head.forEach((c,i)=>{ const m = BF_MESES[cxNormalizeText(c)]; if(m){ const y = parseInt(anos[i],10) || TODAY.getFullYear(); cols.push({i, mes:`${y}-${String(m).padStart(2,'0')}`}); } });
+  const blocos = []; let atual = [];
+  linhas.slice(hi+2).forEach(r=>{
+    const nome = (r[0]||'').trim(), vazio = !nome && r.slice(1).every(c=>!c);
+    if(vazio){ if(atual.length){ blocos.push(atual); atual = []; } }
+    else if(nome){ atual.push({nome, vals:Object.fromEntries(cols.map(c=>[c.mes, bfNum(r[c.i])||0]))}); }
+  });
+  if(atual.length) blocos.push(atual);
+  const rows = [], vals = {}, ref = {};
+  blocos.forEach(b=>{
+    if(b.length===1){ const id = 'r'+rows.length; rows.push({id, nome:b[0].nome, kind:'single'}); ref[id] = b[0].vals; return; }
+    const g = {id:'r'+rows.length, nome:b[0].nome, kind:'grupo'}; rows.push(g); ref[g.id] = b[0].vals;
+    b.slice(1).forEach(it=>{ const id = 'r'+rows.length; rows.push({id, nome:it.nome, kind:'item', grupo:g.id}); vals[id] = it.vals; });
+  });
+  if(!rows.some(r=>r.kind==='item')) throw new Error('a planilha não tem linhas de detalhe');
+  return {rows, vals, ref, meses:cols.map(c=>c.mes)};
+}
+/* ---- totais: grupo = soma dos itens; linhas únicas = acumulado dos grupos (Total Despesas = grupos desde a Margem) ---- */
+function bfCalc(rows, leaf, meses){
+  const out = {}, gs = {}; let cum = 0, cumMargem = 0;
+  rows.forEach(r=>{ if(r.kind==='item'){ const v = meses.reduce((t,m)=>t+(((leaf[r.id]||{})[m])||0),0); out[r.id] = v; gs[r.grupo] = (gs[r.grupo]||0) + v; } });
+  rows.forEach(r=>{
+    if(r.kind==='grupo'){ out[r.id] = gs[r.id]||0; cum += out[r.id]; }
+    else if(r.kind==='single'){ const n = cxNormalizeText(r.nome); if(/margem/.test(n)) cumMargem = cum; out[r.id] = /total.*desp/.test(n) ? cum - cumMargem : cum; }
+  });
+  return out;
+}
+/* ---- mapeamento linha → contas do plano (sugestão inicial) ---- */
+const BF_MAPA = {
+  'receita bruta|taxas administrativas':['4.01.008'], 'receita bruta|comissoes de locacoes':['4.01.007'], 'receita bruta|taxas de servicos':['4.01.003'],
+  'receita bruta|outras receitas operacionais':['4.01.024','4.03','4.04.002'],
+  'deducoes de vendas|pis':['4.02.009'], 'deducoes de vendas|cofins':['4.02.010'], 'deducoes de vendas|iss':['4.02.008'], 'deducoes de vendas|das':['4.02.011'],
+  'deducoes de vendas|estornos e cancelamentos':['4.02.001','4.02.002'], 'deducoes de vendas|descontos concedidos':['4.02.004'],
+  'taxas bancarias / boletos / cobranca':['6.10.006','6.10.007'], 'pjbank / intermediacao financeira':['5.06.005'], 'analise cadastral / consultas':['5.05.002'],
+  'vistorias / servicos de locacao':['5.03.010'], 'seguro-fianca':['6.07.004'], 'outros custos diretos':['5.06.008'],
+  'premiacao dos colaboradores':['6.04.012'], 'reembolso despesas viagens e veiculos':['6.06.006','6.06.014','6.06.013','6.02.024'],
+  'correio e malotes':['6.02.010'], 'fretes e motoboy':['5.04.001'], 'comissao dos parceiros':['6.04.011'],
+  'pro-labore':['6.01.002'], 'salarios':['6.01.001'], '13o salario':['6.01.009'], 'ferias':['6.01.008'], 'rescisoes e indenizacoes':['6.01.027'],
+  'assistencia medica / odontologica':['6.01.015'], 'auxilio transporte':['6.01.012'], 'exame admissional / demissional':['6.01.021'],
+  'fgts / inss / gps / ir / darf':['6.01.010','6.01.011'], 'alimentacao (cafe da manha, agua, etc)':['6.02.020','6.01.014','6.02.025'],
+  'cursos e treinamentos':['6.01.023'], 'outras despesas relacionadas a pessoas':['6.01.030'],
+  'aluguel / iptu':['6.02.001','6.02.002','6.02.003'], 'manutencao predial':['6.03.017','6.06.001'], 'seguro predial':['6.07.001'], 'agua':['6.02.005'], 'energia eletrica':['6.02.004'],
+  'faxina e dedetizacao':['6.03.015'], 'material de limpeza':['6.02.012'], 'itens de seguranca predial':['6.03.014','6.06.010'], 'outras despesas com ocupacao':['6.06.019'],
+  'materiais promocionais':['6.04.010'], 'patrocinios':['6.04.007'], 'brindes para parceiros':['6.04.008'], 'publicidade online e offline':['6.04.001','6.04.002'],
+  'assessoria de marketing':['6.03.012'], 'royalties':['5.06.002'], 'outras despesas de marketing':['6.04.021'],
+  'assessoria contabil':['6.03.001'], 'assessoria juridica':['6.03.006','6.03.007'], 'assessoria administrativa financeira':['6.03.003','6.03.004'],
+  'material escritorio e descartaveis':['6.02.011'], 'cartorio / multas':['6.02.015','6.09.008','6.12.001'],
+  'despesas administrativas|taxas administrativas':['6.09.004','6.09.005','6.09.006'], 'outras despesas administrativas':['6.02.029','6.12'],
+  'manutencao de sistemas':['6.05.004','6.05.003'], 'assessoria em ti':['6.03.009'], 'hospedagem e registros dominio':['6.05.006','6.05.007'],
+  'manutencao de equipamentos':['6.03.018'], 'internet / telefone':['6.02.009','6.05.010','6.02.007','6.02.008'], 'outras despesas de ti e telecomunicacoes':['6.05.018'],
+  'tarifas e taxas bancarias':['6.10.005'], 'taxa administracao de cartoes':['6.10.008'], 'taxa antecipacao de recebiveis':['6.10.014'],
+  'locacao de equipamentos (meio de pagamento)':['6.05.013'], 'despesas financeiras|outras despesas financeiras (juros, etc)':['6.10.001','6.10.013','6.10.015'],
+  'tomada de emprestimo':['2.01.05','2.02.01'], 'pagamento de emprestimos':['2.01.05','2.02.01'], 'distribuicao de lucros':['3.06.003','1.01.05.004'], 'acordo tributario':['2.01.04.014'],
+};
+function bfNorm(s){ return cxNormalizeText(s).replace(/º/g,'o').replace(/ª/g,'a').replace(/\s+/g,' ').trim(); }
+function bfChave(r, grupoNome){ const n = bfNorm(r.nome); return {a:bfNorm(grupoNome)+'|'+n, b:n}; }
+function bfSugerir(r, grupoNome){
+  const k = bfChave(r, grupoNome); let c = BF_MAPA[k.a];
+  if(!c){ const kk = Object.keys(BF_MAPA).find(x=>!x.includes('|') && (x===k.b || k.b.startsWith(x))); c = kk ? BF_MAPA[kk] : []; }
+  return c.filter(x=>contaByCod(x));
+}
+function bfLado(r, grupoNome){
+  const g = bfNorm(grupoNome), n = bfNorm(r.nome);
+  return (g==='receita bruta' || /^tomada de emprestimo|^aporte capital/.test(n)) ? 'R' : 'P';
+}
+/* ---- Actual: mesmo critério do DRE (competência; receitas só a parte da empresa) ---- */
+function bfActual(b, meses){
+  const emp = state.filters.empresaId, leaf = {}, nao = {}, idx = {R:[], P:[]};
+  b.rows.filter(r=>r.kind==='item').forEach(r=>(b.map[r.id]||[]).forEach(c=>idx[r.lado||'P'].push({c, id:r.id})));
+  const achar = (lado, conta)=>{ let best = null; idx[lado].forEach(x=>{ if((conta===x.c || String(conta).startsWith(x.c+'.')) && (!best || x.c.length>best.c.length)) best = x; }); return best && best.id; };
+  const add = (id, mes, v)=>{ leaf[id] = leaf[id] || {}; leaf[id][mes] = (leaf[id][mes]||0) + v; };
+  state.accounts.filter(a=>a.empresaId===emp && !['cancelado','reprovado'].includes(a.status) && meses.includes(a.competencia)).forEach(a=>{
+    const id = achar('P', a.categoria);
+    if(id) add(id, a.competencia, -a.valor); else if(!contaEhBP(a.categoria)) nao['P|'+a.categoria] = (nao['P|'+a.categoria]||0) - a.valor;
+  });
+  RECEIVABLES.filter(r=>r.empresaId===emp && r.status!=='cancelado' && meses.includes(r.competencia)).forEach(r=>{
+    arParts(r).emp.forEach(pt=>{
+      const v = Math.max(0, pt.v); if(!v) return; const id = achar('R', pt.conta);
+      if(id) add(id, r.competencia, v); else if(!contaEhBP(pt.conta)) nao['R|'+pt.conta] = (nao['R|'+pt.conta]||0) + v;
+    });
+  });
+  return {leaf, nao};
+}
+/* ---- períodos ---- */
+function bfOpcoes(b){
+  const o = b.meses.map(m=>({v:m, label:cxMonthFull(m), meses:[m]}));
+  b.meses.forEach((m,i)=>{ if(i>0) o.push({v:'acum:'+m, label:`Acumulado até ${cxMonthFull(m)}`, meses:b.meses.slice(0,i+1)}); });
+  return o;
+}
+function bfDados(b, op){
+  const elapsed = op.meses.filter(m=>m<=CUR_MONTH);
+  const ac = elapsed.length ? bfActual(b, elapsed) : {leaf:{}, nao:{}};
+  const B = bfCalc(b.rows, b.budget, op.meses), F = bfCalc(b.rows, b.forecast, op.meses), A = elapsed.length ? bfCalc(b.rows, ac.leaf, elapsed) : null, Be = elapsed.length ? bfCalc(b.rows, b.budget, elapsed) : null;
+  return {B, F, A, Be, nao:ac.nao, elapsed};
+}
+const bfFmt = v=> (Math.abs(v)<0.005) ? '–' : cxMoney(v);
+const bfCor = v=> Math.abs(v)<0.005 ? '' : (v>0 ? 'color:#0f6e45;' : 'color:#b42318;');
+
+function renderBudget(){
+  const el = document.getElementById('page-budget'), emp = state.filters.empresaId;
+  if(!emp){ el.innerHTML = pageHeaderHTML('Budget & Forecast','Escolha uma empresa.'); return; }
+  const co = companyById(emp) || {}, b = BF[emp];
+  const topo = `<div class="cx-head"><div><div class="cx-title">Budget &amp; Forecast</div><div class="cx-crumb">Demonstrativos &nbsp;/&nbsp; <b>Budget &amp; Forecast</b>${co.nome?` &nbsp;·&nbsp; ${rpEsc(co.nome)}`:''}</div></div>
+    <div class="cx-head-actions">${b?'<button class="cx-btn" id="bfMapBtn">Mapear contas</button>':''}<button class="cx-btn accent big" id="bfUpBtn">${cxSvg('down')} Subir planilha</button></div></div>`;
+  if(!b){
+    el.innerHTML = topo + `<div class="panel"><div class="cx-empty" style="padding:36px 16px;line-height:1.7;">Ainda não há Budget para esta empresa.<br>Clique em <b>Subir planilha</b> e escolha o CSV do P&amp;L (linhas à esquerda, meses nas colunas).<br><span class="rp-hint">O sistema monta Budget, Forecast e Actual lado a lado, com a variação B/(W) e %B/(W).</span></div></div>`;
+    el.querySelector('#bfUpBtn').addEventListener('click', bfUpOpen); return;
+  }
+  const ops = bfOpcoes(b); let op = ops.find(o=>o.v===bfPeriodo); if(!op){ op = ops.find(o=>o.v===CUR_MONTH) || ops[0]; bfPeriodo = op.v; }
+  const D = bfDados(b, op), unico = op.meses.length===1, parcial = op.meses.some(m=>m>CUR_MONTH), emAndamento = op.meses.includes(CUR_MONTH);
+  const temA = !!D.A;
+  const filhosDe = id=>b.rows.filter(r=>r.grupo===id);
+  const visivelItem = r=> bfZeros || Math.abs(D.B[r.id])>=0.005 || Math.abs(D.F[r.id])>=0.005 || (temA && Math.abs(D.A[r.id])>=0.005);
+  const linhaHTML = r=>{
+    const bud = D.B[r.id], fc = D.F[r.id], ac = temA ? D.A[r.id] : null, be = temA ? D.Be[r.id] : null;
+    const bw = temA ? ac - be : null, pct = (temA && Math.abs(be)>=0.005) ? bw/Math.abs(be) : null;
+    const forte = r.kind!=='item';
+    let fcCell = `<td class="num">${bfFmt(fc)}</td>`;
+    if(bfEditar && unico && r.kind==='item') fcCell = `<td class="num"><input class="cx-input bf-in" data-id="${r.id}" value="${Math.abs(fc)<0.005?'':cxSigned(fc)}" placeholder="0,00" style="width:110px;text-align:right;"></td>`;
+    const ind = r.kind==='item' ? 'padding-left:30px;' : '';
+    const abre = r.kind==='grupo' ? `<span class="bf-tg" data-g="${r.id}" style="cursor:pointer;display:inline-block;width:14px;">${bfFechados.has(r.id)?'▸':'▾'}</span>` : '';
+    return `<tr class="${r.kind==='single'?'bf-total':r.kind==='grupo'?'bf-grupo':''}" ${r.kind==='item'?`data-p="${r.grupo}"`:''}>
+      <td style="${ind}${forte?'font-weight:700;':''}">${abre}${rpEsc(r.nome)}</td>
+      <td class="num" style="${forte?'font-weight:700;':''}">${bfFmt(bud)}</td>${fcCell.replace('<td class="num">','<td class="num" style="'+(forte?'font-weight:700;':'')+'">')}
+      <td class="num" style="${forte?'font-weight:700;':''}">${temA?bfFmt(ac):'—'}</td>
+      <td class="num" style="${bw===null?'':bfCor(bw)}${forte?'font-weight:700;':''}">${bw===null?'—':bfFmt(bw)}</td>
+      <td class="num" style="${pct===null?'':bfCor(pct)}${forte?'font-weight:700;':''}">${pct===null?'—':cxPct(pct,true)}</td></tr>`;
+  };
+  const corpo = [];
+  b.rows.forEach(r=>{
+    if(r.kind==='item') return;
+    if(r.kind==='grupo'){
+      const kids = filhosDe(r.id).filter(visivelItem);
+      if(!bfZeros && !kids.length && Math.abs(D.B[r.id])<0.005 && Math.abs(D.F[r.id])<0.005 && !(temA && Math.abs(D.A[r.id])>=0.005)) return;
+      corpo.push(linhaHTML(r)); if(!bfFechados.has(r.id)) kids.forEach(k=>corpo.push(linhaHTML(k)));
+    } else corpo.push(linhaHTML(r));
+  });
+  const naoLista = Object.entries(D.nao).filter(([k,v])=>Math.abs(v)>=0.005);
+  const naoTot = naoLista.reduce((t,[k,v])=>t+v,0);
+  const aviso = naoLista.length ? `<div class="rp-bar" style="background:#fff6df;border-color:#f6e7bd;color:#6b4a00;margin:10px 0;">
+      <span><b>Atenção:</b> ${fmtCurrency(Math.abs(naoTot))} do realizado não está ligado a nenhuma linha do Budget (${naoLista.map(([k,v])=>`${rpEsc(k.split('|')[1])} ${rpEsc(contaNome(k.split('|')[1]))}: ${cxMoney(v)}`).join(' · ')}). Esses valores <b>não entram</b> no Actual abaixo.</span>
+      <button class="cx-btn" id="bfMapBtn2">Mapear contas</button></div>` : '';
+  const info = [
+    parcial ? 'O Actual considera só os meses já ocorridos; B/(W) compara com o Budget desses mesmos meses.' : '',
+    emAndamento ? `${cxMonthFull(CUR_MONTH)} está em andamento: o Actual é o realizado até hoje.` : '',
+    !temA ? 'Período ainda não iniciado: sem Actual.' : ''].filter(Boolean).join(' ');
+  el.innerHTML = topo + `
+    <div class="panel">
+      <div class="bf-bar" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+        <select class="cx-select" id="bfPer">${ops.map(o=>`<option value="${o.v}" ${o.v===op.v?'selected':''}>${rpEsc(o.label)}</option>`).join('')}</select>
+        <label style="font-size:12px;"><input type="checkbox" id="bfZ" ${bfZeros?'checked':''}> mostrar linhas zeradas</label>
+        <button class="cx-btn" id="bfTog">${b.rows.some(r=>r.kind==='grupo' && !bfFechados.has(r.id))?'Recolher grupos':'Expandir grupos'}</button>
+        ${unico?`<label style="font-size:12px;"><input type="checkbox" id="bfEd" ${bfEditar?'checked':''}> editar Forecast neste mês</label>`:''}
+        <span class="rp-hint" style="margin-left:auto;">Planilha: ${rpEsc(b.arquivo||'—')} · ${b.atualizadoEm?new Date(b.atualizadoEm).toLocaleDateString('pt-BR'):''}</span>
+      </div>
+      ${aviso}
+      <div class="cx-table-wrap"><table class="cx-table bf-tbl"><thead><tr><th>${rpEsc(op.label)}</th><th class="num">Budget</th><th class="num">Forecast</th><th class="num">Actual</th><th class="num">B/(W)</th><th class="num">%B/(W)</th></tr></thead>
+        <tbody>${corpo.join('')}</tbody></table></div>
+      <div class="rp-hint" style="margin-top:10px;line-height:1.6;">Receitas positivas, custos e despesas negativos (entre parênteses). <b>B/(W)</b> = Actual − Budget: positivo (verde) é melhor que o orçado, negativo (vermelho) é pior. <b>%B/(W)</b> = B/(W) ÷ |Budget|. ${info}</div>
+    </div>`;
+  el.querySelector('#bfUpBtn').addEventListener('click', bfUpOpen);
+  const m1 = el.querySelector('#bfMapBtn'); if(m1) m1.addEventListener('click', bfMapOpen); const m2 = el.querySelector('#bfMapBtn2'); if(m2) m2.addEventListener('click', bfMapOpen);
+  el.querySelector('#bfPer').addEventListener('change', e=>{ bfPeriodo = e.target.value; bfEditar = false; renderBudget(); });
+  el.querySelector('#bfZ').addEventListener('change', e=>{ bfZeros = e.target.checked; renderBudget(); });
+  el.querySelector('#bfTog').addEventListener('click', ()=>{ const gs = b.rows.filter(r=>r.kind==='grupo'); if(gs.some(g=>!bfFechados.has(g.id))) gs.forEach(g=>bfFechados.add(g.id)); else bfFechados.clear(); renderBudget(); });
+  el.querySelectorAll('.bf-tg').forEach(t=>t.addEventListener('click', ()=>{ bfFechados.has(t.dataset.g) ? bfFechados.delete(t.dataset.g) : bfFechados.add(t.dataset.g); renderBudget(); }));
+  const ed = el.querySelector('#bfEd'); if(ed) ed.addEventListener('change', e=>{ bfEditar = e.target.checked; renderBudget(); });
+  el.querySelectorAll('.bf-in').forEach(i=>i.addEventListener('change', ()=>{
+    if(denyIfReadOnly()) return;
+    const txt = i.value.trim(), v = txt==='' ? 0 : bfNum(txt); if(v===null){ showToast('Valor inválido.'); return; }
+    b.forecast[i.dataset.id] = b.forecast[i.dataset.id] || {}; b.forecast[i.dataset.id][op.meses[0]] = v; saveBF(); renderBudget();
+  }));
+}
+
+/* ---- janela: subir planilha ---- */
+let bfUp = null;
+function bfModal(id, titulo){
+  let d = document.getElementById(id);
+  if(!d){
+    d = document.createElement('div'); d.className = 'modal-overlay'; d.id = id;
+    d.innerHTML = `<div class="modal modal-xl"><div class="modal-header"><div class="mt-wrap"><div class="modal-title">${titulo}</div></div><button class="modal-close"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button></div><div class="modal-body"></div><div class="modal-footer split"></div></div>`;
+    document.body.appendChild(d); d.querySelector('.modal-close').addEventListener('click', ()=>d.classList.remove('open')); d.addEventListener('click', e=>{ if(e.target===d) d.classList.remove('open'); });
+  }
+  return d;
+}
+function bfUpOpen(){
+  if(denyIfReadOnly()) return;
+  bfUp = {dest:'ambos', parsed:null, arquivo:'', msg:''}; bfUpRender(); bfModal('bfUpOv','Subir planilha de Budget / Forecast').classList.add('open');
+}
+function bfUpRender(){
+  const d = document.getElementById('bfUpOv'), body = d.querySelector('.modal-body'), foot = d.querySelector('.modal-footer'), p = bfUp.parsed, emp = state.filters.empresaId, ja = BF[emp];
+  let prev = '';
+  if(p){
+    const calc = bfCalc(p.rows, p.vals, p.meses), dif = [];
+    p.rows.forEach(r=>{ if(r.kind==='item') return; p.meses.forEach(m=>{ const a = bfCalc(p.rows, p.vals, [m])[r.id], f = (p.ref[r.id]||{})[m]; if(f!==undefined && Math.abs(a-f)>0.015) dif.push(`${r.nome} (${cxMonthLabel(m)}): planilha ${cxMoney(f)} × soma das linhas ${cxMoney(a)}`); }); });
+    prev = `<div style="border:1px solid var(--border-color);border-radius:8px;padding:12px 14px;margin-top:12px;font-size:13px;line-height:1.7;">
+      <b>${rpEsc(bfUp.arquivo)}</b><br>${p.rows.filter(r=>r.kind==='item').length} linhas de detalhe em ${p.rows.filter(r=>r.kind==='grupo').length} grupos · meses: ${p.meses.map(cxMonthLabel).join(', ')}<br>
+      ${p.rows.filter(r=>r.kind==='single').map(r=>`${rpEsc(r.nome)}: ${p.meses.map(m=>cxMoney(bfCalc(p.rows,p.vals,[m])[r.id])).join(' · ')}`).join('<br>')}
+      ${dif.length ? `<div class="imp-err" style="margin-top:8px;">Os totais da planilha não batem com a soma das linhas (o sistema usa a soma das linhas):<br>${dif.slice(0,6).map(rpEsc).join('<br>')}${dif.length>6?`<br>… e mais ${dif.length-6}`:''}</div>` : '<div style="color:#0f6e45;font-weight:700;margin-top:6px;">✓ Os totais da planilha conferem com a soma das linhas.</div>'}</div>`;
+  }
+  body.innerHTML = `<div style="font-size:12.5px;color:var(--text-secondary);line-height:1.6;">Escolha o CSV do P&amp;L: primeira coluna com os nomes das linhas e uma coluna por mês (com o ano na linha de baixo do cabeçalho). Linhas em branco separam os grupos; a primeira linha de cada grupo é o total dele. Os valores são lidos aqui no navegador.</div>
+    <div class="form-grid" style="margin-top:12px;"><div class="form-field"><label>Esta planilha é o…</label><select id="bfUpDest">
+      <option value="ambos" ${bfUp.dest==='ambos'?'selected':''}>Budget e Forecast (mesmos valores; depois você ajusta o Forecast)</option>
+      <option value="budget" ${bfUp.dest==='budget'?'selected':''}>Budget</option><option value="forecast" ${bfUp.dest==='forecast'?'selected':''}>Forecast</option></select></div>
+      <div class="form-field"><label>Arquivo (.csv)</label><input type="file" id="bfUpFile" accept=".csv,.txt"></div></div>
+    ${ja?`<div class="rp-hint" style="margin-top:8px;">Já existe uma planilha carregada (${rpEsc(ja.arquivo||'')}). O mapeamento de contas é mantido para as linhas com o mesmo nome.</div>`:''}
+    ${bfUp.msg?`<div class="imp-err" style="margin-top:10px;">${rpEsc(bfUp.msg)}</div>`:''}${prev}`;
+  foot.innerHTML = `<span></span><div class="mt-btns"><button class="btn" id="bfUpCancel">Cancelar</button><button class="btn btn-dark" id="bfUpOk" ${p?'':'disabled'}>Importar</button></div>`;
+  body.querySelector('#bfUpDest').addEventListener('change', e=>{ bfUp.dest = e.target.value; });
+  body.querySelector('#bfUpFile').addEventListener('change', async e=>{
+    const f = e.target.files[0]; if(!f) return;
+    try{
+      const buf = await f.arrayBuffer(); let txt = new TextDecoder('utf-8').decode(buf); if(txt.includes('�')) txt = new TextDecoder('windows-1252').decode(buf);
+      bfUp.parsed = bfParse(txt); bfUp.arquivo = f.name; bfUp.msg = '';
+    }catch(err){ bfUp.parsed = null; bfUp.msg = 'Não consegui ler a planilha: '+err.message+'.'; }
+    bfUpRender();
+  });
+  foot.querySelector('#bfUpCancel').addEventListener('click', ()=>d.classList.remove('open'));
+  foot.querySelector('#bfUpOk').addEventListener('click', bfUpConfirm);
+}
+function bfUpConfirm(){
+  const emp = state.filters.empresaId, p = bfUp.parsed, ant = BF[emp]; if(!p) return;
+  const mesmaEstrutura = ant && ant.rows.length===p.rows.length && ant.rows.every((r,i)=>r.nome===p.rows[i].nome && r.kind===p.rows[i].kind);
+  if(ant && !mesmaEstrutura && bfUp.dest!=='ambos' && !confirm('A estrutura de linhas é diferente da planilha já carregada. Para evitar valores desalinhados, o Budget e o Forecast serão substituídos juntos. Continuar?')) return;
+  const dest = (!ant || !mesmaEstrutura) ? 'ambos' : bfUp.dest;
+  const gnome = id=>(p.rows.find(r=>r.id===id)||{}).nome || '';
+  // mapeamento: mantém o que já estava para a mesma linha (grupo|nome); senão, sugere
+  const antMapa = {}; if(ant){ ant.rows.filter(r=>r.kind==='item').forEach(r=>{ const g = (ant.rows.find(x=>x.id===r.grupo)||{}).nome||''; antMapa[bfNorm(g)+'|'+bfNorm(r.nome)] = ant.map[r.id]; }); }
+  const map = {}; p.rows.filter(r=>r.kind==='item').forEach(r=>{ r.lado = bfLado(r, gnome(r.grupo)); const k = bfNorm(gnome(r.grupo))+'|'+bfNorm(r.nome); map[r.id] = antMapa[k] || bfSugerir(r, gnome(r.grupo)); });
+  const novo = {rows:p.rows, meses:p.meses, map, arquivo:bfUp.arquivo, atualizadoEm:new Date().toISOString(), budget:{}, forecast:{}};
+  const copia = o=>JSON.parse(JSON.stringify(o));
+  if(dest==='ambos'){ novo.budget = copia(p.vals); novo.forecast = copia(p.vals); }
+  else if(dest==='budget'){ novo.budget = copia(p.vals); novo.forecast = copia(ant.forecast); }
+  else { novo.forecast = copia(p.vals); novo.budget = copia(ant.budget); }
+  BF[emp] = novo; saveBF(); bfPeriodo = ''; bfFechados.clear();
+  const ov = document.getElementById('bfUpOv'); if(ov) ov.classList.remove('open'); showToast(`Planilha importada (${dest==='ambos'?'Budget e Forecast':dest==='budget'?'Budget':'Forecast'}).`);
+  if(currentPageKey!=='budget') navigateTo('budget'); else renderBudget();
+}
+
+/* ---- janela: mapear contas ---- */
+function bfMapOpen(){
+  const emp = state.filters.empresaId, b = BF[emp]; if(!b) return;
+  const d = bfModal('bfMapOv','Mapear linhas do Budget para contas do plano'), body = d.querySelector('.modal-body'), foot = d.querySelector('.modal-footer');
+  const mes = b.meses.includes(CUR_MONTH) ? CUR_MONTH : b.meses[0], ac = bfActual(b, [mes]), A = bfCalc(b.rows, ac.leaf, [mes]);
+  const nao = Object.entries(ac.nao).filter(([k,v])=>Math.abs(v)>=0.005);
+  let g = '';
+  body.innerHTML = `<datalist id="bfContasDl">${PLANO.filter(a=>a.tipo==='A' && a.status==='Ativa').map(a=>`<option value="${a.cod}">${rpEsc(a.nome)}</option>`).join('')}</datalist>
+    <div class="rp-hint" style="line-height:1.6;margin-bottom:10px;">Cada linha do Budget recebe o realizado das contas listadas (separe os códigos por vírgula; um código de grupo, como 6.07, pega todas as contas dele). O Actual é calculado a partir dessas contas, por competência. Mostro o realizado de ${cxMonthFull(mes)} ao lado de cada linha.</div>
+    ${nao.length?`<div class="rp-bar" style="background:#fff6df;border-color:#f6e7bd;color:#6b4a00;margin-bottom:10px;"><span><b>Realizado sem linha (${cxMonthFull(mes)}):</b> ${nao.map(([k,v])=>`${rpEsc(k.split('|')[1])} ${rpEsc(contaNome(k.split('|')[1]))} ${cxMoney(v)}`).join(' · ')}</span></div>`:''}
+    <div class="cx-table-wrap" style="max-height:52vh;overflow:auto;"><table class="cx-table"><thead><tr><th>Linha do Budget</th><th>Lado</th><th>Contas do plano</th><th class="num">Realizado</th></tr></thead><tbody>${b.rows.map(r=>{
+      if(r.kind==='grupo'){ g = r.nome; return `<tr><td colspan="4" style="font-weight:700;background:#fafafb;">${rpEsc(r.nome)}</td></tr>`; }
+      if(r.kind!=='item') return '';
+      const cods = (b.map[r.id]||[]).join(', ');
+      return `<tr><td style="padding-left:24px;">${rpEsc(r.nome)}</td><td>${r.lado==='R'?'Receita':'Despesa'}</td><td><input class="cx-input bf-mp" data-id="${r.id}" list="bfContasDl" value="${rpEsc(cods)}" placeholder="ex.: 6.01.002, 6.01.015" style="width:100%;min-width:260px;"></td><td class="num">${bfFmt(A[r.id]||0)}</td></tr>`; }).join('')}</tbody></table></div>`;
+  foot.innerHTML = `<button class="btn" id="bfMpReset">Restaurar sugestão</button><div class="mt-btns"><button class="btn" id="bfMpCancel">Cancelar</button><button class="btn btn-dark" id="bfMpOk">Salvar</button></div>`;
+  foot.querySelector('#bfMpCancel').addEventListener('click', ()=>d.classList.remove('open'));
+  foot.querySelector('#bfMpReset').addEventListener('click', ()=>{ if(!confirm('Voltar todas as linhas para o mapeamento sugerido?')) return; let gn = ''; b.rows.forEach(r=>{ if(r.kind==='grupo') gn = r.nome; if(r.kind==='item') b.map[r.id] = bfSugerir(r, gn); }); saveBF(); bfMapOpen(); renderBudget(); });
+  foot.querySelector('#bfMpOk').addEventListener('click', ()=>{
+    const inval = [];
+    body.querySelectorAll('.bf-mp').forEach(i=>{ const cods = i.value.split(/[;,\s]+/).map(x=>x.trim()).filter(Boolean); cods.forEach(c=>{ if(!contaByCod(c)) inval.push(c); }); b.map[i.dataset.id] = cods.filter(c=>contaByCod(c)); });
+    saveBF(); d.classList.remove('open'); showToast(inval.length ? `Salvo. Códigos ignorados (não existem no plano): ${[...new Set(inval)].join(', ')}.` : 'Mapeamento salvo.'); renderBudget();
+  });
+  d.classList.add('open');
+}
+
 let currentPageKey = 'visao-geral';
 const PAGES = {
   'visao-geral': renderVisaoGeral,
@@ -9146,6 +9442,7 @@ const PAGES = {
   'conciliacao': renderConciliacao,
   'dre': renderDRE,
   'balanco': renderBalanco,
+  'budget': renderBudget,
   'relatorios': renderRelatorios,
   'configuracoes': renderConfiguracoes,
 };
