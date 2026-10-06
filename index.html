@@ -9364,6 +9364,9 @@ function renderBudget(){
     });
   });
 }
+/* nomes do DRE Gerencial conforme a lista do Bruno (a planilha pode ter variações de escrita) */
+const BF_NOMES_DRE = {'deducoes de vendas':'Dedução de vendas', 'deducao de vendas':'Dedução de vendas', 'receita liquida':'Receita Liquida'};
+const bfNomeDRE = nome=> BF_NOMES_DRE[bfNorm(nome)] || nome;
 /* DRE Gerencial nas linhas do modelo (planilha): Budget | Actual | Variação | % Variação, no mês escolhido */
 let dreBfAbertos = new Set();
 function bfDreHTML(b, mes){
@@ -9377,7 +9380,7 @@ function bfDreHTML(b, mes){
   const linha = r=>{
     const bud = B[r.id], ac1 = A[r.id], v = ac1-bud, pct = Math.abs(bud)>=0.005 ? v/Math.abs(bud) : null, forte = r.kind!=='item', st = forte?'font-weight:700;':'';
     const ab = r.kind==='grupo' ? `<span class="bfd-tg" data-g="${r.id}" style="cursor:pointer;display:inline-block;width:14px;">${dreBfAbertos.has(r.id)?'▾':'▸'}</span>` : '';
-    return `<tr class="${r.kind==='single'?'bf-total':r.kind==='grupo'?'bf-grupo':''}"><td style="${r.kind==='item'?'padding-left:26px;':''}${st}">${ab}${rpEsc(r.nome)}</td>
+    return `<tr class="${r.kind==='single'?'bf-total':r.kind==='grupo'?'bf-grupo':''}"><td style="${r.kind==='item'?'padding-left:26px;':''}${st}">${ab}${rpEsc(bfNomeDRE(r.nome))}</td>
       <td class="num" style="${st}">${bfFmt(bud)}</td><td class="num" style="${st}">${bfFmt(ac1)}</td>
       <td class="num" style="${bfCor(v)}${st}">${Math.abs(v)<0.005?'–':bfFmt(v)}</td><td class="num" style="${pct===null?'':bfCor(pct)}${st}">${pct===null?'—':cxPct(pct,true)}</td></tr>`;
   };
@@ -9386,7 +9389,7 @@ function bfDreHTML(b, mes){
     if(r.kind==='item') return;
     if(r.kind==='grupo'){
       const kids = rows.filter(k=>k.grupo===r.id && vis(k));
-      if(!vis(r) && !kids.length) return;
+      if(r.sint && !vis(r) && !kids.length) return; // todos os grupos do modelo aparecem, mesmo zerados
       corpo.push(linha(r)); if(dreBfAbertos.has(r.id)) kids.forEach(k=>corpo.push(linha(k)));
     } else corpo.push(linha(r));
   });
@@ -9413,7 +9416,7 @@ function bfPlDRE(pp){
     const bud = D.B[r.id], fc = D.F[r.id], ac = temA ? D.A[r.id] : null, be = temA ? D.Be[r.id] : null;
     const bw = temA ? ac-be : null, pct = (temA && Math.abs(be)>=0.005) ? bw/Math.abs(be) : null, forte = r.kind!=='item';
     const st = forte ? 'font-weight:700;' : '', ab = r.kind==='grupo' ? `<span class="bfp-tg" data-g="${r.id}" style="cursor:pointer;display:inline-block;width:14px;">${plBfAbertos.has(r.id)?'▾':'▸'}</span>` : '';
-    return `<tr class="${r.kind==='single'?'bf-total':r.kind==='grupo'?'bf-grupo':''}"><td style="${r.kind==='item'?'padding-left:26px;':''}${st}">${ab}${rpEsc(r.nome)}</td>
+    return `<tr class="${r.kind==='single'?'bf-total':r.kind==='grupo'?'bf-grupo':''}"><td style="${r.kind==='item'?'padding-left:26px;':''}${st}">${ab}${rpEsc(bfNomeDRE(r.nome))}</td>
       <td class="num" style="${st}">${bfFmt(bud)}</td><td class="num" style="${st}">${bfFmt(fc)}</td><td class="num" style="${st}">${temA?bfFmt(ac):'—'}</td>
       <td class="num" style="${bw===null?'':bfCor(bw)}${st}">${bw===null?'—':bfFmt(bw)}</td><td class="num" style="${pct===null?'':bfCor(pct)}${st}">${pct===null?'—':cxPct(pct,true)}</td></tr>`;
   };
@@ -9422,12 +9425,12 @@ function bfPlDRE(pp){
     if(r.kind==='item') return;
     if(r.kind==='grupo'){
       const kids = rows.filter(k=>k.grupo===r.id && vis(k));
-      if(!vis(r) && !kids.length) return;
+      if(r.sint && !vis(r) && !kids.length) return; // todos os grupos do modelo aparecem, mesmo zerados
       corpo.push(linha(r)); if(plBfAbertos.has(r.id)) kids.forEach(k=>corpo.push(linha(k)));
     } else corpo.push(linha(r));
   });
   rows.forEach(r=>{ const bud = D.B[r.id], ac = temA ? D.A[r.id] : null, be = temA ? D.Be[r.id] : null, bw = temA ? ac-be : null, q = x=>Math.round(x*100)/100;
-    linhas.push({Linha:(r.kind==='item'?'   ':'')+r.nome, Budget:q(bud), Forecast:q(D.F[r.id]), Actual:temA?q(ac):null, 'B/(W)':bw===null?null:q(bw), '%B/(W) (%)':(temA && Math.abs(be)>=0.005)?Math.round(bw/Math.abs(be)*1000)/10:null}); });
+    linhas.push({Linha:(r.kind==='item'?'   ':'')+bfNomeDRE(r.nome), Budget:q(bud), Forecast:q(D.F[r.id]), Actual:temA?q(ac):null, 'B/(W)':bw===null?null:q(bw), '%B/(W) (%)':(temA && Math.abs(be)>=0.005)?Math.round(bw/Math.abs(be)*1000)/10:null}); });
   const nao = Object.entries(D.nao).filter(([k,v])=>Math.abs(v)>=0.005), naoTot = nao.reduce((t,[k,v])=>t+v,0);
   const aviso = nao.length ? `<div class="rp-hint" style="background:#fff6df;border:1px solid #f6e7bd;color:#6b4a00;border-radius:6px;padding:8px 10px;margin:8px 0;">${fmtCurrency(Math.abs(naoTot))} do realizado não está ligado a nenhuma linha do Budget (${nao.slice(0,4).map(([k,v])=>`${rpEsc(contaNome(k.split('|')[1]))} ${cxMoney(v)}`).join(' · ')}${nao.length>4?' …':''}) e não entra no Actual. <a href="#" id="bfpMap">Mapear contas</a></div>` : '';
   const notas = [D.elapsed.length && D.elapsed.length<meses.length ? `B/(W) compara o Actual com o Budget dos meses já ocorridos (${D.elapsed.map(cxMonthLabel).join(', ')}).` : '', D.elapsed.includes(CUR_MONTH) ? `${cxMonthFull(CUR_MONTH)} em andamento: Actual até hoje.` : '', !temA ? 'Período ainda não iniciado: sem Actual.' : ''].filter(Boolean).join(' ');
