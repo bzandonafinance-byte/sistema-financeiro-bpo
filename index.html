@@ -1109,6 +1109,8 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .bf-cell{width:112px;text-align:right;border:1px solid transparent;background:transparent;font:inherit;font-variant-numeric:tabular-nums;padding:2px 4px;border-radius:4px;}
 .bf-cell:hover,.bf-cell:focus{border-color:var(--border-color-strong);background:#fff;}
 .bf-pl{font-size:12px;}
+.subpanel-header .bf-tt{margin-left:10px;}
+.subpanel-header .dg-note{margin-left:auto;}
 .bf-tbl tbody tr{cursor:default;}
 .bf-grupo td{background:#fafafb;}
 .bf-total td{background:#f1f2f4;border-top:1px solid var(--border-color-strong);}
@@ -9296,19 +9298,44 @@ const bfFmt = v=> (Math.abs(v)<0.005) ? '–' : cxMoney(v);
 const bfCor = v=> Math.abs(v)<0.005 ? '' : (v>0 ? 'color:#0f6e45;' : 'color:#b42318;');
 
 const bfCelula = v=>{ const n = Math.round(v*100)/100; return (n<0?'-':'') + 'R$ ' + Math.abs(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+/* estado de recolher: por tabela, "tudo recolhido" (só totais) e grupos fechados individualmente */
+const bfRec = {budget:false, forecast:false, comp:false}, bfGFech = {budget:new Set(), forecast:new Set(), comp:new Set()};
+let bfCompPer = 'total';
+function bfLinhasVisiveis(b, t){
+  const out = [];
+  b.rows.forEach((r,i)=>{
+    if(r.kind==='item'){ if(bfRec[t] || bfGFech[t].has(r.grupo)) return; }
+    out.push({r, i});
+  });
+  return out;
+}
+function bfSeta(b, r, t){ return r.kind==='grupo' && !bfRec[t] ? `<span class="bf-tg" data-t="${t}" data-g="${r.id}" style="cursor:pointer;display:inline-block;width:14px;">${bfGFech[t].has(r.id)?'▸':'▾'}</span>` : (r.kind==='grupo' ? '<span style="display:inline-block;width:14px;"></span>' : ''); }
+function bfBotaoToggle(t){ return `<button class="cx-btn bf-tt" data-t="${t}" title="${bfRec[t]?'Mostrar todas as linhas':'Mostrar só os totais'}">${bfRec[t]?'+ Expandir':'− Recolher'}</button>`; }
 /* tabela no desenho da planilha: linhas × meses + Total; Forecast com células editáveis */
 function bfTabelaHTML(b, tipo){
   const leaf = b[tipo], meses = b.meses, tot = bfCalc(b.rows, leaf, meses), pm = meses.map(m=>bfCalc(b.rows, leaf, [m])), ed = tipo==='forecast' && canEdit();
   const [y0] = meses[0].split('-'), ncol = meses.length + 2;
   let h = `<thead><tr><th></th>${meses.map(m=>`<th class="num">${DG_MONTH_NAMES[parseInt(m.slice(5),10)-1]}</th>`).join('')}<th class="num">Total</th></tr>
     <tr class="bf-ano"><th></th>${meses.map(m=>`<th class="num">${m.slice(0,4)}</th>`).join('')}<th class="num">${y0}</th></tr></thead><tbody>`;
-  b.rows.forEach((r,i)=>{
+  bfLinhasVisiveis(b, tipo).forEach(({r,i})=>{
     if(i>0 && r.kind!=='item') h += `<tr class="bf-sp"><td colspan="${ncol}"></td></tr>`;
     const forte = r.kind!=='item', cls = r.kind==='single' ? 'bf-total' : r.kind==='grupo' ? 'bf-grupo' : '';
     const cel = pm.map((x,j)=> (ed && r.kind==='item')
       ? `<td class="num"><input class="bf-cell" data-id="${r.id}" data-mes="${meses[j]}" value="${bfCelula((leaf[r.id]||{})[meses[j]]||0)}"></td>`
       : `<td class="num" style="${forte?'font-weight:700;':''}">${bfCelula(x[r.id]||0)}</td>`).join('');
-    h += `<tr class="${cls}"><td style="${r.kind==='item'?'padding-left:26px;':'font-weight:700;'}">${rpEsc(r.nome)}</td>${cel}<td class="num" style="font-weight:700;">${bfCelula(tot[r.id]||0)}</td></tr>`;
+    h += `<tr class="${cls}"><td style="${r.kind==='item'?'padding-left:26px;':'font-weight:700;'}">${bfSeta(b,r,tipo)}${rpEsc(r.nome)}</td>${cel}<td class="num" style="font-weight:700;">${bfCelula(tot[r.id]||0)}</td></tr>`;
+  });
+  return `<div class="cx-table-wrap"><table class="cx-table bf-tbl">${h}</tbody></table></div>`;
+}
+/* tabela comparativa Budget × Forecast (Variação = Forecast − Budget; positivo = melhor) */
+function bfCompHTML(b){
+  const meses = bfCompPer==='total' ? b.meses : [bfCompPer], B = bfCalc(b.rows, b.budget, meses), F = bfCalc(b.rows, b.forecast, meses);
+  let h = `<thead><tr><th></th><th class="num">Budget</th><th class="num">Forecast</th><th class="num">Variação</th><th class="num">% Variação</th></tr></thead><tbody>`;
+  bfLinhasVisiveis(b, 'comp').forEach(({r,i})=>{
+    if(i>0 && r.kind!=='item') h += `<tr class="bf-sp"><td colspan="5"></td></tr>`;
+    const forte = r.kind!=='item', cls = r.kind==='single' ? 'bf-total' : r.kind==='grupo' ? 'bf-grupo' : '', bud = B[r.id]||0, fc = F[r.id]||0, v = fc-bud, pct = Math.abs(bud)>=0.005 ? v/Math.abs(bud) : null, st = forte?'font-weight:700;':'';
+    h += `<tr class="${cls}"><td style="${r.kind==='item'?'padding-left:26px;':'font-weight:700;'}">${bfSeta(b,r,'comp')}${rpEsc(r.nome)}</td><td class="num" style="${st}">${bfCelula(bud)}</td><td class="num" style="${st}">${bfCelula(fc)}</td>
+      <td class="num" style="${bfCor(v)}${st}">${Math.abs(v)<0.005?'–':bfCelula(v)}</td><td class="num" style="${pct===null?'':bfCor(pct)}${st}">${pct===null?'—':cxPct(pct,true)}</td></tr>`;
   });
   return `<div class="cx-table-wrap"><table class="cx-table bf-tbl">${h}</tbody></table></div>`;
 }
@@ -9319,14 +9346,21 @@ function renderBudget(){
   const topo = `<div class="cx-head"><div><div class="cx-title">Budget &amp; Forecast</div><div class="cx-crumb">Demonstrativos &nbsp;/&nbsp; <b>Budget &amp; Forecast</b>${co.nome?` &nbsp;·&nbsp; ${rpEsc(co.nome)}`:''}</div></div>
     <div class="cx-head-actions">${b?'<button class="cx-btn" id="bfMapBtn">Mapear contas</button>':''}<button class="cx-btn accent big" id="bfUpBtn">${cxSvg('down')} Importar planilha</button></div></div>`;
   if(!b){
-    el.innerHTML = topo + `<div class="panel"><div class="cx-empty" style="padding:36px 16px;line-height:1.7;">Ainda não há Budget para esta empresa.<br>Clique em <b>Importar planilha</b> e escolha o CSV (linhas à esquerda, meses nas colunas).<br><span class="rp-hint">O Budget aparece aqui em cima e o Forecast logo abaixo. O comparativo Budget × Forecast × Actual fica no P&amp;L do DRE Gerencial.</span></div></div>`;
+    el.innerHTML = topo + `<div class="panel"><div class="cx-empty" style="padding:36px 16px;line-height:1.7;">Ainda não há Budget para esta empresa.<br>Clique em <b>Importar planilha</b> e escolha o CSV (linhas à esquerda, meses nas colunas).<br><span class="rp-hint">O Budget aparece aqui em cima, o Forecast logo abaixo e, no fim, a comparação Budget × Forecast. O comparativo com o Actual fica no DRE Gerencial.</span></div></div>`;
     el.querySelector('#bfUpBtn').addEventListener('click', bfUpOpen); return;
   }
+  const opsPer = [{v:'total', l:'Total do período'}].concat(b.meses.map(m=>({v:m, l:cxMonthFull(m)})));
   el.innerHTML = topo + `
-    <div class="panel"><div class="subpanel-header"><div class="subpanel-title">Budget</div><span class="dg-note">Planilha: ${rpEsc(b.arquivo||'—')}${b.atualizadoEm?' · '+new Date(b.atualizadoEm).toLocaleDateString('pt-BR'):''}</span></div>${bfTabelaHTML(b,'budget')}</div>
-    <div class="panel" style="margin-top:16px;"><div class="subpanel-header"><div class="subpanel-title">Forecast</div><span class="dg-note">${canEdit()?'Clique em uma célula para ajustar o valor':'somente leitura'}</span></div>${bfTabelaHTML(b,'forecast')}</div>`;
+    <div class="panel"><div class="subpanel-header"><div class="subpanel-title">Budget</div><span class="dg-note">Planilha: ${rpEsc(b.arquivo||'—')}${b.atualizadoEm?' · '+new Date(b.atualizadoEm).toLocaleDateString('pt-BR'):''}</span>${bfBotaoToggle('budget')}</div>${bfTabelaHTML(b,'budget')}</div>
+    <div class="panel" style="margin-top:16px;"><div class="subpanel-header"><div class="subpanel-title">Forecast</div><span class="dg-note">${canEdit()?'Clique em uma célula para ajustar o valor':'somente leitura'}</span>${bfBotaoToggle('forecast')}</div>${bfTabelaHTML(b,'forecast')}</div>
+    <div class="panel" style="margin-top:16px;"><div class="subpanel-header"><div class="subpanel-title">Comparativo Budget × Forecast</div>
+      <select class="cx-select" id="bfCompPer" style="margin-left:auto;">${opsPer.map(o=>`<option value="${o.v}" ${o.v===bfCompPer?'selected':''}>${rpEsc(o.l)}</option>`).join('')}</select>${bfBotaoToggle('comp')}</div>
+      ${bfCompHTML(b)}<div class="rp-hint" style="margin-top:8px;">Variação = Forecast − Budget: positivo (verde) significa Forecast melhor que o Budget (mais receita ou menos custo); vermelho, pior. % Variação = Variação ÷ |Budget|.</div></div>`;
   el.querySelector('#bfUpBtn').addEventListener('click', bfUpOpen);
   const m1 = el.querySelector('#bfMapBtn'); if(m1) m1.addEventListener('click', bfMapOpen);
+  el.querySelectorAll('.bf-tt').forEach(x=>x.addEventListener('click', ()=>{ const t = x.dataset.t; bfRec[t] = !bfRec[t]; if(!bfRec[t]) bfGFech[t].clear(); renderBudget(); }));
+  el.querySelectorAll('.bf-tg').forEach(x=>x.addEventListener('click', ()=>{ const t = x.dataset.t, g = x.dataset.g; bfGFech[t].has(g) ? bfGFech[t].delete(g) : bfGFech[t].add(g); renderBudget(); }));
+  const sp = el.querySelector('#bfCompPer'); if(sp) sp.addEventListener('change', e=>{ bfCompPer = e.target.value; renderBudget(); });
   el.querySelectorAll('.bf-cell').forEach(i=>{
     i.addEventListener('focus', ()=>{ i.value = i.value.replace(/^-?R\$\s*/,m=>m.startsWith('-')?'-':''); i.select(); });
     i.addEventListener('change', ()=>{
