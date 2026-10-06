@@ -8091,6 +8091,9 @@ function dgPeriod(from, to){
   const P = {}, R = {};
   pay.forEach(a=>{ if(contaEhBP(a.categoria)) return; const g=contaGrupoCod(a.categoria); P[g]=(P[g]||0)+a.valor; });
   rec.forEach(r=>{ arParts(r).emp.forEach(pt=>{ if(contaEhBP(pt.conta)) return; const g=contaGrupoCod(pt.conta); R[g]=(R[g]||0)+Math.max(0, pt.v); }); });
+  return dgFromMaps(P, R);
+}
+function dgFromMaps(P, R){
   const sp = (...gs)=>gs.reduce((t,g)=>t+(P[g]||0),0), sr = (...gs)=>gs.reduce((t,g)=>t+(R[g]||0),0);
   const receita = sr('4.01','REC-AC'), deducoes = sp('4.02'), custos = sp(...DG_CUSTOS);
   const comercial = sp('6.04'), admTotal = sp(...DG_ADM), pessoal = sp('6.01'), da = sp('6.08');
@@ -8247,6 +8250,24 @@ function renderDRE(){
   const plCur = dgPeriod(pp.cur[0], pp.cur[1]), plPre = dgPeriod(pp.pre[0], pp.pre[1]);
   const plHTML = PL_ROWS.map(r=>plRowHTML(r, plCur, plPre)).join('');
   const plBf = bfPlDRE(pp); // com Budget carregado, o P&L vira Budget | Forecast | Actual | B/(W) | %B/(W)
+  const bfB = BF[state.filters.empresaId], bfMeses = bfB ? [dgMonth].filter(m=>bfB.meses.includes(m)) : [], bud = bfMeses.length ? bfDreBudget(bfB, bfMeses) : null;
+  const dgRowCmp = (label, vB, vA, cls)=>{
+    const v = vA - vB, pc = Math.abs(vB)>=0.005 ? v/Math.abs(vB) : NaN, cor = Math.abs(v)<0.005 ? '' : bfCor(v);
+    return `<tr class="${cls}"><td class="dg-label">${label}</td><td class="dg-num ${vB<0?'neg':''}">${cxMoney(vB)}</td><td class="dg-num ${vA<0?'neg':''}">${cxMoney(vA)}</td>
+      <td class="dg-num" style="${cor}">${Math.abs(v)<0.005?'–':cxMoney(v)}</td><td class="dg-pct" style="${isFinite(pc)?bfCor(pc):''}">${isFinite(pc)?cxPct(pc,true):'—'}</td></tr>`;
+  };
+  const rowsCmp = bfB ? DG_ROWS.map(r=>{
+    const sg = r.neg ? -1 : 1, B0 = bud ? bud[r.key]*sg : 0;
+    let html = dgRowCmp(r.label, B0, cur[r.key]*sg, ['dg-row', r.style?('dg-'+r.style):''].join(' '));
+    if(r.kids) r.kids.groups.forEach(g=>{ const vA = (cur[r.kids.src][g]||0)*sg, vB = bud ? (bud[r.kids.src][g]||0)*sg : 0; if(Math.abs(vA)>0.004 || Math.abs(vB)>0.004) html += dgRowCmp(contaGrupoNome(g), vB, vA, 'dg-row dg-indent'); });
+    return html;
+  }).join('') : '';
+  const dreCmpHTML = bfB ? `<div class="panel dg-col" style="grid-column:1/-1;">
+        <div class="subpanel-header"><div class="subpanel-title">DRE Gerencial × Budget — ${cxMonthLabel(dgMonth)}</div><span class="dg-note">${bud ? 'Valores em R$' : 'Sem Budget para este mês (a planilha cobre '+bfB.meses.map(cxMonthLabel).join(', ')+')'}</span></div>
+        <table class="dg-table"><colgroup><col><col style="width:120px;"><col style="width:120px;"><col style="width:120px;"><col style="width:100px;"></colgroup>
+          <thead><tr><th>Descrição</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variação</th><th class="num">% Variação</th></tr></thead>
+          <tbody>${rowsCmp}</tbody></table>
+        <div class="rp-hint" style="margin-top:8px;">Variação = Actual − Budget: positivo (verde) é melhor que o orçado. O Budget é distribuído nas mesmas contas do Actual (por competência), para a comparação ser linha a linha.</div></div>` : '';
 
   // Receita e despesa por categoria
   const rr = dgCatRange(dgCatRecMode), dr = dgCatRange(dgCatDespMode);
@@ -8280,14 +8301,14 @@ function renderDRE(){
         </div>`).join('')}
     </div>
     <div class="dg-grid">
-      <div class="panel dg-col">
+      ${bfB ? dreCmpHTML : `      <div class="panel dg-col">
         <div class="subpanel-header"><div class="subpanel-title">DRE Gerencial — ${cxMonthLabel(dgMonth)}</div><span class="dg-note">Valores em R$</span></div>
         <table class="dg-table">
           <colgroup><col><col style="width:112px;"><col style="width:68px;"></colgroup>
           <thead><tr><th>Descrição</th><th class="num">${cxMonthLabel(dgMonth)}</th><th class="num">% RL</th></tr></thead>
           <tbody>${rowsHTML}</tbody>
         </table>
-      </div>
+      </div>`}
       ${plBf ? plBf.html : `      <div class="panel dg-col">
         <div class="pl-head">
           <div><div class="subpanel-title" style="font-size:15px;">P&amp;L (Lucros e Perdas)</div><div class="pl-sub">${pp.sub}</div></div>
@@ -9314,6 +9335,21 @@ function renderBudget(){
     });
   });
 }
+/* Budget no formato do DRE (mesmas contas/grupos do Actual): cada linha do Budget cai no grupo DRE da sua 1ª conta mapeada */
+const BF_GRUPO_DRE = {'receita bruta':'4.01','deducoes de vendas':'4.02','cmv/csp - custo mercadovia vendida / servico prestado':'5.03','despesas de vendas e logistica':'6.04','despesas com pessoal':'6.01',
+  'despesas com ocupacao':'6.02','despesas com marketing':'6.04','despesas administrativas':'6.02','telecomunicacoes (fixo, movel, internet)':'6.05','despesas financeiras':'6.10'};
+function bfDreBudget(b, meses){
+  const tot = bfCalc(b.rows, b.budget, meses), P = {}, R = {};
+  b.rows.filter(r=>r.kind==='item').forEach(r=>{
+    const v = tot[r.id]||0; if(Math.abs(v)<0.005) return;
+    const cods = b.map[r.id]||[]; let g;
+    if(cods.length){ if(contaEhBP(cods[0])) return; g = contaGrupoCod(cods[0]); }
+    else { const gr = b.rows.find(x=>x.id===r.grupo); g = BF_GRUPO_DRE[bfNorm(gr?gr.nome:'')]; }
+    if(!g) return;
+    if((r.lado||'P')==='R') R[g] = (R[g]||0) + v; else P[g] = (P[g]||0) - v;
+  });
+  return dgFromMaps(P, R);
+}
 /* P&L do DRE Gerencial: Budget | Forecast | Actual | B/(W) | %B/(W) com as linhas da planilha */
 let plBfAbertos = new Set();
 function bfPlDRE(pp){
@@ -9322,7 +9358,7 @@ function bfPlDRE(pp){
   const meses = todos.filter(m=>b.meses.includes(m));
   const tog = `<div class="pl-toggle">${['mensal','trimestral','anual'].map(k=>`<button data-mode="${k}" class="${dgPlMode===k?'active':''}">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div>`;
   const cab = `<div class="pl-head"><div><div class="subpanel-title" style="font-size:15px;">P&amp;L — Budget × Forecast × Actual</div><div class="pl-sub">${pp.sub}${meses.length && meses.length<todos.length ? ' · Budget cobre '+meses.map(cxMonthLabel).join(', ') : ''}</div></div>${tog}</div>`;
-  if(!meses.length) return {html:`<div class="panel dg-col">${cab}<div class="cx-empty" style="padding:24px;">Não há Budget para este período. A planilha cobre ${b.meses.map(cxMonthLabel).join(', ')}.</div></div>`, linhas:[]};
+  if(!meses.length) return {html:`<div class="panel dg-col" style="grid-column:1/-1;">${cab}<div class="cx-empty" style="padding:24px;">Não há Budget para este período. A planilha cobre ${b.meses.map(cxMonthLabel).join(', ')}.</div></div>`, linhas:[]};
   const D = bfDados(b, {meses}), temA = !!D.A, linhas = [];
   const vis = r=> Math.abs(D.B[r.id])>=0.005 || Math.abs(D.F[r.id])>=0.005 || (temA && Math.abs(D.A[r.id])>=0.005);
   const linha = r=>{
@@ -9347,7 +9383,7 @@ function bfPlDRE(pp){
   const nao = Object.entries(D.nao).filter(([k,v])=>Math.abs(v)>=0.005), naoTot = nao.reduce((t,[k,v])=>t+v,0);
   const aviso = nao.length ? `<div class="rp-hint" style="background:#fff6df;border:1px solid #f6e7bd;color:#6b4a00;border-radius:6px;padding:8px 10px;margin:8px 0;">${fmtCurrency(Math.abs(naoTot))} do realizado não está ligado a nenhuma linha do Budget (${nao.slice(0,4).map(([k,v])=>`${rpEsc(contaNome(k.split('|')[1]))} ${cxMoney(v)}`).join(' · ')}${nao.length>4?' …':''}) e não entra no Actual. <a href="#" id="bfpMap">Mapear contas</a></div>` : '';
   const notas = [D.elapsed.length && D.elapsed.length<meses.length ? `B/(W) compara o Actual com o Budget dos meses já ocorridos (${D.elapsed.map(cxMonthLabel).join(', ')}).` : '', D.elapsed.includes(CUR_MONTH) ? `${cxMonthFull(CUR_MONTH)} em andamento: Actual até hoje.` : '', !temA ? 'Período ainda não iniciado: sem Actual.' : ''].filter(Boolean).join(' ');
-  const html = `<div class="panel dg-col">${cab}${aviso}
+  const html = `<div class="panel dg-col" style="grid-column:1/-1;">${cab}${aviso}
     <div class="cx-table-wrap" style="overflow-x:auto;"><table class="cx-table bf-tbl bf-pl"><thead><tr><th>${rpEsc(pp.sub)}</th><th class="num">Budget</th><th class="num">Forecast</th><th class="num">Actual</th><th class="num">B/(W)</th><th class="num">%B/(W)</th></tr></thead><tbody>${corpo.join('')}</tbody></table></div>
     <div class="rp-hint" style="margin-top:8px;line-height:1.5;">Clique na seta do grupo para ver as linhas. <b>B/(W)</b> = Actual − Budget (verde: melhor que o orçado; vermelho: pior). <b>%B/(W)</b> = B/(W) ÷ |Budget|. ${notas} · <a href="#" id="bfpAbrir">${plBfAbertos.size?'Recolher tudo':'Expandir tudo'}</a></div></div>`;
   return {html, linhas, b};
@@ -9365,7 +9401,8 @@ function bfModal(id, titulo){
 }
 function bfUpOpen(){
   if(denyIfReadOnly()) return;
-  bfUp = {dest:'ambos', parsed:null, arquivo:'', msg:''}; bfUpRender(); bfModal('bfUpOv','Importar planilha de Budget / Forecast').classList.add('open');
+  bfUp = {dest:'ambos', parsed:null, arquivo:'', msg:''};
+  const ov = bfModal('bfUpOv','Importar planilha de Budget / Forecast'); bfUpRender(); ov.classList.add('open');
 }
 function bfUpRender(){
   const d = document.getElementById('bfUpOv'), body = d.querySelector('.modal-body'), foot = d.querySelector('.modal-footer'), p = bfUp.parsed, emp = state.filters.empresaId, ja = BF[emp];
