@@ -1103,7 +1103,12 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 .imp-zoom{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);white-space:nowrap;}
 .imp-zoom .btn{height:26px;padding:0 9px;} .imp-zoom b{min-width:38px;text-align:center;color:var(--text-primary);}
 .imp-tbl select[data-k=tipo]{min-width:108px;padding:0 4px;}
-.bf-tbl td,.bf-tbl th{white-space:nowrap;}
+.bf-tbl td,.bf-tbl th{white-space:nowrap;padding-top:6px !important;padding-bottom:6px !important;}
+.bf-sp td{padding:3px 0 !important;border-bottom:0 !important;background:#fff;}
+.bf-ano th{font-weight:600;color:var(--text-secondary);}
+.bf-cell{width:112px;text-align:right;border:1px solid transparent;background:transparent;font:inherit;font-variant-numeric:tabular-nums;padding:2px 4px;border-radius:4px;}
+.bf-cell:hover,.bf-cell:focus{border-color:var(--border-color-strong);background:#fff;}
+.bf-pl{font-size:12px;}
 .bf-tbl tbody tr{cursor:default;}
 .bf-grupo td{background:#fafafb;}
 .bf-total td{background:#f1f2f4;border-top:1px solid var(--border-color-strong);}
@@ -8241,6 +8246,7 @@ function renderDRE(){
   const pp = dgPlPeriods();
   const plCur = dgPeriod(pp.cur[0], pp.cur[1]), plPre = dgPeriod(pp.pre[0], pp.pre[1]);
   const plHTML = PL_ROWS.map(r=>plRowHTML(r, plCur, plPre)).join('');
+  const plBf = bfPlDRE(pp); // com Budget carregado, o P&L vira Budget | Forecast | Actual | B/(W) | %B/(W)
 
   // Receita e despesa por categoria
   const rr = dgCatRange(dgCatRecMode), dr = dgCatRange(dgCatDespMode);
@@ -8282,7 +8288,7 @@ function renderDRE(){
           <tbody>${rowsHTML}</tbody>
         </table>
       </div>
-      <div class="panel dg-col">
+      ${plBf ? plBf.html : `      <div class="panel dg-col">
         <div class="pl-head">
           <div><div class="subpanel-title" style="font-size:15px;">P&amp;L (Lucros e Perdas)</div><div class="pl-sub">${pp.sub}</div></div>
           <div class="pl-toggle">
@@ -8299,7 +8305,7 @@ function renderDRE(){
           </thead>
           <tbody>${plHTML}</tbody>
         </table>
-      </div>
+      </div>`}
       <div class="panel dg-col">
         <div class="subpanel-header"><div class="subpanel-title">Receitas, despesas e resultado</div><span class="dg-note">Por competência</span></div>
         <div class="dg-chart"><canvas id="dgChMensal"></canvas></div>
@@ -8321,10 +8327,13 @@ function renderDRE(){
   cxFitCards(el);
   el.querySelector('#dgMonth').addEventListener('change', e=>{ dgMonth=e.target.value; renderDRE(); });
   el.querySelectorAll('.pl-toggle button').forEach(b=>b.addEventListener('click', ()=>{ dgPlMode=b.dataset.mode; renderDRE(); }));
+  el.querySelectorAll('.bfp-tg').forEach(t=>t.addEventListener('click', ()=>{ plBfAbertos.has(t.dataset.g) ? plBfAbertos.delete(t.dataset.g) : plBfAbertos.add(t.dataset.g); renderDRE(); }));
+  const bfa = el.querySelector('#bfpAbrir'); if(bfa) bfa.addEventListener('click', e=>{ e.preventDefault(); if(plBfAbertos.size) plBfAbertos.clear(); else plBf.b.rows.filter(r=>r.kind==='grupo').forEach(r=>plBfAbertos.add(r.id)); renderDRE(); });
+  const bfm = el.querySelector('#bfpMap'); if(bfm) bfm.addEventListener('click', e=>{ e.preventDefault(); bfMapOpen(); });
   el.querySelector('#dgCatRecSel').addEventListener('change', e=>{ dgCatRecMode=e.target.value; renderDRE(); });
   el.querySelector('#dgCatDespSel').addEventListener('change', e=>{ dgCatDespMode=e.target.value; renderDRE(); });
   el.querySelector('#dgExport').addEventListener('click', ()=>{
-    const data = PL_ROWS.map(r=>({'Indicador':r.label, [pp.labels[0]]:Math.round(r.get(plCur)*100)/100, [pp.labels[1]]:Math.round(r.get(plPre)*100)/100, 'Variação R$':Math.round((r.get(plCur)-r.get(plPre))*100)/100}));
+    const data = plBf && plBf.linhas.length ? plBf.linhas : PL_ROWS.map(r=>({'Indicador':r.label, [pp.labels[0]]:Math.round(r.get(plCur)*100)/100, [pp.labels[1]]:Math.round(r.get(plPre)*100)/100, 'Variação R$':Math.round((r.get(plCur)-r.get(plPre))*100)/100}));
     const ws=XLSX.utils.json_to_sheet(data), wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'P&L'); XLSX.writeFile(wb, `pl_${dgPlMode}_${dgMonth}.xlsx`);
     showToast('Exportação concluída.');
   });
@@ -9154,7 +9163,6 @@ const BF_KEY = 'bpo_financeiro_budget_v1';
 const BF = (()=>{ try{ return JSON.parse(localStorage.getItem(BF_KEY)||'{}') || {}; }catch(e){ return {}; } })();
 function saveBF(){ persist(BF_KEY, BF); }
 const BF_MESES = {janeiro:1,fevereiro:2,marco:3,abril:4,maio:5,junho:6,julho:7,agosto:8,setembro:9,outubro:10,novembro:11,dezembro:12};
-let bfPeriodo = '', bfZeros = false, bfFechados = new Set(), bfEditar = false;
 
 function bfNum(t){
   const s = String(t==null?'':t).trim(); if(!s) return null;
@@ -9266,82 +9274,84 @@ function bfDados(b, op){
 const bfFmt = v=> (Math.abs(v)<0.005) ? '–' : cxMoney(v);
 const bfCor = v=> Math.abs(v)<0.005 ? '' : (v>0 ? 'color:#0f6e45;' : 'color:#b42318;');
 
+const bfCelula = v=>{ const n = Math.round(v*100)/100; return (n<0?'-':'') + 'R$ ' + Math.abs(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); };
+/* tabela no desenho da planilha: linhas × meses + Total; Forecast com células editáveis */
+function bfTabelaHTML(b, tipo){
+  const leaf = b[tipo], meses = b.meses, tot = bfCalc(b.rows, leaf, meses), pm = meses.map(m=>bfCalc(b.rows, leaf, [m])), ed = tipo==='forecast' && canEdit();
+  const [y0] = meses[0].split('-'), ncol = meses.length + 2;
+  let h = `<thead><tr><th></th>${meses.map(m=>`<th class="num">${DG_MONTH_NAMES[parseInt(m.slice(5),10)-1]}</th>`).join('')}<th class="num">Total</th></tr>
+    <tr class="bf-ano"><th></th>${meses.map(m=>`<th class="num">${m.slice(0,4)}</th>`).join('')}<th class="num">${y0}</th></tr></thead><tbody>`;
+  b.rows.forEach((r,i)=>{
+    if(i>0 && r.kind!=='item') h += `<tr class="bf-sp"><td colspan="${ncol}"></td></tr>`;
+    const forte = r.kind!=='item', cls = r.kind==='single' ? 'bf-total' : r.kind==='grupo' ? 'bf-grupo' : '';
+    const cel = pm.map((x,j)=> (ed && r.kind==='item')
+      ? `<td class="num"><input class="bf-cell" data-id="${r.id}" data-mes="${meses[j]}" value="${bfCelula((leaf[r.id]||{})[meses[j]]||0)}"></td>`
+      : `<td class="num" style="${forte?'font-weight:700;':''}">${bfCelula(x[r.id]||0)}</td>`).join('');
+    h += `<tr class="${cls}"><td style="${r.kind==='item'?'padding-left:26px;':'font-weight:700;'}">${rpEsc(r.nome)}</td>${cel}<td class="num" style="font-weight:700;">${bfCelula(tot[r.id]||0)}</td></tr>`;
+  });
+  return `<div class="cx-table-wrap"><table class="cx-table bf-tbl">${h}</tbody></table></div>`;
+}
 function renderBudget(){
   const el = document.getElementById('page-budget'), emp = state.filters.empresaId;
   if(!emp){ el.innerHTML = pageHeaderHTML('Budget & Forecast','Escolha uma empresa.'); return; }
   const co = companyById(emp) || {}, b = BF[emp];
   const topo = `<div class="cx-head"><div><div class="cx-title">Budget &amp; Forecast</div><div class="cx-crumb">Demonstrativos &nbsp;/&nbsp; <b>Budget &amp; Forecast</b>${co.nome?` &nbsp;·&nbsp; ${rpEsc(co.nome)}`:''}</div></div>
-    <div class="cx-head-actions">${b?'<button class="cx-btn" id="bfMapBtn">Mapear contas</button>':''}<button class="cx-btn accent big" id="bfUpBtn">${cxSvg('down')} Subir planilha</button></div></div>`;
+    <div class="cx-head-actions">${b?'<button class="cx-btn" id="bfMapBtn">Mapear contas</button>':''}<button class="cx-btn accent big" id="bfUpBtn">${cxSvg('down')} Importar planilha</button></div></div>`;
   if(!b){
-    el.innerHTML = topo + `<div class="panel"><div class="cx-empty" style="padding:36px 16px;line-height:1.7;">Ainda não há Budget para esta empresa.<br>Clique em <b>Subir planilha</b> e escolha o CSV do P&amp;L (linhas à esquerda, meses nas colunas).<br><span class="rp-hint">O sistema monta Budget, Forecast e Actual lado a lado, com a variação B/(W) e %B/(W).</span></div></div>`;
+    el.innerHTML = topo + `<div class="panel"><div class="cx-empty" style="padding:36px 16px;line-height:1.7;">Ainda não há Budget para esta empresa.<br>Clique em <b>Importar planilha</b> e escolha o CSV (linhas à esquerda, meses nas colunas).<br><span class="rp-hint">O Budget aparece aqui em cima e o Forecast logo abaixo. O comparativo Budget × Forecast × Actual fica no P&amp;L do DRE Gerencial.</span></div></div>`;
     el.querySelector('#bfUpBtn').addEventListener('click', bfUpOpen); return;
   }
-  const ops = bfOpcoes(b); let op = ops.find(o=>o.v===bfPeriodo); if(!op){ op = ops.find(o=>o.v===CUR_MONTH) || ops[0]; bfPeriodo = op.v; }
-  const D = bfDados(b, op), unico = op.meses.length===1, parcial = op.meses.some(m=>m>CUR_MONTH), emAndamento = op.meses.includes(CUR_MONTH);
-  const temA = !!D.A;
-  const filhosDe = id=>b.rows.filter(r=>r.grupo===id);
-  const visivelItem = r=> bfZeros || Math.abs(D.B[r.id])>=0.005 || Math.abs(D.F[r.id])>=0.005 || (temA && Math.abs(D.A[r.id])>=0.005);
-  const linhaHTML = r=>{
+  el.innerHTML = topo + `
+    <div class="panel"><div class="subpanel-header"><div class="subpanel-title">Budget</div><span class="dg-note">Planilha: ${rpEsc(b.arquivo||'—')}${b.atualizadoEm?' · '+new Date(b.atualizadoEm).toLocaleDateString('pt-BR'):''}</span></div>${bfTabelaHTML(b,'budget')}</div>
+    <div class="panel" style="margin-top:16px;"><div class="subpanel-header"><div class="subpanel-title">Forecast</div><span class="dg-note">${canEdit()?'Clique em uma célula para ajustar o valor':'somente leitura'}</span></div>${bfTabelaHTML(b,'forecast')}</div>`;
+  el.querySelector('#bfUpBtn').addEventListener('click', bfUpOpen);
+  const m1 = el.querySelector('#bfMapBtn'); if(m1) m1.addEventListener('click', bfMapOpen);
+  el.querySelectorAll('.bf-cell').forEach(i=>{
+    i.addEventListener('focus', ()=>{ i.value = i.value.replace(/^-?R\$\s*/,m=>m.startsWith('-')?'-':''); i.select(); });
+    i.addEventListener('change', ()=>{
+      const txt = i.value.trim(), v = txt==='' ? 0 : bfNum(txt); if(v===null){ showToast('Valor inválido.'); renderBudget(); return; }
+      b.forecast[i.dataset.id] = b.forecast[i.dataset.id] || {}; b.forecast[i.dataset.id][i.dataset.mes] = v; saveBF(); renderBudget();
+    });
+  });
+}
+/* P&L do DRE Gerencial: Budget | Forecast | Actual | B/(W) | %B/(W) com as linhas da planilha */
+let plBfAbertos = new Set();
+function bfPlDRE(pp){
+  const b = BF[state.filters.empresaId]; if(!b) return null;
+  const todos = []; { let [y,m] = pp.cur[0].split('-').map(Number); const [y2,m2] = pp.cur[1].split('-').map(Number); while(y<y2 || (y===y2 && m<=m2)){ todos.push(`${y}-${String(m).padStart(2,'0')}`); m++; if(m>12){ m = 1; y++; } } }
+  const meses = todos.filter(m=>b.meses.includes(m));
+  const tog = `<div class="pl-toggle">${['mensal','trimestral','anual'].map(k=>`<button data-mode="${k}" class="${dgPlMode===k?'active':''}">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div>`;
+  const cab = `<div class="pl-head"><div><div class="subpanel-title" style="font-size:15px;">P&amp;L — Budget × Forecast × Actual</div><div class="pl-sub">${pp.sub}${meses.length && meses.length<todos.length ? ' · Budget cobre '+meses.map(cxMonthLabel).join(', ') : ''}</div></div>${tog}</div>`;
+  if(!meses.length) return {html:`<div class="panel dg-col">${cab}<div class="cx-empty" style="padding:24px;">Não há Budget para este período. A planilha cobre ${b.meses.map(cxMonthLabel).join(', ')}.</div></div>`, linhas:[]};
+  const D = bfDados(b, {meses}), temA = !!D.A, linhas = [];
+  const vis = r=> Math.abs(D.B[r.id])>=0.005 || Math.abs(D.F[r.id])>=0.005 || (temA && Math.abs(D.A[r.id])>=0.005);
+  const linha = r=>{
     const bud = D.B[r.id], fc = D.F[r.id], ac = temA ? D.A[r.id] : null, be = temA ? D.Be[r.id] : null;
-    const bw = temA ? ac - be : null, pct = (temA && Math.abs(be)>=0.005) ? bw/Math.abs(be) : null;
-    const forte = r.kind!=='item';
-    let fcCell = `<td class="num">${bfFmt(fc)}</td>`;
-    if(bfEditar && unico && r.kind==='item') fcCell = `<td class="num"><input class="cx-input bf-in" data-id="${r.id}" value="${Math.abs(fc)<0.005?'':cxSigned(fc)}" placeholder="0,00" style="width:110px;text-align:right;"></td>`;
-    const ind = r.kind==='item' ? 'padding-left:30px;' : '';
-    const abre = r.kind==='grupo' ? `<span class="bf-tg" data-g="${r.id}" style="cursor:pointer;display:inline-block;width:14px;">${bfFechados.has(r.id)?'▸':'▾'}</span>` : '';
-    return `<tr class="${r.kind==='single'?'bf-total':r.kind==='grupo'?'bf-grupo':''}" ${r.kind==='item'?`data-p="${r.grupo}"`:''}>
-      <td style="${ind}${forte?'font-weight:700;':''}">${abre}${rpEsc(r.nome)}</td>
-      <td class="num" style="${forte?'font-weight:700;':''}">${bfFmt(bud)}</td>${fcCell.replace('<td class="num">','<td class="num" style="'+(forte?'font-weight:700;':'')+'">')}
-      <td class="num" style="${forte?'font-weight:700;':''}">${temA?bfFmt(ac):'—'}</td>
-      <td class="num" style="${bw===null?'':bfCor(bw)}${forte?'font-weight:700;':''}">${bw===null?'—':bfFmt(bw)}</td>
-      <td class="num" style="${pct===null?'':bfCor(pct)}${forte?'font-weight:700;':''}">${pct===null?'—':cxPct(pct,true)}</td></tr>`;
+    const bw = temA ? ac-be : null, pct = (temA && Math.abs(be)>=0.005) ? bw/Math.abs(be) : null, forte = r.kind!=='item';
+    const st = forte ? 'font-weight:700;' : '', ab = r.kind==='grupo' ? `<span class="bfp-tg" data-g="${r.id}" style="cursor:pointer;display:inline-block;width:14px;">${plBfAbertos.has(r.id)?'▾':'▸'}</span>` : '';
+    return `<tr class="${r.kind==='single'?'bf-total':r.kind==='grupo'?'bf-grupo':''}"><td style="${r.kind==='item'?'padding-left:26px;':''}${st}">${ab}${rpEsc(r.nome)}</td>
+      <td class="num" style="${st}">${bfFmt(bud)}</td><td class="num" style="${st}">${bfFmt(fc)}</td><td class="num" style="${st}">${temA?bfFmt(ac):'—'}</td>
+      <td class="num" style="${bw===null?'':bfCor(bw)}${st}">${bw===null?'—':bfFmt(bw)}</td><td class="num" style="${pct===null?'':bfCor(pct)}${st}">${pct===null?'—':cxPct(pct,true)}</td></tr>`;
   };
   const corpo = [];
   b.rows.forEach(r=>{
     if(r.kind==='item') return;
     if(r.kind==='grupo'){
-      const kids = filhosDe(r.id).filter(visivelItem);
-      if(!bfZeros && !kids.length && Math.abs(D.B[r.id])<0.005 && Math.abs(D.F[r.id])<0.005 && !(temA && Math.abs(D.A[r.id])>=0.005)) return;
-      corpo.push(linhaHTML(r)); if(!bfFechados.has(r.id)) kids.forEach(k=>corpo.push(linhaHTML(k)));
-    } else corpo.push(linhaHTML(r));
+      const kids = b.rows.filter(k=>k.grupo===r.id && vis(k));
+      if(!vis(r) && !kids.length) return;
+      corpo.push(linha(r)); if(plBfAbertos.has(r.id)) kids.forEach(k=>corpo.push(linha(k)));
+    } else corpo.push(linha(r));
   });
-  const naoLista = Object.entries(D.nao).filter(([k,v])=>Math.abs(v)>=0.005);
-  const naoTot = naoLista.reduce((t,[k,v])=>t+v,0);
-  const aviso = naoLista.length ? `<div class="rp-bar" style="background:#fff6df;border-color:#f6e7bd;color:#6b4a00;margin:10px 0;">
-      <span><b>Atenção:</b> ${fmtCurrency(Math.abs(naoTot))} do realizado não está ligado a nenhuma linha do Budget (${naoLista.map(([k,v])=>`${rpEsc(k.split('|')[1])} ${rpEsc(contaNome(k.split('|')[1]))}: ${cxMoney(v)}`).join(' · ')}). Esses valores <b>não entram</b> no Actual abaixo.</span>
-      <button class="cx-btn" id="bfMapBtn2">Mapear contas</button></div>` : '';
-  const info = [
-    parcial ? 'O Actual considera só os meses já ocorridos; B/(W) compara com o Budget desses mesmos meses.' : '',
-    emAndamento ? `${cxMonthFull(CUR_MONTH)} está em andamento: o Actual é o realizado até hoje.` : '',
-    !temA ? 'Período ainda não iniciado: sem Actual.' : ''].filter(Boolean).join(' ');
-  el.innerHTML = topo + `
-    <div class="panel">
-      <div class="bf-bar" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
-        <select class="cx-select" id="bfPer">${ops.map(o=>`<option value="${o.v}" ${o.v===op.v?'selected':''}>${rpEsc(o.label)}</option>`).join('')}</select>
-        <label style="font-size:12px;"><input type="checkbox" id="bfZ" ${bfZeros?'checked':''}> mostrar linhas zeradas</label>
-        <button class="cx-btn" id="bfTog">${b.rows.some(r=>r.kind==='grupo' && !bfFechados.has(r.id))?'Recolher grupos':'Expandir grupos'}</button>
-        ${unico?`<label style="font-size:12px;"><input type="checkbox" id="bfEd" ${bfEditar?'checked':''}> editar Forecast neste mês</label>`:''}
-        <span class="rp-hint" style="margin-left:auto;">Planilha: ${rpEsc(b.arquivo||'—')} · ${b.atualizadoEm?new Date(b.atualizadoEm).toLocaleDateString('pt-BR'):''}</span>
-      </div>
-      ${aviso}
-      <div class="cx-table-wrap"><table class="cx-table bf-tbl"><thead><tr><th>${rpEsc(op.label)}</th><th class="num">Budget</th><th class="num">Forecast</th><th class="num">Actual</th><th class="num">B/(W)</th><th class="num">%B/(W)</th></tr></thead>
-        <tbody>${corpo.join('')}</tbody></table></div>
-      <div class="rp-hint" style="margin-top:10px;line-height:1.6;">Receitas positivas, custos e despesas negativos (entre parênteses). <b>B/(W)</b> = Actual − Budget: positivo (verde) é melhor que o orçado, negativo (vermelho) é pior. <b>%B/(W)</b> = B/(W) ÷ |Budget|. ${info}</div>
-    </div>`;
-  el.querySelector('#bfUpBtn').addEventListener('click', bfUpOpen);
-  const m1 = el.querySelector('#bfMapBtn'); if(m1) m1.addEventListener('click', bfMapOpen); const m2 = el.querySelector('#bfMapBtn2'); if(m2) m2.addEventListener('click', bfMapOpen);
-  el.querySelector('#bfPer').addEventListener('change', e=>{ bfPeriodo = e.target.value; bfEditar = false; renderBudget(); });
-  el.querySelector('#bfZ').addEventListener('change', e=>{ bfZeros = e.target.checked; renderBudget(); });
-  el.querySelector('#bfTog').addEventListener('click', ()=>{ const gs = b.rows.filter(r=>r.kind==='grupo'); if(gs.some(g=>!bfFechados.has(g.id))) gs.forEach(g=>bfFechados.add(g.id)); else bfFechados.clear(); renderBudget(); });
-  el.querySelectorAll('.bf-tg').forEach(t=>t.addEventListener('click', ()=>{ bfFechados.has(t.dataset.g) ? bfFechados.delete(t.dataset.g) : bfFechados.add(t.dataset.g); renderBudget(); }));
-  const ed = el.querySelector('#bfEd'); if(ed) ed.addEventListener('change', e=>{ bfEditar = e.target.checked; renderBudget(); });
-  el.querySelectorAll('.bf-in').forEach(i=>i.addEventListener('change', ()=>{
-    if(denyIfReadOnly()) return;
-    const txt = i.value.trim(), v = txt==='' ? 0 : bfNum(txt); if(v===null){ showToast('Valor inválido.'); return; }
-    b.forecast[i.dataset.id] = b.forecast[i.dataset.id] || {}; b.forecast[i.dataset.id][op.meses[0]] = v; saveBF(); renderBudget();
-  }));
+  b.rows.forEach(r=>{ const bud = D.B[r.id], ac = temA ? D.A[r.id] : null, be = temA ? D.Be[r.id] : null, bw = temA ? ac-be : null, q = x=>Math.round(x*100)/100;
+    linhas.push({Linha:(r.kind==='item'?'   ':'')+r.nome, Budget:q(bud), Forecast:q(D.F[r.id]), Actual:temA?q(ac):null, 'B/(W)':bw===null?null:q(bw), '%B/(W) (%)':(temA && Math.abs(be)>=0.005)?Math.round(bw/Math.abs(be)*1000)/10:null}); });
+  const nao = Object.entries(D.nao).filter(([k,v])=>Math.abs(v)>=0.005), naoTot = nao.reduce((t,[k,v])=>t+v,0);
+  const aviso = nao.length ? `<div class="rp-hint" style="background:#fff6df;border:1px solid #f6e7bd;color:#6b4a00;border-radius:6px;padding:8px 10px;margin:8px 0;">${fmtCurrency(Math.abs(naoTot))} do realizado não está ligado a nenhuma linha do Budget (${nao.slice(0,4).map(([k,v])=>`${rpEsc(contaNome(k.split('|')[1]))} ${cxMoney(v)}`).join(' · ')}${nao.length>4?' …':''}) e não entra no Actual. <a href="#" id="bfpMap">Mapear contas</a></div>` : '';
+  const notas = [D.elapsed.length && D.elapsed.length<meses.length ? `B/(W) compara o Actual com o Budget dos meses já ocorridos (${D.elapsed.map(cxMonthLabel).join(', ')}).` : '', D.elapsed.includes(CUR_MONTH) ? `${cxMonthFull(CUR_MONTH)} em andamento: Actual até hoje.` : '', !temA ? 'Período ainda não iniciado: sem Actual.' : ''].filter(Boolean).join(' ');
+  const html = `<div class="panel dg-col">${cab}${aviso}
+    <div class="cx-table-wrap" style="overflow-x:auto;"><table class="cx-table bf-tbl bf-pl"><thead><tr><th>${rpEsc(pp.sub)}</th><th class="num">Budget</th><th class="num">Forecast</th><th class="num">Actual</th><th class="num">B/(W)</th><th class="num">%B/(W)</th></tr></thead><tbody>${corpo.join('')}</tbody></table></div>
+    <div class="rp-hint" style="margin-top:8px;line-height:1.5;">Clique na seta do grupo para ver as linhas. <b>B/(W)</b> = Actual − Budget (verde: melhor que o orçado; vermelho: pior). <b>%B/(W)</b> = B/(W) ÷ |Budget|. ${notas} · <a href="#" id="bfpAbrir">${plBfAbertos.size?'Recolher tudo':'Expandir tudo'}</a></div></div>`;
+  return {html, linhas, b};
 }
-
 /* ---- janela: subir planilha ---- */
 let bfUp = null;
 function bfModal(id, titulo){
@@ -9355,7 +9365,7 @@ function bfModal(id, titulo){
 }
 function bfUpOpen(){
   if(denyIfReadOnly()) return;
-  bfUp = {dest:'ambos', parsed:null, arquivo:'', msg:''}; bfUpRender(); bfModal('bfUpOv','Subir planilha de Budget / Forecast').classList.add('open');
+  bfUp = {dest:'ambos', parsed:null, arquivo:'', msg:''}; bfUpRender(); bfModal('bfUpOv','Importar planilha de Budget / Forecast').classList.add('open');
 }
 function bfUpRender(){
   const d = document.getElementById('bfUpOv'), body = d.querySelector('.modal-body'), foot = d.querySelector('.modal-footer'), p = bfUp.parsed, emp = state.filters.empresaId, ja = BF[emp];
@@ -9402,7 +9412,7 @@ function bfUpConfirm(){
   if(dest==='ambos'){ novo.budget = copia(p.vals); novo.forecast = copia(p.vals); }
   else if(dest==='budget'){ novo.budget = copia(p.vals); novo.forecast = copia(ant.forecast); }
   else { novo.forecast = copia(p.vals); novo.budget = copia(ant.budget); }
-  BF[emp] = novo; saveBF(); bfPeriodo = ''; bfFechados.clear();
+  BF[emp] = novo; saveBF(); plBfAbertos.clear();
   const ov = document.getElementById('bfUpOv'); if(ov) ov.classList.remove('open'); showToast(`Planilha importada (${dest==='ambos'?'Budget e Forecast':dest==='budget'?'Budget':'Forecast'}).`);
   if(currentPageKey!=='budget') navigateTo('budget'); else renderBudget();
 }
