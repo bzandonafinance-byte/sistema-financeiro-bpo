@@ -5701,12 +5701,17 @@ function rpIncPlain(d, msg){
    o que já foi recebido do inquilino, o que foi lançado e pago como repasse e o saldo.
    ================================================================ */
 let extSel = '';
+const EXT_ALIAS_KEY = 'bpo_financeiro_ext_alias_v1';
+const EXT_ALIAS = (()=>{ try{ return JSON.parse(localStorage.getItem(EXT_ALIAS_KEY)||'{}') || {}; }catch(e){ return {}; } })();
+function saveExtAlias(){ persist(EXT_ALIAS_KEY, EXT_ALIAS); }
+/* Une beneficiários que são a mesma parte com nomes diferentes (ex.: "Seguradora" no Imobzi = "Porto Seguro..." no fornecedor) */
+function extNome(emp, n){ const al = (EXT_ALIAS[emp]||{})[extKey(n)]; return al || n; }
 function extKey(n){ return String(n||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\s+/g,' ').trim(); }
 const EXT_OK = ['Pago/Recebido','Aguardando conciliação','Conciliado'];
 function rpExtData(){
   const emp = state.filters.empresaId, company = companyById(emp), today = fmtDateISO(TODAY);
   const map = {}, r2 = x=>Math.round(x*100)/100;
-  const get = n=>{ const k = extKey(n)||'~'; return map[k] = map[k] || {nome:(n||'').trim()||'(sem beneficiário informado)', faturas:[], repasses:[]}; };
+  const get = n0=>{ const n = extNome(emp, n0), k = extKey(n)||'~'; return map[k] = map[k] || {nome:(n||'').trim()||'(sem beneficiário informado)', faturas:[], repasses:[]}; };
   RECEIVABLES.filter(r=>(!emp||r.empresaId===emp) && r.status!=='cancelado').forEach(r=>{
     const contrato = (/^Contrato (\d+)/.exec(r.documento||'')||[])[1] || (r.documento||'—');
     arParts(r).terc.forEach(p=>get(p.b).faturas.push({id:r.id, venc:r.vencimento, contrato, inquilino:(clientById(r.clienteId)||{}).nome||'—', tipo:p.t, valorFatura:r.valor, devido:p.v, recebida:EXT_OK.includes(lancStatusDisplay(r.status))}));
@@ -5727,6 +5732,14 @@ function rpExtData(){
   const mon = ['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
   return {company, nome:(company?company.nome:'TODAS AS EMPRESAS').toUpperCase(), today, dateBR:fmtDateBR(today), dateLabel:`${String(TODAY.getDate()).padStart(2,'0')} ${mon[TODAY.getMonth()]} ${TODAY.getFullYear()}`, lista, tot};
 }
+function extAliasBarHTML(d){
+  const emp = state.filters.empresaId, al = EXT_ALIAS[emp]||{}, nomes = d.lista.map(x=>x.nome);
+  const lista = Object.entries(al).map(([de,para])=>`<span class="imp-tag">${rpEsc(de)} → ${rpEsc(para)} <a href="#" data-alias-del="${rpEsc(de)}" style="margin-left:6px;">desfazer</a></span>`).join(' ');
+  return `<div class="rp-hint no-print" style="margin:4px 0 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">Mesma parte com dois nomes? Unir:
+    <select class="cx-select" id="extAliasDe">${nomes.map(n=>`<option>${rpEsc(n)}</option>`).join('')}</select> dentro de
+    <select class="cx-select" id="extAliasPara">${nomes.map(n=>`<option>${rpEsc(n)}</option>`).join('')}</select>
+    <button class="cx-btn" id="extAliasBtn">Unir</button> ${lista}</div>`;
+}
 function extSelObj(d){ return extSel ? d.lista.find(o=>extKey(o.nome)===extSel) : null; }
 const extMoney = v=> v ? fmtCurrency(v) : '—';
 function rpExtPreviewHTML(d){
@@ -5739,6 +5752,7 @@ function rpExtPreviewHTML(d){
   if(!o){
     return `<div class="rp-paper rp-wide">${head}
       <div class="cx-filters" style="padding:10px 0;border:0;">${opts}</div>
+      ${extAliasBarHTML(d)}
       <div class="rp-sum"><div><span>DEVIDO (FATURAS)</span><b>${fmtCurrency(d.tot.devido)}</b><em>partes de terceiros nas faturas</em></div>
         <div><span>REPASSES PAGOS</span><b>${fmtCurrency(d.tot.pago)}</b><em>${d.tot.lancado?`de ${fmtCurrency(d.tot.lancado)} lançados`:'nada lançado'}</em></div>
         <div><span>A PAGAR EM ABERTO</span><b>${fmtCurrency(d.tot.aberto)}</b><em>vencido ${fmtCurrency(d.tot.vencido)} · confere com o Balanço</em></div></div>
@@ -6020,6 +6034,14 @@ function renderRelatorios(){
   const fc = el.querySelector('#incCat'); if(fc) fc.addEventListener('change', e=>{ incCat = e.target.value; renderRelatorios(); });
   imobziBarWire(el);
   const es = el.querySelector('#extSel'); if(es) es.addEventListener('change', e=>{ extSel = e.target.value; renderRelatorios(); });
+  const eab = el.querySelector('#extAliasBtn');
+  if(eab) eab.addEventListener('click', ()=>{
+    if(denyIfReadOnly()) return;
+    const de = el.querySelector('#extAliasDe').value, para = el.querySelector('#extAliasPara').value, emp = state.filters.empresaId;
+    if(!de || !para || extKey(de)===extKey(para)){ showToast('Escolha dois beneficiários diferentes.'); return; }
+    (EXT_ALIAS[emp] = EXT_ALIAS[emp] || {})[extKey(de)] = para; saveExtAlias(); extSel = ''; showToast(`"${de}" agora conta junto com "${para}".`); renderRelatorios();
+  });
+  el.querySelectorAll('[data-alias-del]').forEach(a=>a.addEventListener('click', e=>{ e.preventDefault(); const emp = state.filters.empresaId; if(EXT_ALIAS[emp]){ delete EXT_ALIAS[emp][a.dataset.aliasDel]; saveExtAlias(); renderRelatorios(); } }));
   el.querySelectorAll('.ext-row').forEach(r=>r.addEventListener('click', ()=>{ extSel = r.dataset.k; renderRelatorios(); window.scrollTo(0,0); }));
 }
 
