@@ -2002,11 +2002,51 @@ function planoIdx(){ if(!_planoIdx){ _planoIdx = new Map(); CONTAS_AC.concat(PLA
 function planoInvalidate(){ _planoIdx = null; }
 function contaByCod(c){ return planoIdx().get(c); }
 function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
-function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : `${a.cod} · ${a.nome}`; }
+function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
+
+/* ---------- Contas de lançamento: lista reduzida conforme o Budget/Forecast, mostrada só pelo nome ---------- */
+const LANC_REPASSE_NOME = 'Repasses a terceiros';
+/* linhas do Budget ainda sem conta mapeada que precisam existir no lançamento (aporte de sócios segue a conta já usada) */
+const LANC_PADRAO = {'aporte capital socios':'2.01.05.006', 'pagamento - aporte capital socios':'2.01.05.006'};
+let _lancCache = {emp:null, b:null, map:null, n:0, M:null};
+function lancModelo(emp){
+  const b = BF[emp]; if(!b || !b.rows || !b.rows.length) return null;
+  if(_lancCache.emp===emp && _lancCache.b===b && _lancCache.map===b.map && _lancCache.n===PLANO.length) return _lancCache.M;
+  const gnome = {}; b.rows.filter(r=>r.kind==='grupo').forEach(r=>{ gnome[r.id] = r.nome; });
+  const analit = pre=>PLANO.filter(a=>contaAtiva(a) && (a.cod===pre || a.cod.startsWith(pre+'.')));
+  const itens = [], idx = new Map(), marca = (cod, x, exato)=>{ const o = idx.get(cod); if(!o || (exato && !o.exato)) idx.set(cod, {nome:x.nome, lado:x.lado, exato, conflito:false}); else if(o.nome!==x.nome && o.exato===exato) o.conflito = true; };
+  const its = b.rows.filter(r=>r.kind==='item' && !r.sint).map(r=>{
+    const cods = (b.map[r.id]||[]).slice(); if(!cods.length && LANC_PADRAO[bfNorm(r.nome)]) cods.push(LANC_PADRAO[bfNorm(r.nome)]);
+    const diretas = cods.filter(c=>{ const a = contaByCod(c); return a && contaAtiva(a); }), todas = [];
+    cods.forEach(c=>analit(c).forEach(a=>{ if(!todas.includes(a.cod)) todas.push(a.cod); }));
+    return todas.length ? {id:r.id, nome:bfNomeDRE(r.nome), lado:(r.lado||'P'), grupo:bfNomeDRE(gnome[r.grupo]||''), primary:diretas[0]||todas[0], todas, diretas} : null;
+  }).filter(Boolean);
+  its.forEach(x=>x.todas.forEach(c=>{ if(!x.diretas.includes(c)) marca(c, x, false); }));
+  its.forEach(x=>x.diretas.forEach(c=>marca(c, x, true)));
+  its.forEach(x=>itens.push(x));
+  const M = {itens, idx}; _lancCache = {emp, b, map:b.map, n:PLANO.length, M}; return M;
+}
+function lancNome(c){
+  if(c===CONTA_REPASSE) return LANC_REPASSE_NOME;
+  try{ const M = lancModelo(state.filters.empresaId), x = M && M.idx.get(c); return (x && !x.conflito) ? x.nome : ''; }catch(e){ return ''; }
+}
+/* contas oferecidas no lançamento manual: as linhas do Budget/Forecast (só o nome), repasses e "A classificar"; sem Budget carregado, a lista completa */
+function lancLista(tipo, atual){
+  const cheia = tipo==='pagar' ? contasPagar() : contasReceber(); let M = null;
+  try{ M = lancModelo(state.filters.empresaId); }catch(e){}
+  if(!M) return cheia;
+  const lado = tipo==='pagar' ? 'P' : 'R', out = [cheia[0], {cod:CONTA_REPASSE, nome:LANC_REPASSE_NOME, dem:'BP', _g:'Valores de terceiros'}], vistos = new Set([cheia[0].cod, CONTA_REPASSE]);
+  M.itens.filter(i=>i.lado===lado).forEach(i=>{
+    if(vistos.has(i.primary)) return; vistos.add(i.primary);
+    const a = contaByCod(i.primary); out.push(Object.assign({}, a, {_n:i.nome, _g:i.grupo}));
+  });
+  if(atual && !vistos.has(atual)){ const a = contaByCod(atual); if(a) out.push(a); }
+  return out;
+}
 
 /* Composição da fatura: cada item tem um destino. Itens "de terceiros" não são receita (ficam no Balanço, em Valores de Terceiros a Repassar). */
 const INV_TIPOS = {
@@ -2045,7 +2085,7 @@ function contaServe(cod, tipo){
 function contaEhBP(cod){ const a = contaByCod(cod); return !!a && a.dem==='BP'; }
 function catsPagar(){ return contasPagar().map(a=>a.cod); }
 function catsReceber(){ return contasReceber().map(a=>a.cod); }
-function contaOptionsHTML(list, sel){ return list.map(a=>`<option value="${a.cod}" data-g="${a.sistema?'':(a.dem==='BP' ? 'Balanço · '+(a.sub||a.grupo) : contaGrupoNome(a.cod))}" ${a.cod===sel?'selected':''}>${a.sistema?'A classificar':a.cod+' · '+a.nome}</option>`).join(''); }
+function contaOptionsHTML(list, sel){ return list.map(a=>{ const nome = a.sistema ? 'A classificar' : (a._n || lancNome(a.cod) || a.nome), g = a.sistema ? '' : (a._g || (a.dem==='BP' ? 'Balanço · '+(a.sub||a.grupo) : contaGrupoNome(a.cod))); return `<option value="${a.cod}" data-g="${g}" ${a.cod===sel?'selected':''}>${nome}</option>`; }).join(''); }
 // migra categorias antigas (nomes) para códigos do plano; o que não for reconhecido vira "A classificar"
 const CONTA_LEGACY = {
   'Pessoal - Salários e Encargos':'6.01.001','Pessoal - Benefícios':'6.01.020','Ocupação - Aluguel e Condomínio':'6.02.001','Utilidades - Energia Elétrica':'6.02.004',
@@ -3183,7 +3223,7 @@ function renderFilterOptions(){
   fSel.value = state.filters.fornecedorId;
 
   const catSel = document.getElementById('filterCategoria');
-  catSel.innerHTML = `<option value="">Todas</option>` + catsPagar().map(c=>`<option value="${c}">${c}</option>`).join('');
+  catSel.innerHTML = `<option value="">Todas</option>` + catsPagar().map(c=>`<option value="${c}">${contaLabel(c)}</option>`).join('');
   catSel.value = state.filters.categoria;
 
   const ccSel = document.getElementById('filterCentroCusto');
@@ -3408,7 +3448,7 @@ function clientsDaEmpresa(){ const emp=state.filters.empresaId; return CLIENTS.f
 function populateFormSelects(){
   document.getElementById('fEmpresa').innerHTML = COMPANIES.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
   document.getElementById('fFornecedor').innerHTML = suppliersDaEmpresa().sort((a,b)=>a.nome.localeCompare(b.nome)).map(s=>`<option value="${s.id}">${s.nome}</option>`).join('');
-  document.getElementById('fCategoria').innerHTML = contaOptionsHTML(contasPagar());
+  document.getElementById('fCategoria').innerHTML = contaOptionsHTML(lancLista('pagar'));
   document.getElementById('fCentroCusto').innerHTML = COST_CENTERS.map(c=>`<option value="${c}">${c}</option>`).join('');
   document.getElementById('fContaBancaria').innerHTML = BANK_ACCOUNTS.map(c=>`<option value="${c}">${c}</option>`).join('');
   document.getElementById('fFormaPagamento').innerHTML = PAYMENT_METHODS.map(c=>`<option value="${c}">${c}</option>`).join('');
@@ -3530,7 +3570,7 @@ function refreshCatIcon(selId, icoId){ const sel=document.getElementById(selId);
 function refreshCatIcons(){ refreshCatIcon('fCategoria','fCatIco'); refreshCatIcon('rCategoria','rCatIco'); }
 function ensureOption(selId, value){
   const sel=document.getElementById(selId);
-  if(value && ![...sel.options].some(o=>o.value===value)) sel.insertAdjacentHTML('beforeend', `<option value="${value}">${value}</option>`);
+  if(value && ![...sel.options].some(o=>o.value===value)) sel.insertAdjacentHTML('beforeend', `<option value="${value}">${contaLabel(value)}</option>`);
 }
 let lancAgainPref = false;
 setTimeout(()=>{ makeContaPicker('fCategoria'); makeContaPicker('rCategoria'); }, 0);
@@ -4405,7 +4445,7 @@ function openRecModal(mode, id){
   const footer=document.getElementById('recModalFooter');
   document.getElementById('rEmpresa').innerHTML = COMPANIES.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
   document.getElementById('rCliente').innerHTML = clientsDaEmpresa().sort((a,b)=>a.nome.localeCompare(b.nome)).map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
-  document.getElementById('rCategoria').innerHTML = contaOptionsHTML(contasReceber());
+  document.getElementById('rCategoria').innerHTML = contaOptionsHTML(lancLista('receber'));
   document.getElementById('rCentroCusto').innerHTML = COST_CENTERS.map(c=>`<option>${c}</option>`).join('');
   document.getElementById('rContaBancaria').innerHTML = BANK_ACCOUNTS.map(c=>`<option>${c}</option>`).join('');
   document.getElementById('rFormaRecebimento').innerHTML = RECEIVE_METHODS.map(c=>`<option>${c}</option>`).join('');
@@ -6526,7 +6566,7 @@ function openSupplierModal(id){
   supplierEditingId = id;
   document.getElementById('supplierModalTitle').textContent = id ? 'Editar Fornecedor' : 'Novo Fornecedor';
   document.getElementById('spEmpresa').innerHTML = COMPANIES.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
-  document.getElementById('spCategoria').innerHTML = contaOptionsHTML(contasPagar());
+  document.getElementById('spCategoria').innerHTML = contaOptionsHTML(lancLista('pagar'));
   document.getElementById('spCentroCusto').innerHTML = COST_CENTERS.map(c=>`<option>${c}</option>`).join('');
   document.getElementById('spFormaPagamento').innerHTML = PAYMENT_METHODS.map(c=>`<option>${c}</option>`).join('');
   populatePlanoContasSelect(document.getElementById('spPlanoContas'));
@@ -6625,7 +6665,7 @@ function openClientModal(id){
   clientEditingId = id;
   document.getElementById('clientModalTitle').textContent = id ? 'Editar Cliente' : 'Novo Cliente';
   document.getElementById('clEmpresa').innerHTML = COMPANIES.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('');
-  document.getElementById('clCategoria').innerHTML = contaOptionsHTML(contasReceber());
+  document.getElementById('clCategoria').innerHTML = contaOptionsHTML(lancLista('receber'));
   document.getElementById('clCentroCusto').innerHTML = COST_CENTERS.map(c=>`<option>${c}</option>`).join('');
   populatePlanoContasSelect(document.getElementById('clPlanoContas'));
   if(id){
@@ -6823,7 +6863,7 @@ function pcSave(){
 function makeContaPicker(selId){
   const sel = document.getElementById(selId); if(!sel || sel._cp) return; sel._cp = true;
   const wrap = document.createElement('div'); wrap.className = 'cp';
-  const input = document.createElement('input'); input.type='text'; input.className='cp-input'; input.placeholder='Buscar por código ou nome...'; input.autocomplete='off';
+  const input = document.createElement('input'); input.type='text'; input.className='cp-input'; input.placeholder='Buscar pelo nome da conta...'; input.autocomplete='off';
   const list = document.createElement('div'); list.className='cp-list';
   wrap.appendChild(input); wrap.appendChild(list); sel.parentNode.insertBefore(wrap, sel); sel.style.display='none';
   const cur = ()=>{ const o = sel.options[sel.selectedIndex]; return o ? o.text : ''; };
@@ -7012,7 +7052,7 @@ function openQuickPartyModal(mode, callback){
   quickPartyMode = mode;
   quickPartyCallback = callback;
   document.getElementById('quickPartyModalTitle').textContent = mode==='fornecedor' ? 'Cadastrar novo fornecedor' : 'Cadastrar novo cliente';
-  document.getElementById('qpCategoria').innerHTML = contaOptionsHTML(mode==='fornecedor' ? contasPagar() : contasReceber());
+  document.getElementById('qpCategoria').innerHTML = contaOptionsHTML(mode==='fornecedor' ? lancLista('pagar') : lancLista('receber'));
   document.getElementById('qpCentroCusto').innerHTML = COST_CENTERS.map(c=>`<option>${c}</option>`).join('');
   document.getElementById('qpNome').value=''; document.getElementById('qpCnpj').value='';
   document.getElementById('quickPartyModalOverlay').classList.add('open');
@@ -7595,7 +7635,7 @@ function cxOpenBatchEdit(kind, selRows){
   const keep = '<option value="">— manter —</option>';
   d.querySelector('#cxBatchTitle').textContent = `Editar em lote — ${K.title}`;
   d.querySelector('#cxBatchInfo').textContent = `${selRows.length} conta(s) selecionada(s). Preencha só o que deseja alterar; o restante permanece como está.`;
-  d.querySelector('#cxbCat').innerHTML = keep + contaOptionsHTML(kind==='pagar'?contasPagar():contasReceber());
+  d.querySelector('#cxbCat').innerHTML = keep + contaOptionsHTML(kind==='pagar'?lancLista('pagar'):lancLista('receber'));
   d.querySelector('#cxbCC').innerHTML = keep + COST_CENTERS.map(c=>`<option>${c}</option>`).join('');
   d.querySelector('#cxbForma').innerHTML = keep + K.methods().map(c=>`<option>${c}</option>`).join('');
   d.querySelector('#cxbFormaLabel').textContent = K.methodLabel;
@@ -7950,12 +7990,12 @@ function impStep2(obs){
   });
   const fillConta = sel=>{
     if(sel.dataset.full) return; const r = impRows[+sel.closest('tr').dataset.i];
-    sel.innerHTML = contaOptionsHTML(r.tipo==='pagar' ? contasPagar() : contasReceber(), r.conta); sel.value = r.conta; sel.dataset.full = '1';
+    sel.innerHTML = contaOptionsHTML(r.tipo==='pagar' ? lancLista('pagar', r.conta) : lancLista('receber', r.conta), r.conta); sel.value = r.conta; sel.dataset.full = '1';
   };
   tb.addEventListener('mousedown', e=>{ if(e.target.matches('.imp-conta')) fillConta(e.target); });
   tb.addEventListener('focusin', e=>{ if(e.target.matches('.imp-conta')) fillConta(e.target); });
   const bulk = body.querySelector('#impBulkConta');
-  bulk.innerHTML = `<option value="">— conta contábil (não alterar) —</option>` + contaOptionsHTML(contasPagar().concat(contasReceber()));
+  bulk.innerHTML = `<option value="">— conta contábil (não alterar) —</option>` + contaOptionsHTML(lancLista('pagar').concat(lancLista('receber').filter(a=>!lancLista('pagar').some(x=>x.cod===a.cod))));
   makeContaPicker('impBulkConta'); bulk.value = ''; bulk._cpRefresh();
   body.querySelector('#impBulkApply').addEventListener('click', ()=>{
     const conta = bulk.value, cc = body.querySelector('#impBulkCC').value, msg = body.querySelector('#impBulkMsg');
@@ -9281,15 +9321,23 @@ function bcOpen(id){
     outra:(s && s.outra) || bcOutraConta(tx), tf:(s && s.tf) ? s.tf.id : '', motivo:'Pessoal — fora do sistema'};
   bcModalRender(); document.getElementById('bcOverlay').classList.add('open');
 }
+function bcContaLista(debito){
+  let M = null; try{ M = lancModelo(state.filters.empresaId); }catch(e){}
+  if(!M) return debito ? contasPagar() : contasReceber().concat(PLANO.filter(a=>contaAtiva(a) && bcContaDespesa(a.cod))); // sem Budget: lista completa como antes
+  const usa = lancLista(debito?'pagar':'receber'), outra = lancLista(debito?'receber':'pagar');
+  return usa.concat(debito ? [] : outra.filter(a=>!usa.some(x=>x.cod===a.cod)));
+}
 function bcContaOpts(debito){
-  const list = debito ? contasPagar() : contasReceber().concat(PLANO.filter(a=>contaAtiva(a) && bcContaDespesa(a.cod)));
-  return `<datalist id="bcContasDl">${list.map(a=>`<option value="${rpEsc(a.sistema?'A classificar':a.cod+' · '+a.nome)}"></option>`).join('')}</datalist>`;
+  const list = bcContaLista(debito);
+  return `<datalist id="bcContasDl">${list.map(a=>`<option value="${rpEsc(a.sistema?'A classificar':(a._n||lancNome(a.cod)||a.nome))}"></option>`).join('')}</datalist>`;
 }
 function bcContaFromText(txt, debito){
   const t = String(txt||'').trim(); if(!t) return '';
   const m = t.match(/^([\d.]+|PAG-AC|REC-AC)\b/i); if(m && contaByCod(m[1])) return m[1];
   if(/classificar/i.test(t)) return debito ? 'PAG-AC' : 'REC-AC';
-  const n = cxNormalizeText(t), a = (debito?contasPagar():contasReceber()).find(x=>cxNormalizeText(x.nome)===n); return a ? a.cod : '';
+  const n = cxNormalizeText(t), nm = x=>cxNormalizeText(x._n||lancNome(x.cod)||x.nome);
+  const a = bcContaLista(debito).find(x=>nm(x)===n) || bcContaLista(!debito).find(x=>nm(x)===n) || contasPagar().concat(contasReceber()).find(x=>nm(x)===n);
+  return a ? a.cod : '';
 }
 function bcModalRender(){
   const tx = BANKTX.find(t=>t.id===bcM.id); if(!tx) return;
