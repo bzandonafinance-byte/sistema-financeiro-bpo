@@ -8594,6 +8594,7 @@ function bsOpenManual(){
 const BANKTX_KEY = 'bpo_financeiro_bank_tx_v1', BANKRULES_KEY = 'bpo_financeiro_bank_rules_v1';
 const BANKTX = loadOrSeedArray(BANKTX_KEY, ()=>[]);
 const BANKRULES = loadOrSeedArray(BANKRULES_KEY, ()=>[]);
+(function(){ let m = false; BANKTX.forEach(t=>{ if(t.status==='conciliado' && t.conciliadoEm===undefined){ t.conciliadoEm = ''; m = true; } }); if(m){ try{ persist(BANKTX_KEY, BANKTX); }catch(e){} } })();
 function saveBankTx(){ persist(BANKTX_KEY, BANKTX); }
 function saveBankRules(){ persist(BANKRULES_KEY, BANKRULES); }
 function saveBankAccounts(){ persist('bpo_financeiro_bank_accounts_v1', BANK_ACCOUNTS); }
@@ -8769,7 +8770,25 @@ function bcSugestao(tx){
 }
 
 /* ---------- gravar / desfazer vínculos ---------- */
-function bcSaveAll(){ saveAccounts(state.accounts); saveReceivables(); saveBankTx(); saveTransfers(); }
+/* registra quando e por quem cada linha foi conciliada (o que já estava conciliado antes fica sem horário) */
+function bcCarimbar(){
+  const agora = new Date().toISOString(), u = (typeof currentUser==='function' && currentUser()) || {};
+  BANKTX.forEach(t=>{
+    if(t.status==='conciliado'){ if(t.conciliadoEm===undefined){ t.conciliadoEm = agora; t.conciliadoPor = u.nome || ''; } }
+    else if(t.conciliadoEm!==undefined){ delete t.conciliadoEm; delete t.conciliadoPor; }
+  });
+}
+function bcSaveAll(){ bcCarimbar(); saveAccounts(state.accounts); saveReceivables(); saveBankTx(); saveTransfers(); }
+/* resumo por conta: até onde o extrato vai, até onde está conciliado e quando foi a última ação */
+function bcResumoConta(emp, conta){
+  const l = BANKTX.filter(t=>t.empresaId===emp && t.conta===conta), conc = l.filter(t=>t.status==='conciliado');
+  const comHora = conc.filter(t=>t.conciliadoEm).sort((a,b)=>a.conciliadoEm<b.conciliadoEm?-1:1), ult = comHora[comHora.length-1];
+  const maxData = arr=>arr.reduce((m,t)=>t.data>m?t.data:m,'');
+  const pendentes = l.filter(t=>t.status!=='conciliado'), maisAntiga = pendentes.reduce((m,t)=>(!m||t.data<m)?t.data:m,'');
+  return {n:l.length, extratoAte:maxData(l), conciliadoAte:maxData(conc), pendentes:pendentes.length, pendenteDesde:maisAntiga,
+          quando:ult?ult.conciliadoEm:'', quem:ult?ult.conciliadoPor:'', semHora:conc.length-comHora.length};
+}
+const bcQuando = iso=> iso ? new Date(iso).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
 function bcRecalc(a, tipo){
   const total = bcR2(a.concs.reduce((t,x)=>t+x.v,0)), ult = a.concs[a.concs.length-1], data = a.concs.map(x=>x.data).sort().pop();
   a.contaBancaria = ult.conta; a.conciliacao = ult.id; delete a.tarifaBancaria;
@@ -8897,6 +8916,8 @@ function renderConciliacao(){
   const q = cxNormalizeText(bcBusca);
   const filtra = t=>!q || cxNormalizeText(t.desc+' '+t.doc+' '+t.valor).includes(q);
   const lista = (bcTab==='conciliados' ? conc : pend).filter(filtra);
+  const rs = bcResumoConta(emp, bcConta);
+  const quadro = contas.filter(c=>BANKTX.some(t=>t.empresaId===emp && t.conta===c)).map(c=>{ const r = bcResumoConta(emp, c); return `<tr style="cursor:pointer;" data-conta="${rpEsc(c)}"><td><b>${rpEsc(c)}</b></td><td>${r.extratoAte?fmtDateBR(r.extratoAte):'—'}</td><td>${r.conciliadoAte?fmtDateBR(r.conciliadoAte):'—'}</td><td>${r.quando?bcQuando(r.quando)+(r.quem?' · '+rpEsc(r.quem):''):(r.conciliadoAte?'<span style="color:var(--text-tertiary);">sem horário (anterior)</span>':'—')}</td><td class="num" style="${r.pendentes?'color:#b42318;font-weight:700;':'color:#0f6e45;'}">${r.pendentes?r.pendentes+(r.pendenteDesde?' · desde '+fmtDateBR(r.pendenteDesde):''):'Em dia'}</td></tr>`; }).join('');
   const kpi = (t,v,s)=>`<div class="vg-kpi-card"><div class="vg-kpi-top"><div class="vg-kpi-title">${t}</div></div><div class="vg-kpi-value">${v}</div><div class="vg-kpi-sub">${s}</div></div>`;
   const linhaTx = t=>{
     const s = sug.get(t.id), saida = t.valor<0;
@@ -8938,7 +8959,11 @@ function renderConciliacao(){
       ${kpi('Diferença', dif===null?'—':(Math.abs(dif)<0.005||explicada?'<span style="color:#0f6e45;">Confere</span>':'<span style="color:#b42318;">'+fmtCurrency(dif)+'</span>'),
         dif===null?'':explicada?`${fmtCurrency(netSem)} baixados no sistema, ainda sem extrato (compensação)`:(netSem?`sistema − extrato · sem extrato: ${fmtCurrency(netSem)}`:'sistema − extrato'))}
       ${kpi('Pendentes de conciliar', String(pend.length), `entradas ${fmtCurrency(entP)} · saídas ${fmtCurrency(saiP)}`)}
+      ${kpi('Última conciliação', rs.quando ? bcQuando(rs.quando) : (rs.conciliadoAte ? 'até '+fmtDateBR(rs.conciliadoAte) : '—'),
+        rs.quando ? `${rs.quem?'por '+rpEsc(rs.quem)+' · ':''}extrato conciliado até ${rs.conciliadoAte?fmtDateBR(rs.conciliadoAte):'—'}` : (rs.conciliadoAte ? 'horário não registrado (conciliado antes desta versão)' : 'nenhuma linha conciliada'))}
     </div>
+    ${quadro ? `<div class="panel" style="margin-top:14px;"><div class="subpanel-header"><div class="subpanel-title">Situação da conciliação por conta</div><span class="dg-note">Clique em uma conta para abri-la</span></div>
+      <div class="cx-table-wrap"><table class="cx-table"><thead><tr><th>Conta</th><th>Extrato até</th><th>Conciliado até</th><th>Última conciliação</th><th class="num">Pendentes</th></tr></thead><tbody>${quadro}</tbody></table></div></div>` : ''}
     <div class="panel" style="margin-top:14px;">
       <div class="tabs-row"><div class="tabs-list">
         <button class="tab-btn ${bcTab==='pendentes'?'active':''}" data-tab="pendentes">Pendentes (${pend.length})</button>
@@ -8951,6 +8976,7 @@ function renderConciliacao(){
       ${corpo}
     </div>`;
   el.querySelector('#bcConta').addEventListener('change', e=>{ bcConta = e.target.value; renderConciliacao(); });
+  el.querySelectorAll('tr[data-conta]').forEach(tr=>tr.addEventListener('click', ()=>{ bcConta = tr.dataset.conta; bcTab = 'pendentes'; renderConciliacao(); }));
   el.querySelectorAll('.tab-btn[data-tab]').forEach(b=>b.addEventListener('click', ()=>{ bcTab = b.dataset.tab; renderConciliacao(); }));
   const bs = el.querySelector('#bcBusca'); if(bs) bs.addEventListener('input', e=>{ bcBusca = e.target.value; const pos = e.target.selectionStart; renderConciliacao(); const n = document.getElementById('bcBusca'); n.focus(); n.setSelectionRange(pos,pos); });
   const mv = el.querySelector('#bcMoveBtn');
