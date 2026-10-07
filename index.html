@@ -2078,7 +2078,14 @@ function bankSaldo(emp, conta, ateIso){
   const tin = TRANSFERS.filter(t=>t.empresaId===emp && t.destino===conta && dentro(t.data)).reduce((t,x)=>t+x.valor,0);
   const tout = TRANSFERS.filter(t=>t.empresaId===emp && t.origem===conta && dentro(t.data)).reduce((t,x)=>t+x.valor,0);
   const r2 = x=>Math.round(x*100)/100;
-  return {ini:r2(ini), ent:r2(ent+tin), sai:r2(sai+tout), tin:r2(tin), tout:r2(tout), saldo:r2(ini+ent+tin-sai-tout), desde};
+  /* "A compensar": baixados (data até o último extrato) que não aparecem no extrato — ainda não estão no banco */
+  const ext = (BANKBAL[emp]||{})[conta] && (BANKBAL[emp]||{})[conta].extData || '';
+  const semExt = (x,d)=> ext && d<=ext && !(x.concs && x.concs.length) && !x.conciliacao && x.status!=='conciliado';
+  const compR = ext ? RECEIVABLES.filter(r=>r.empresaId===emp && (r.contaBancaria||BANK_ACCOUNTS[0])===conta && BAIXADO_AR.includes(r.status) && dentro(r.dataRecebimento||r.vencimento) && semExt(r,r.dataRecebimento||r.vencimento)) : [];
+  const compP = ext ? state.accounts.filter(a=>a.empresaId===emp && (a.contaBancaria||BANK_ACCOUNTS[0])===conta && BAIXADO_AP.includes(a.status) && dentro(a.dataPagamento||a.vencimento) && semExt(a,a.dataPagamento||a.vencimento)) : [];
+  const cR = compR.reduce((t,r)=>t+(r.valorRecebido||r.valor),0), cP = compP.reduce((t,a)=>t+(a.valorPago!==undefined?a.valorPago:a.valor),0);
+  const saldo = r2(ini+ent+tin-sai-tout);
+  return {ini:r2(ini), ent:r2(ent+tin), sai:r2(sai+tout), tin:r2(tin), tout:r2(tout), saldo, desde, compensar:r2(cR-cP), nCompensar:compR.length+compP.length, real:r2(saldo-cR+cP)};
 }
 function bankConfigurado(emp){ const o = BANKBAL[emp]||{}; return Object.keys(o).some(k=>o[k] && o[k].saldoInicial!==undefined); }
 const TRANSFERS_KEY = 'bpo_financeiro_transfers_v1';
@@ -4086,7 +4093,7 @@ function renderVisaoGeral(){
 
   // ---- KPIs (posição atual, não dependem do range) ----
   const saldoAtual = (state.filters.empresaId && bankConfigurado(state.filters.empresaId))
-    ? BANK_ACCOUNTS.reduce((t,c)=>t+bankSaldo(state.filters.empresaId, c, todayIso).saldo, 0)
+    ? BANK_ACCOUNTS.reduce((t,c)=>t+bankSaldo(state.filters.empresaId, c, todayIso).real, 0)
     : allReceivables.filter(r=>BAIXADO_AR.includes(r.status)).reduce((s,r)=>s+(r.valorRecebido||r.valor),0)
                     - allPayables.filter(a=>BAIXADO_AP.includes(a.status)).reduce((s,a)=>s+a.valor,0);
   const receberAberto = allReceivables.filter(r=>!['recebido','cancelado'].includes(r.status));
@@ -4105,14 +4112,18 @@ function renderVisaoGeral(){
   const inRange = iso => iso>=startIso && iso<=endIso;
   const receberNoRange = receberAberto.filter(r=>inRange(r.vencimento));
   const pagarNoRange = pagarAberto.filter(a=>inRange(a.vencimento));
-  const saldoProjetado = saldoAtual + sum(receberNoRange) - sum(pagarNoRange);
+  const bcOk = !!(state.filters.empresaId && bankConfigurado(state.filters.empresaId));
+  const bcSaldos = bcOk ? BANK_ACCOUNTS.map(c=>bankSaldo(state.filters.empresaId, c, todayIso)) : [];
+  const aCompensar = bcSaldos.reduce((t,x)=>t+x.compensar,0), nCompensar = bcSaldos.reduce((t,x)=>t+x.nCompensar,0);
+  const saldoProjetado = saldoAtual + aCompensar + sum(receberNoRange) - sum(pagarNoRange);
 
   const kpis = [
-    {icon:'dollar-sign', title:'Saldo atual', value:fmtCurrency(saldoAtual), sub:(state.filters.empresaId && bankConfigurado(state.filters.empresaId)) ? 'Soma das contas bancárias' : 'Recebido − pago (sem saldo inicial)'},
+    {icon:'dollar-sign', title:'Saldo atual', value:fmtCurrency(saldoAtual), sub:bcOk ? 'Soma dos saldos nos bancos (confere com o extrato)' : 'Recebido − pago (sem saldo inicial)'},
     {icon:'arrow-up-circle', title:'A receber', value:fmtCurrency(sum(receberAberto)), sub:`${receberAberto.length} título(s) em aberto`},
     {icon:'arrow-down-circle', title:'A pagar', value:fmtCurrency(sum(pagarAberto)), sub:`${pagarAberto.length} título(s) em aberto`},
     {icon:'alert-triangle', title:'Vencidos', value:fmtCurrency(sum(vencidosPagar)+sum(vencidosReceber)), sub:`${vencidosPagar.length} a pagar | ${vencidosReceber.length} a receber`},
-    {icon:'clock', title:'A conciliar', value:fmtCurrency(sum(aConciliar)), sub:`${aConciliar.length} lançamento(s)`},
+    bcOk ? {icon:'clock', title:'A compensar', value:fmtCurrency(aCompensar), sub:`${nCompensar} baixado(s) ainda sem entrar no extrato`}
+         : {icon:'clock', title:'A conciliar', value:fmtCurrency(sum(aConciliar)), sub:`${aConciliar.length} lançamento(s)`},
     {icon:'bar-chart', title:'Saldo projetado', value:fmtCurrency(saldoProjetado), sub:vgRangeLabel()},
   ];
 
