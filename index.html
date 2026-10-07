@@ -9552,14 +9552,6 @@ function cfHTML(emp, mk){
   if(Math.abs(P.f.pagBal)+Math.abs(A.f.pagBal)>=0.005) add('item','Retiradas e outros movimentos de balanço', -P.f.pagBal, -A.f.pagBal);
   add('sub','= Variação do caixa', P.ent-P.sai, A.ent-A.sai);
   add('tot','Saldo final nos bancos', P.fin, A.fin);
-  let extra = '';
-  if(mk===hojeMk){
-    const comp = BANK_ACCOUNTS.reduce((t,c)=>t+bankSaldo(emp, c, fmtDateISO(TODAY)).compensar, 0);
-    const o = BANKBAL[emp]||{}, cs = Object.keys(o).filter(c=>o[c] && o[c].extrato!==undefined && o[c].extData), ext = cs.reduce((t,c)=>t+(o[c].extrato||0),0);
-    if(cs.length) add('memo','Saldo conforme os extratos importados', null, ext);
-    if(cs.length) add('memo','Diferença (sistema − extratos)', null, A.fin-ext);
-    if(Math.abs(comp)>=0.005) extra = ` Fora do Actual: R$ ${cxMoney(comp)} de títulos já baixados no sistema que ainda não apareceram nos extratos (a compensar, entram quando o extrato chegar).`;
-  }
   const body = linhas.map(l=>{
     const forte = l.kind==='tot'||l.kind==='sub', st = forte?'font-weight:700;':(l.kind==='memo'?'color:var(--text-secondary);font-style:italic;':''), hasP = l.p!==null && l.p!==undefined, a = (fut && l.kind!=='memo') ? null : l.a;
     const v = (hasP && a!==null && a!==undefined) ? a-l.p : null, pct = (v!==null && Math.abs(l.p)>=0.005) ? v/Math.abs(l.p) : null;
@@ -9570,7 +9562,7 @@ function cfHTML(emp, mk){
   const linhasX = linhas.map(l=>({'Descrição':l.nome, 'Projetado':l.p==null?'':R2(l.p), 'Actual':(fut&&l.kind!=='memo')||l.a==null?'':R2(l.a)}));
   return {html:`<div class="panel dg-col" style="grid-column:1/-1;">${cab}
       <div class="cx-table-wrap" style="overflow-x:auto;"><table class="cx-table bf-tbl bf-pl"><thead><tr><th>Descrição</th><th class="num">Projetado</th><th class="num">Actual</th><th class="num">Variação</th><th class="num">% Variação</th></tr></thead><tbody>${body}</tbody></table></div>
-      <div class="dg-foot-note" style="margin-top:8px;">Projetado = títulos pelo vencimento (a receber e a pagar, exceto cancelados). Actual = o que já está confirmado nos extratos (baixado e conciliado); saldo inicial + entradas − saídas = saldo dos bancos. Saídas aparecem entre parênteses.${extra}${fut?' Mês futuro: só há projeção.':''}</div></div>`, linhas:linhasX};
+</div>`, linhas:linhasX};
 }
 
 let dreBfAbertos = new Set();
