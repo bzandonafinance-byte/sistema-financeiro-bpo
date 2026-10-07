@@ -8275,6 +8275,7 @@ function renderDRE(){
     return html;
   }).join('');
 
+  const cfRes = cfHTML(state.filters.empresaId, dgMonth), cfBloco = cfRes ? (cfRes.html||cfRes) : '';
   const bfB = BF[state.filters.empresaId], bfDre = bfB ? bfDreHTML(bfB, dgMonth) : null, dreCmpHTML = bfDre ? bfDre.html : '', kpisUse = bfDre && bfDre.kpis.length ? bfDre.kpis : kpis;
 
   // Receita e despesa por categoria
@@ -8317,6 +8318,7 @@ function renderDRE(){
           <tbody>${rowsHTML}</tbody>
         </table>
       </div>`}
+      ${cfBloco}
       <div class="panel dg-col">
         <div class="subpanel-header"><div class="subpanel-title">Receitas, despesas e resultado</div><span class="dg-note">Por competência</span></div>
         <div class="dg-chart"><canvas id="dgChMensal"></canvas></div>
@@ -8339,12 +8341,13 @@ function renderDRE(){
   el.querySelector('#dgMonth').addEventListener('change', e=>{ dgMonth=e.target.value; renderDRE(); });
   el.querySelectorAll('.bfd-tg').forEach(t=>t.addEventListener('click', ()=>{ dreBfAbertos.has(t.dataset.g) ? dreBfAbertos.delete(t.dataset.g) : dreBfAbertos.add(t.dataset.g); renderDRE(); }));
   const bfd = el.querySelector('#bfdAbrir'); if(bfd) bfd.addEventListener('click', ()=>{ if(dreBfAbertos.size) dreBfAbertos.clear(); else bfDre.rows.filter(r=>r.kind==='grupo').forEach(r=>dreBfAbertos.add(r.id)); renderDRE(); });
+  const cft = el.querySelector('#cfTerc'); if(cft) cft.addEventListener('click', cfTercOpen);
   el.querySelector('#dgCatRecSel').addEventListener('change', e=>{ dgCatRecMode=e.target.value; renderDRE(); });
   el.querySelector('#dgCatDespSel').addEventListener('change', e=>{ dgCatDespMode=e.target.value; renderDRE(); });
   el.querySelector('#dgExport').addEventListener('click', ()=>{
     const R2 = x=>Math.round(x*100)/100;
     const data = bfDre ? bfDre.linhas : DG_ROWS.map(r=>({'Descrição':r.label, [cxMonthLabel(dgMonth)]:R2(cur[r.key]*(r.neg?-1:1)), '% RL':rl>0?R2(cur[r.key]*(r.neg?-1:1)/rl*100):''}));
-    const ws=XLSX.utils.json_to_sheet(data), wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'DRE'); XLSX.writeFile(wb, `dre_${dgMonth}.xlsx`);
+    const ws=XLSX.utils.json_to_sheet(data), wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'DRE'); if(cfRes && cfRes.linhas) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cfRes.linhas), 'Fluxo de caixa'); XLSX.writeFile(wb, `dre_${dgMonth}.xlsx`);
     showToast('Exportação concluída.');
   });
 
@@ -9477,6 +9480,122 @@ function renderBudget(){
 const BF_NOMES_DRE = {'deducoes de vendas':'Dedução de vendas', 'deducao de vendas':'Dedução de vendas', 'receita liquida':'Receita Liquida'};
 const bfNomeDRE = nome=> BF_NOMES_DRE[bfNorm(nome)] || nome;
 /* DRE Gerencial nas linhas do modelo (planilha): Budget | Actual | Variação | % Variação, no mês escolhido */
+/* ---------- Fluxo de caixa mensal: Projetado × Actual, com o caixa de terceiros separado ---------- */
+const CF_KEY = 'bpo_financeiro_cx_terceiros_v1';
+const CF_TERC = (()=>{ try{ return JSON.parse(localStorage.getItem(CF_KEY)||'{}') || {}; }catch(e){ return {}; } })();
+/* primeiro mês coberto: o mês seguinte à data do saldo inicial das contas bancárias */
+function cfInicio(emp){
+  const ds = Object.values(BANKBAL[emp]||{}).filter(c=>c && c.saldoInicial!==undefined && c.data).map(c=>c.data).sort();
+  if(!ds.length) return null;
+  const d = new Date(ds[0]+'T12:00:00'); d.setDate(d.getDate()+1); return fmtDateISO(d).slice(0,7);
+}
+/* base 'prev' = projetado (vencimento, valor cheio, tudo que não foi cancelado); 'real' = actual (baixas no mês) */
+function cfFluxo(emp, mk, base){
+  const lo = mk+'-01', hi = mk+'-31', o = BANKBAL[emp]||{};
+  const dentro = (d,conta)=>{ const ds = (o[conta]||{}).data || ''; return d>=lo && d<=hi && (!ds || d>ds); };
+  const f = {recOp:0, recFin:0, recOut:0, recBal:0, tRec:0, tPag:0, pag:{}, pagBal:0};
+  RECEIVABLES.forEach(r=>{
+    if(r.empresaId!==emp) return;
+    const conta = r.contaBancaria||BANK_ACCOUNTS[0]; let d, k = 1;
+    if(base==='prev'){ if(r.status==='cancelado') return; d = r.vencimento; }
+    else { if(!BAIXADO_AR.includes(r.status)) return; d = r.dataRecebimento||r.vencimento; k = r.valor ? (r.valorRecebido||r.valor)/r.valor : 1; }
+    if(!dentro(d,conta)) return;
+    const pt = arParts(r);
+    pt.terc.forEach(x=>{ f.tRec += x.v*k; });
+    pt.emp.forEach(x=>{
+      const v = x.v*k;
+      if(contaEhBP(x.conta)) f.recBal += v;
+      else { const g = contaGrupoCod(x.conta); if(g==='4.04') f.recFin += v; else if(g==='4.01'||g==='4.03'||g==='REC-AC') f.recOp += v; else f.recOut += v; }
+    });
+  });
+  state.accounts.forEach(a=>{
+    if(a.empresaId!==emp) return;
+    const conta = a.contaBancaria||BANK_ACCOUNTS[0]; let d, v;
+    if(base==='prev'){ if(['cancelado','reprovado'].includes(a.status)) return; d = a.vencimento; v = a.valor; }
+    else { if(!BAIXADO_AP.includes(a.status)) return; d = a.dataPagamento||a.vencimento; v = a.valorPago!==undefined ? a.valorPago : a.valor; }
+    if(!dentro(d,conta)) return;
+    if(a.categoria===CONTA_REPASSE) f.tPag += v;
+    else if(contaEhBP(a.categoria)) f.pagBal += v;
+    else { const g = contaGrupoNome(a.categoria); f.pag[g] = (f.pag[g]||0) + v; }
+  });
+  return f;
+}
+/* fluxo do mês com saldos encadeados desde o primeiro mês coberto */
+function cfSerie(emp, mk, base){
+  const m0 = cfInicio(emp); if(!m0 || mk<m0) return null;
+  const tot0 = Object.values(BANKBAL[emp]||{}).reduce((t,c)=>t+((c&&c.saldoInicial)||0),0), t0 = CF_TERC[emp]||0;
+  let own = tot0-t0, ter = t0, m = m0;
+  for(let i=0;i<120;i++){
+    const f = cfFluxo(emp, m, base);
+    const ent = f.recOp+f.recFin+f.recOut+f.recBal, sai = Object.values(f.pag).reduce((a,b)=>a+b,0)+f.pagBal, dO = ent-sai, dT = f.tRec-f.tPag;
+    if(m===mk) return {f, ent, sai, iniOwn:own, iniTer:ter, dO, dT, finOwn:own+dO, finTer:ter+dT};
+    own += dO; ter += dT;
+    const [y,mm] = m.split('-').map(Number), d = new Date(y,mm,1); m = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  return null;
+}
+function cfHTML(emp, mk){
+  const ini = cfInicio(emp), cab = `<div class="subpanel-header"><div class="subpanel-title">Fluxo de Caixa — Projetado × Actual · ${cxMonthLabel(mk)}</div><span class="dg-note">Regime de caixa · valores em R$</span><button class="cx-btn" id="cfTerc" style="margin-left:10px;">Saldo inicial de terceiros</button></div>`;
+  const msg = t=>`<div class="panel dg-col" style="grid-column:1/-1;">${cab}<div class="empty-inline" style="padding:18px;">${t}</div></div>`;
+  if(!emp) return '';
+  if(!ini) return msg('Informe o saldo inicial das contas em Configurações › Contas bancárias para ver o fluxo de caixa.');
+  if(mk<ini) return msg(`O fluxo de caixa começa em ${cxMonthLabel(ini)}, mês seguinte à data do saldo inicial das contas.`);
+  const P = cfSerie(emp, mk, 'prev'), A = cfSerie(emp, mk, 'real'), fut = mk>monthOf(fmtDateISO(TODAY));
+  const sum = o=>Object.values(o).reduce((a,b)=>a+b,0);
+  const linhas = [], R2 = x=>Math.round(x*100)/100;
+  const add = (kind, nome, p, a)=>{ linhas.push({kind, nome, p, a}); };
+  const grupos = [...new Set([...Object.keys(P.f.pag), ...Object.keys(A.f.pag)])].sort();
+  add('hdr','Caixa próprio da imobiliária');
+  add('tot','Saldo inicial', P.iniOwn, A.iniOwn);
+  add('sub','(+) Recebimentos', P.f.recOp+P.f.recFin+P.f.recOut+P.f.recBal, A.f.recOp+A.f.recFin+A.f.recOut+A.f.recBal);
+  [['Taxas de administração e comissões','recOp'],['Juros e multa por atraso','recFin'],['Outras receitas','recOut'],['Aportes e outros movimentos de balanço','recBal']].forEach(([n,k])=>{ if(Math.abs(P.f[k])+Math.abs(A.f[k])>=0.005) add('item', n, P.f[k], A.f[k]); });
+  add('sub','(–) Pagamentos', -(sum(P.f.pag)+P.f.pagBal), -(sum(A.f.pag)+A.f.pagBal));
+  grupos.forEach(g=>add('item', g, -(P.f.pag[g]||0), -(A.f.pag[g]||0)));
+  if(Math.abs(P.f.pagBal)+Math.abs(A.f.pagBal)>=0.005) add('item','Retiradas e outros movimentos de balanço', -P.f.pagBal, -A.f.pagBal);
+  add('sub','= Geração de caixa próprio', P.dO, A.dO);
+  add('tot','Saldo final — caixa próprio', P.finOwn, A.finOwn);
+  add('hdr','Caixa de terceiros (proprietários, seguradora e outros)');
+  add('tot','Saldo inicial de terceiros', P.iniTer, A.iniTer);
+  add('item','(+) Recebido dos inquilinos para repasse', P.f.tRec, A.f.tRec);
+  add('item','(–) Repasses e pagamentos a terceiros', -P.f.tPag, -A.f.tPag);
+  add('sub','= Variação do caixa de terceiros', P.dT, A.dT);
+  add('tot','Saldo final — a repassar a terceiros', P.finTer, A.finTer);
+  add('hdr','Caixa total');
+  add('tot','Saldo total (próprio + terceiros)', P.finOwn+P.finTer, A.finOwn+A.finTer);
+  let comp = 0;
+  if(mk===monthOf(fmtDateISO(TODAY))){
+    comp = BANK_ACCOUNTS.reduce((t,c)=>t+bankSaldo(emp, c, fmtDateISO(TODAY)).compensar, 0);
+    if(Math.abs(comp)>=0.005){ add('item','(–) Baixados a compensar (ainda não entraram no banco)', null, -comp); add('tot','Saldo confirmado nos bancos', null, A.finOwn+A.finTer-comp); }
+  }
+  const body = linhas.map(l=>{
+    if(l.kind==='hdr') return `<tr class="bf-total"><td colspan="5" style="font-weight:700;">${rpEsc(l.nome)}</td></tr>`;
+    const forte = l.kind!=='item', st = forte?'font-weight:700;':'', hasP = l.p!==null && l.p!==undefined, a = fut ? null : l.a, v = (hasP && a!==null && a!==undefined) ? a-l.p : null, pct = (v!==null && Math.abs(l.p)>=0.005) ? v/Math.abs(l.p) : null;
+    return `<tr class="${l.kind==='tot'?'bf-grupo':''}"><td style="${l.kind==='item'?'padding-left:26px;':''}${st}">${rpEsc(l.nome)}</td>
+      <td class="num" style="${st}">${hasP?bfFmt(l.p):''}</td><td class="num" style="${st}">${a===null||a===undefined?'':bfFmt(a)}</td>
+      <td class="num" style="${v===null?'':bfCor(v)}${st}">${v===null?'':(Math.abs(v)<0.005?'–':bfFmt(v))}</td><td class="num" style="${pct===null?'':bfCor(pct)}${st}">${pct===null?'':cxPct(pct,true)}</td></tr>`;
+  }).join('');
+  const linhasX = linhas.filter(l=>l.kind!=='hdr').map(l=>({'Descrição':l.nome, 'Projetado':l.p==null?'':R2(l.p), 'Actual':(fut||l.a==null)?'':R2(l.a)}));
+  return {html:`<div class="panel dg-col" style="grid-column:1/-1;">${cab}
+      <div class="cx-table-wrap" style="overflow-x:auto;"><table class="cx-table bf-tbl bf-pl"><thead><tr><th>Descrição</th><th class="num">Projetado</th><th class="num">Actual</th><th class="num">Variação</th><th class="num">% Variação</th></tr></thead><tbody>${body}</tbody></table></div>
+      <div class="dg-foot-note" style="margin-top:8px;">Projetado = títulos pelo vencimento (a receber e a pagar, exceto cancelados). Actual = o que foi baixado no mês. O saldo de terceiros é o dinheiro de proprietários, seguradora e outros que passa pela conta e ainda não foi repassado; informe o saldo inicial dele no botão acima (padrão R$ 0,00). Saídas aparecem entre parênteses.${fut?' Mês futuro: só há projeção.':''}</div></div>`, linhas:linhasX};
+}
+function cfTercOpen(){
+  if(denyIfReadOnly()) return;
+  const emp = state.filters.empresaId; if(!emp) return;
+  const ov = bfModal('cfTercOv','Saldo inicial de terceiros'), body = ov.querySelector('.modal-body'), foot = ov.querySelector('.modal-footer');
+  const v = CF_TERC[emp]||0;
+  body.innerHTML = `<div style="font-size:12.5px;color:var(--text-secondary);line-height:1.6;">Quanto do saldo inicial das contas bancárias (${cxMonthLabel(cfInicio(emp)||'')} − 1 dia) já era dinheiro de terceiros, como repasses de proprietários ainda não pagos. O restante é considerado caixa próprio da imobiliária.</div>
+    <div class="form-grid" style="margin-top:12px;"><div class="form-field"><label>Saldo inicial de terceiros (R$)</label><input id="cfTercVal" value="${String(v.toFixed(2)).replace('.',',')}" inputmode="decimal"></div></div>`;
+  foot.innerHTML = `<button class="btn btn-secondary" id="cfTercCancel">Cancelar</button><button class="btn btn-primary" id="cfTercSave">Salvar</button>`;
+  foot.querySelector('#cfTercCancel').addEventListener('click', ()=>ov.classList.remove('open'));
+  foot.querySelector('#cfTercSave').addEventListener('click', ()=>{
+    const n = parseFloat(String(ov.querySelector('#cfTercVal').value).replace(/\./g,'').replace(',','.'));
+    if(!isFinite(n) || n<0){ showToast('Informe um valor válido.'); return; }
+    CF_TERC[emp] = Math.round(n*100)/100; persist(CF_KEY, CF_TERC); ov.classList.remove('open'); renderDRE(); showToast('Saldo inicial de terceiros salvo.');
+  });
+  ov.classList.add('open');
+}
+
 let dreBfAbertos = new Set();
 function bfDreHTML(b, mes){
   const rows = bfEstrutura(b), temB = b.meses.includes(mes), ac = bfActual(b, [mes]);
