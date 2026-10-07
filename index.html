@@ -8753,6 +8753,21 @@ function bcOutraConta(tx){
   const outras = BANK_ACCOUNTS.filter(c=>c!==tx.conta);
   return outras.find(c=>/pjbank/i.test(c)) || outras[0] || '';
 }
+/* procura 2 ou 3 títulos da mesma locação cuja soma fecha exatamente o valor da linha (um deles com o nome do favorecido) */
+function bcCombinar(tx, tits){
+  const alvo = Math.round(Math.abs(tx.valor)*100), achados = new Map();
+  const rest = x=>Math.round((x.a.valor - (x.a.concs||[]).reduce((q,c)=>q+c.v,0))*100);
+  tits.filter(t=>t.sim>=0.5).forEach(an=>{
+    const pool = tits.filter(t=>t.tipo===an.tipo && t.id!==an.id && (t.a.descricao||'')===(an.a.descricao||'')), base = rest(an);
+    for(let i=0;i<pool.length;i++){
+      if(base+rest(pool[i])===alvo){ const arr = [an,pool[i]]; achados.set(arr.map(x=>x.tipo+':'+x.id).sort().join('|'), arr); }
+      for(let j=i+1;j<pool.length;j++) if(base+rest(pool[i])+rest(pool[j])===alvo){ const arr = [an,pool[i],pool[j]]; achados.set(arr.map(x=>x.tipo+':'+x.id).sort().join('|'), arr); }
+    }
+  });
+  if(achados.size!==1) return null;
+  const arr = [...achados.values()][0];
+  return {tipo:'multi', itens:arr.map(x=>({tipo:x.tipo,id:x.id})), label:`${arr[0].tipo==='ap'?'Pagar':'Receber'} ${arr.length} títulos: ${arr.map(x=>x.parte||'—').join(' + ')} · ${arr[0].a.descricao||''}`, score:80, auto:false};
+}
 function bcSugestao(tx){
   const co = COMPANIES.find(c=>c.id===tx.empresaId) || {}, cnpj = String(co.cnpj||'').replace(/\D/g,'');
   const tr = bcTransfCandidatas(tx)[0];
@@ -8763,6 +8778,7 @@ function bcSugestao(tx){
   }
   const tits = bcTitulos(tx), best = tits[0], second = tits[1];
   if(best && (best.exato||best.quase) && best.score>=65 && (!second || second.score < best.score-10)) return {tipo:best.tipo, id:best.id, label:`${best.tipo==='ap'?'Pagar':'Receber'}: ${best.parte||'—'} · ${best.a.descricao||''} · venc. ${fmtDateBR(best.a.vencimento)}${best.quase?` (líquido de tarifa de ${fmtCurrency(bcR2(best.a.valor-Math.abs(tx.valor)))})`:''}`, score:best.score, auto:true};
+  const multi = bcCombinar(tx, tits); if(multi) return multi;
   const regra = bcFindRule(tx);
   if(regra) return {tipo:'regra', regra, label:`Lançar como ${contaNome(regra.conta)} — ${regra.parte} (regra aprendida)`, score:70, auto:true};
   if(best && (best.exato||best.quase)) return {tipo:best.tipo, id:best.id, label:`Possível: ${best.parte||'—'} · ${best.a.descricao||''} (há mais de um título com esse valor)`, score:best.score, auto:false};
@@ -8805,6 +8821,22 @@ function bcLinkTitulo(tx, tipo, id){
   tx.status = 'conciliado'; tx.vinc = {tipo, id};
   return true;
 }
+/* um PIX/boleto que paga vários títulos de uma vez (ex.: co-proprietários): cada título recebe a sua parte */
+function bcLinkMulti(tx, itens){
+  const lista = itens.map(it=>({it, a: it.tipo==='ap' ? state.accounts.find(x=>x.id===it.id) : RECEIVABLES.find(x=>x.id===it.id)})).filter(x=>x.a);
+  if(lista.length<2) return false;
+  const total = Math.abs(tx.valor), rest = lista.map(x=>Math.max(0, x.a.valor - (x.a.concs||[]).reduce((q,c)=>q+c.v,0))), soma = rest.reduce((q,v)=>q+v,0) || 1;
+  let acum = 0;
+  lista.forEach((x,i)=>{
+    const a = x.a, tipo = x.it.tipo; a.concs = a.concs || [];
+    const v = i===lista.length-1 ? bcR2(total-acum) : bcR2(rest[i]*total/soma); acum = bcR2(acum+v);
+    const prev = a.concs.length ? null : (tipo==='ap' ? {status:a.status, data:a.dataPagamento||null, valorPago:a.valorPago, conta:a.contaBancaria}
+                                                       : {status:a.status, data:a.dataRecebimento||null, valorRecebido:a.valorRecebido, conta:a.contaBancaria});
+    a.concs.push({id:tx.id, v, data:tx.data, conta:tx.conta, prev}); bcRecalc(a, tipo);
+  });
+  tx.status = 'conciliado'; tx.vinc = {tipo:'multi', itens:lista.map(x=>x.it)};
+  return true;
+}
 function bcLinkTransf(tx, tf){ tf.conc = tf.conc || {}; tf.conc[tx.conta] = tx.id; tx.status = 'conciliado'; tx.vinc = {tipo:'transf', id:tf.id, criada:false}; return true; }
 function bcCriarTransf(tx, outra){
   const v = Math.abs(tx.valor), entrada = tx.valor>0;
@@ -8835,31 +8867,34 @@ function bcCriarLancamento(tx, f){
   }
   return id;
 }
-function bcDesfazer(tx){
-  const v = tx.vinc; if(!v){ tx.status = 'pendente'; return; }
-  if(v.tipo==='ap' || v.tipo==='ar'){
-    const a = v.tipo==='ap' ? state.accounts.find(x=>x.id===v.id) : RECEIVABLES.find(x=>x.id===v.id);
-    if(a && a.concs){
-      const i = a.concs.findIndex(x=>x.id===tx.id);
-      if(i>=0){
-        const e = a.concs.splice(i,1)[0];
-        if(e.prev && a.concs.length) a.concs[0].prev = e.prev;
-        if(a.concs.length) bcRecalc(a, v.tipo);
-        else {
-          const pv = e.prev; delete a.concs; delete a.conciliacao; delete a.tarifaBancaria;
-          if(pv){
-            a.status = pv.status; a.contaBancaria = pv.conta;
-            if(v.tipo==='ap'){ a.dataPagamento = pv.data; if(pv.valorPago===undefined) delete a.valorPago; else a.valorPago = pv.valorPago; }
-            else { a.dataRecebimento = pv.data; a.valorRecebido = pv.valorRecebido; }
-          }
+function bcSoltarTitulo(tx, tipo, id, prevLegacy){
+  const a = tipo==='ap' ? state.accounts.find(x=>x.id===id) : RECEIVABLES.find(x=>x.id===id);
+  if(a && a.concs){
+    const i = a.concs.findIndex(x=>x.id===tx.id);
+    if(i>=0){
+      const e = a.concs.splice(i,1)[0];
+      if(e.prev && a.concs.length) a.concs[0].prev = e.prev;
+      if(a.concs.length) bcRecalc(a, tipo);
+      else {
+        const pv = e.prev; delete a.concs; delete a.conciliacao; delete a.tarifaBancaria;
+        if(pv){
+          a.status = pv.status; a.contaBancaria = pv.conta;
+          if(tipo==='ap'){ a.dataPagamento = pv.data; if(pv.valorPago===undefined) delete a.valorPago; else a.valorPago = pv.valorPago; }
+          else { a.dataRecebimento = pv.data; a.valorRecebido = pv.valorRecebido; }
         }
       }
-    } else if(a && v.prev){
-      a.status = v.prev.status; a.contaBancaria = v.prev.conta; delete a.conciliacao; delete a.tarifaBancaria;
-      if(v.tipo==='ap'){ a.dataPagamento = v.prev.data; if(v.prev.valorPago===undefined) delete a.valorPago; else a.valorPago = v.prev.valorPago; }
-      else { a.dataRecebimento = v.prev.data; a.valorRecebido = v.prev.valorRecebido; }
     }
-  } else if(v.tipo==='novo-ap'){ const i = state.accounts.findIndex(x=>x.id===v.id); if(i>=0) state.accounts.splice(i,1); }
+  } else if(a && prevLegacy){
+    a.status = prevLegacy.status; a.contaBancaria = prevLegacy.conta; delete a.conciliacao; delete a.tarifaBancaria;
+    if(tipo==='ap'){ a.dataPagamento = prevLegacy.data; if(prevLegacy.valorPago===undefined) delete a.valorPago; else a.valorPago = prevLegacy.valorPago; }
+    else { a.dataRecebimento = prevLegacy.data; a.valorRecebido = prevLegacy.valorRecebido; }
+  }
+}
+function bcDesfazer(tx){
+  const v = tx.vinc; if(!v){ tx.status = 'pendente'; return; }
+  if(v.tipo==='ap' || v.tipo==='ar') bcSoltarTitulo(tx, v.tipo, v.id, v.prev);
+  else if(v.tipo==='multi') (v.itens||[]).forEach(it=>bcSoltarTitulo(tx, it.tipo, it.id));
+  else if(v.tipo==='novo-ap'){ const i = state.accounts.findIndex(x=>x.id===v.id); if(i>=0) state.accounts.splice(i,1); }
   else if(v.tipo==='novo-ar'){ const i = RECEIVABLES.findIndex(x=>x.id===v.id); if(i>=0) RECEIVABLES.splice(i,1); }
   else if(v.tipo==='transf'){
     const i = TRANSFERS.findIndex(x=>x.id===v.id);
@@ -8873,6 +8908,11 @@ function bcVincTexto(tx){
     const a = v.tipo==='ap' ? state.accounts.find(x=>x.id===v.id) : RECEIVABLES.find(x=>x.id===v.id);
     return a ? `Título ${v.tipo==='ap'?'a pagar':'a receber'}: ${rpEsc(bcTitleParty(v.tipo,a)||'—')} · ${rpEsc(a.descricao||'')}` : 'Título removido';
   }
+  if(v.tipo==='multi'){
+    const nomes = (v.itens||[]).map(it=>{ const a = it.tipo==='ap' ? state.accounts.find(x=>x.id===it.id) : RECEIVABLES.find(x=>x.id===it.id); return a ? (bcTitleParty(it.tipo,a)||'—') : '—'; });
+    const a0 = (v.itens||[])[0] && ((v.itens[0].tipo==='ap' ? state.accounts : RECEIVABLES).find(x=>x.id===v.itens[0].id));
+    return `${(v.itens||[]).length} títulos: ${rpEsc(nomes.join(' + '))}${a0?' · '+rpEsc(a0.descricao||''):''}`;
+  }
   if(v.tipo==='novo-ap' || v.tipo==='novo-ar'){ return `Lançado em ${rpEsc(contaLabel(v.conta))}`; }
   if(v.tipo==='transf'){ const t = TRANSFERS.find(x=>x.id===v.id); return t ? `Transferência ${rpEsc(t.origem)} → ${rpEsc(t.destino)}` : 'Transferência removida'; }
   if(v.tipo==='ignorar') return 'Ignorado: '+rpEsc(v.motivo||'');
@@ -8880,6 +8920,7 @@ function bcVincTexto(tx){
 }
 function bcAplicarSugestao(tx, s){
   if(s.tipo==='ap' || s.tipo==='ar') return bcLinkTitulo(tx, s.tipo, s.id);
+  if(s.tipo==='multi') return bcLinkMulti(tx, s.itens);
   if(s.tipo==='transf') return bcLinkTransf(tx, s.tf);
   if(s.tipo==='transf-nova'){ bcCriarTransf(tx, s.outra); return true; }
   if(s.tipo==='regra'){ const r = s.regra; bcCriarLancamento(tx, {conta:r.conta, parte:r.parte, desc:r.desc, cc:r.cc, forma:r.forma, lembrar:true}); return true; }
@@ -8910,7 +8951,8 @@ function renderConciliacao(){
   const dif = ult ? bcR2(sis.saldo - ult.saldo) : null;
   const netSem = bcR2(semExt.filter(x=>x.data<=ate).reduce((t,x)=>t+(x.tipo==='ar'?x.valor:-x.valor),0));
   const dif2 = dif===null ? null : bcR2(dif - netSem), explicada = dif!==null && Math.abs(dif)>=0.005 && Math.abs(dif2)<0.005;
-  const sug = new Map(pend.map(t=>[t.id, bcSugestao(t)]));
+  const hojeIso = fmtDateISO(TODAY), futura = t=>t.status!=='conciliado' && t.data>hojeIso; // data depois de hoje = lançamento agendado, ainda não saiu do banco
+  const sug = new Map(pend.map(t=>[t.id, futura(t) ? null : bcSugestao(t)]));
   const auto = pend.filter(t=>{ const s = sug.get(t.id); return s && s.auto; });
   const entP = bcR2(pend.filter(t=>t.valor>0).reduce((s,t)=>s+t.valor,0)), saiP = bcR2(pend.filter(t=>t.valor<0).reduce((s,t)=>s+Math.abs(t.valor),0));
   const q = cxNormalizeText(bcBusca);
@@ -8922,8 +8964,10 @@ function renderConciliacao(){
   const linhaTx = t=>{
     const s = sug.get(t.id), saida = t.valor<0;
     const sit = t.status==='conciliado' ? `<span class="imp-tag" style="background:#e8f6ee;color:#0f6e45;">Conciliado</span> <span style="font-size:12px;">${bcVincTexto(t)}</span>`
+      : futura(t) ? `<span class="imp-tag warn">Agendado</span> <span style="font-size:12px;">data futura (${fmtDateBR(t.data)}): ainda não saiu do banco. Não concilie agora; o extrato traz a linha de novo quando ela for debitada.</span>`
       : s ? `<span class="imp-tag ${s.auto?'new':'warn'}">${s.auto?'Sugestão':'Verificar'}</span> <span style="font-size:12px;">${rpEsc(s.label)}</span>` : '<span style="font-size:12px;color:var(--text-tertiary);">Sem sugestão</span>';
     const acoes = t.status==='conciliado' ? `<button class="cx-btn" data-act="undo" data-id="${t.id}">Desfazer</button>`
+      : futura(t) ? `<button class="cx-btn" data-act="rm" data-id="${t.id}">Remover</button>`
       : `${s && s.auto ? `<button class="cx-btn accent" data-act="ok" data-id="${t.id}">Confirmar</button> ` : ''}<button class="cx-btn" data-act="op" data-id="${t.id}">${s&&s.auto?'Outras opções':'Conciliar…'}</button>`;
     return `<tr><td>${fmtDateBR(t.data)}</td><td class="wrap"><div style="font-weight:600;">${rpEsc(t.desc)}</div>${t.doc?`<div style="font-size:11px;color:var(--text-tertiary);">${rpEsc(t.doc)}</div>`:''}</td>
       <td class="num" style="color:#0f6e45;">${saida?'':fmtCurrency(t.valor)}</td><td class="num" style="color:#b42318;">${saida?fmtCurrency(Math.abs(t.valor)):''}</td>
@@ -9005,6 +9049,7 @@ function renderConciliacao(){
       let n = 0; auto.forEach(t=>{ const s = bcSugestao(t); if(s && s.auto && t.status!=='conciliado' && bcAplicarSugestao(t, s)) n++; });
       bcSaveAll(); showToast(`${n} linha(s) conciliada(s).`); renderConciliacao(); return;
     }
+    if(act==='rm' && tx){ if(!confirm('Remover esta linha agendada? Ela volta quando o banco debitar e você importar o extrato do dia.')) return; const i = BANKTX.indexOf(tx); if(i>=0) BANKTX.splice(i,1); saveBankTx(); renderConciliacao(); return; }
     if(act==='rdel'){ const i = BANKRULES.findIndex(r=>r.id===id); if(i>=0){ BANKRULES.splice(i,1); saveBankRules(); renderConciliacao(); } }
   };
 }
@@ -9034,8 +9079,8 @@ function bcOpen(id){
   const tx = BANKTX.find(t=>t.id===id); if(!tx) return;
   bcEnsureModal();
   const regra = bcFindRule(tx), g = bcGuess(tx, regra), s = bcSugestao(tx), tits = bcTitulos(tx);
-  bcM = {id, mode:(s && (s.tipo==='ap'||s.tipo==='ar') && s.id) ? 'titulo' : s && s.tipo==='transf' ? 'transf' : (tits[0] && tits[0].exato) ? 'titulo' : 'novo',
-    busca:'', sel: s && s.id ? s.tipo+':'+s.id : (tits[0] && tits[0].exato ? tits[0].tipo+':'+tits[0].id : ''), conta:g.conta, parte:g.parte, desc:g.desc, cc:g.cc, forma:g.forma, lembrar:true,
+  bcM = {id, mode:((s && (s.tipo==='ap'||s.tipo==='ar') && s.id) || (s && s.tipo==='multi')) ? 'titulo' : s && s.tipo==='transf' ? 'transf' : (tits[0] && tits[0].exato) ? 'titulo' : 'novo',
+    busca:'', sels: (s && s.tipo==='multi') ? s.itens.map(i=>i.tipo+':'+i.id) : (s && s.id ? [s.tipo+':'+s.id] : (tits[0] && tits[0].exato ? [tits[0].tipo+':'+tits[0].id] : [])), conta:g.conta, parte:g.parte, desc:g.desc, cc:g.cc, forma:g.forma, lembrar:true,
     outra:(s && s.outra) || bcOutraConta(tx), tf:(s && s.tf) ? s.tf.id : '', motivo:'Pessoal — fora do sistema'};
   bcModalRender(); document.getElementById('bcOverlay').classList.add('open');
 }
@@ -9061,8 +9106,9 @@ function bcModalRender(){
     painel = `<input class="cx-input" id="bcBusca2" placeholder="Buscar por nome, descrição ou valor" value="${rpEsc(m.busca)}" style="width:100%;margin-bottom:8px;">
       <div class="cx-table-wrap" style="max-height:300px;overflow:auto;"><table class="cx-table"><thead><tr><th></th><th>${debito?'Pagar a':'Receber de'}</th><th>Descrição</th><th>Venc.</th><th>Situação</th><th class="num">Valor</th></tr></thead><tbody>${tits.length ? tits.map(t=>{
         const v = t.tipo==='ap' ? (t.a.valorPago!==undefined?t.a.valorPago:t.a.valor) : t.a.valor, k = t.tipo+':'+t.id;
-        return `<tr><td><input type="radio" name="bcT" value="${k}" ${m.sel===k?'checked':''}></td><td>${rpEsc(t.parte||'—')}</td><td class="wrap">${rpEsc(t.a.descricao||'')}</td><td>${fmtDateBR(t.a.vencimento)}</td><td>${rpEsc((STATUS_META[t.a.status]||RECEIVABLE_STATUS_META[t.a.status]||{label:t.a.status}).label)}</td>
+        return `<tr><td><input type="checkbox" name="bcT" value="${k}" ${m.sels.includes(k)?'checked':''}></td><td>${rpEsc(t.parte||'—')}</td><td class="wrap">${rpEsc(t.a.descricao||'')}</td><td>${fmtDateBR(t.a.vencimento)}</td><td>${rpEsc((STATUS_META[t.a.status]||RECEIVABLE_STATUS_META[t.a.status]||{label:t.a.status}).label)}</td>
         <td class="num" style="${t.exato?'color:#0f6e45;':''}">${fmtCurrency(v)}${t.exato?' ✓':''}</td></tr>`; }).join('') : `<tr><td colspan="6" class="cx-empty">Nenhum título ${debito?'a pagar':'a receber'} encontrado.</td></tr>`}</tbody></table></div>
+      <div id="bcSoma" style="margin-top:8px;font-size:12.5px;font-weight:600;"></div>
       <div class="rp-hint" style="margin-top:8px;">Se o valor do extrato for diferente do título, o sistema registra o valor do extrato como o efetivamente ${debito?'pago':'recebido'} (e marca como parcial se for menor num recebimento).</div>`;
   } else if(m.mode==='novo'){
     const pres = (debito?BC_PRESETS_D:BC_PRESETS_C).map(([n,c])=>`<button type="button" class="cx-btn" data-preset="${c}">${n}</button>`).join(' ');
@@ -9092,18 +9138,31 @@ function bcModalRender(){
   const keep = ()=>{ const g = id=>body.querySelector('#'+id);
     if(g('bcFConta')){ m.conta = bcContaFromText(g('bcFConta').value, debito) || m.conta; m.parte = g('bcFParte').value; m.desc = g('bcFDesc').value; m.cc = g('bcFCc').value; m.forma = g('bcFForma').value; m.lembrar = g('bcFLembrar').checked; }
     if(g('bcFOutra')) m.outra = g('bcFOutra').value; if(g('bcFTf')) m.tf = g('bcFTf').value; if(g('bcFMotivo')) m.motivo = g('bcFMotivo').value;
-    const r = body.querySelector('input[name=bcT]:checked'); if(r) m.sel = r.value; };
+  };
   body.querySelectorAll('[data-mode]').forEach(b=>b.addEventListener('click', ()=>{ keep(); m.mode = b.dataset.mode; bcModalRender(); }));
   body.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click', ()=>{ keep(); m.conta = b.dataset.preset; if(b.dataset.preset==='1.01.05.004' && !m.parte) m.parte = 'Sócios'; if(b.dataset.preset==='1.01.05.004') m.parte = 'Retiradas do sócio'; if(b.dataset.preset==='2.01.05.006') m.parte = 'Sócios'; bcModalRender(); }));
   const bq = body.querySelector('#bcBusca2'); if(bq) bq.addEventListener('input', e=>{ keep(); m.busca = e.target.value; const pos = e.target.selectionStart; bcModalRender(); const n = document.getElementById('bcBusca2'); n.focus(); n.setSelectionRange(pos,pos); });
+  const somaEl = body.querySelector('#bcSoma');
+  const selTits = ()=>{ const tt = bcTitulos(tx); return m.sels.map(k=>tt.find(t=>t.tipo+':'+t.id===k)).filter(Boolean); };
+  const restante = t=>Math.max(0, t.a.valor - (t.a.concs||[]).reduce((q,c)=>q+c.v,0));
+  const atualizaSoma = ()=>{ if(!somaEl) return; const sel = selTits(), soma = bcR2(sel.reduce((q,t)=>q+restante(t),0)), dif = bcR2(Math.abs(tx.valor)-soma);
+    somaEl.innerHTML = sel.length>1 ? `${sel.length} títulos marcados · soma ${fmtCurrency(soma)} · extrato ${fmtCurrency(Math.abs(tx.valor))} · diferença <span style="color:${Math.abs(dif)<0.011?'#0f6e45':'#b42318'}">${fmtCurrency(dif)}</span>` : (sel.length===1 ? '' : '<span style="font-weight:400;color:var(--text-secondary);">Marque um título — ou mais de um, quando a mesma linha do extrato paga vários de uma vez.</span>'); };
+  body.querySelectorAll('input[name=bcT]').forEach(c=>c.addEventListener('change', ()=>{ const i = m.sels.indexOf(c.value); if(c.checked){ if(i<0) m.sels.push(c.value); } else if(i>=0) m.sels.splice(i,1); atualizaSoma(); }));
+  atualizaSoma();
   foot.querySelector('#bcCancel').addEventListener('click', ()=>document.getElementById('bcOverlay').classList.remove('open'));
   foot.querySelector('#bcOk').addEventListener('click', ()=>{
     keep();
     if(m.mode==='titulo'){
-      if(!m.sel){ showToast('Escolha o título.'); return; }
-      const [tipo, tid] = m.sel.split(':'), t = bcTitulos(tx).find(x=>x.tipo===tipo && x.id===tid);
+      if(!m.sels.length){ showToast('Escolha o título.'); return; }
+      if(m.sels.length>1){
+        const sel = selTits(), soma = bcR2(sel.reduce((q,t)=>q+restante(t),0)), dif = bcR2(Math.abs(tx.valor)-soma);
+        if(!(Math.abs(dif)<0.011 || (!debito && dif<0 && -dif<=BC_TARIFA_MAX))){ showToast(`A soma dos títulos (${fmtCurrency(soma)}) é diferente do extrato (${fmtCurrency(Math.abs(tx.valor))}). Ajuste a seleção.`); return; }
+        bcLinkMulti(tx, sel.map(t=>({tipo:t.tipo, id:t.id})));
+      } else {
+      const [tipo, tid] = m.sels[0].split(':'), t = bcTitulos(tx).find(x=>x.tipo===tipo && x.id===tid);
       if(t && !t.exato && !(t.quase) && !confirm(`O valor do título (${fmtCurrency(tipo==='ap'?t.a.valor:t.a.valor)}) é diferente do extrato (${fmtCurrency(Math.abs(tx.valor))}). Registrar o valor do extrato como ${debito?'pago':'recebido'}?`)) return;
       bcLinkTitulo(tx, tipo, tid);
+      }
     } else if(m.mode==='novo'){
       if(!m.conta){ showToast('Informe a conta contábil (escolha na lista).'); return; }
       if(!contaServe(m.conta, debito?'pagar':'receber') && !(!debito && bcContaDespesa(m.conta))){ showToast('Essa conta não serve para '+(debito?'saídas':'entradas')+'.'); return; }
@@ -9188,8 +9247,9 @@ async function bcImpLoad(file){
 function bcImpConfirm(){
   const emp = state.filters.empresaId, p = bcImp.parsed; let conta = bcImpContaFinal(); if(!p || !conta) return;
   if(!BANK_ACCOUNTS.includes(conta)){ BANK_ACCOUNTS.push(conta); saveBankAccounts(); }
-  const keys = bcKeys(p.tx, emp, conta), ex = new Set(BANKTX.map(t=>t.key)), stamp = Date.now(); let n = 0;
-  p.tx.forEach((x,i)=>{
+  const hojeIso = fmtDateISO(TODAY), lista = p.tx.filter(x=>x.data<=hojeIso), futuras = p.tx.length - lista.length; // data futura = agendado: fica de fora
+  const keys = bcKeys(lista, emp, conta), ex = new Set(BANKTX.map(t=>t.key)), stamp = Date.now(); let n = 0;
+  lista.forEach((x,i)=>{
     if(ex.has(keys[i])) return;
     BANKTX.push({id:'BT'+stamp+String(i).padStart(4,'0'), empresaId:emp, conta, data:x.data, desc:x.desc, doc:x.doc, valor:x.valor, saldo:x.saldo, seq:i, key:keys[i], status:'pendente', vinc:null, importadoEm:new Date().toISOString()}); n++;
   });
@@ -9201,7 +9261,7 @@ function bcImpConfirm(){
   if(ult){ const o = (BANKBAL[emp] = BANKBAL[emp] || {}); const cfg = (o[conta] = o[conta] || {}); cfg.extrato = ult.saldo; cfg.extData = ult.data; saveBankBal(); }
   saveBankTx(); bcConta = conta; bcTab = 'pendentes'; bcBusca = '';
   document.getElementById('bcImpOverlay').classList.remove('open');
-  showToast(`${n} lançamento(s) do extrato importado(s).`);
+  showToast(`${n} lançamento(s) do extrato importado(s).${futuras?` ${futuras} agendado(s) com data futura ficaram de fora.`:''}`);
   if(currentPageKey!=='conciliacao') navigateTo('conciliacao'); else renderConciliacao();
 }
 
