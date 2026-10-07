@@ -9605,16 +9605,18 @@ let dreBfAbertos = new Set();
 function bfDreHTML(b, mes){
   const rows = bfEstrutura(b), temB = b.meses.includes(mes), ac = bfActual(b, [mes]);
   const A = bfCalc(rows, ac.leaf, [mes]), B = temB ? bfCalc(rows, b.budget, [mes]) : bfCalc(rows, {}, [mes]);
+  let Fc = temB ? bfCalc(rows, b.forecast||{}, [mes]) : bfCalc(rows, {}, [mes]);
+  if(temB && !rows.some(r=>r.kind==='item' && Math.abs(Fc[r.id]||0)>0.005)) Fc = B; // sem Forecast no mês: vale o Budget
   const nm = r=>bfNorm(r.nome), single = rx=>rows.find(r=>r.kind==='single' && rx.test(nm(r)));
   const rl = single(/receita liquida/), rlA = rl ? A[rl.id] : 0;
   const kpis = [['Receita Líquida',/receita liquida/,'dollar-sign'],['Margem de Contribuição',/margem/,'bar-chart'],['EBITDA',/ebtida|ebitda/,'list'],['Lucro Operacional',/lucro operacional/,'check-square'],['Total Despesas',/total.*desp/,'arrow-down-circle']]
     .map(([t,rx,icon])=>{ const r = single(rx); return r ? {t, v:A[r.id], m:(rlA>0 ? A[r.id]/rlA : NaN), icon} : null; }).filter(Boolean);
-  const vis = r=> Math.abs(B[r.id])>=0.005 || Math.abs(A[r.id])>=0.005;
+  const vis = r=> Math.abs(B[r.id])>=0.005 || Math.abs(Fc[r.id])>=0.005 || Math.abs(A[r.id])>=0.005;
   const linha = r=>{
-    const bud = B[r.id], ac1 = A[r.id], v = ac1-bud, pct = Math.abs(bud)>=0.005 ? v/Math.abs(bud) : null, forte = r.kind!=='item', st = forte?'font-weight:700;':'';
+    const bud = B[r.id], fc = Fc[r.id], ac1 = A[r.id], v = ac1-fc, pct = Math.abs(fc)>=0.005 ? v/Math.abs(fc) : null, forte = r.kind!=='item', st = forte?'font-weight:700;':'';
     const ab = r.kind==='grupo' ? `<span class="bfd-tg" data-g="${r.id}" style="cursor:pointer;display:inline-block;width:14px;">${dreBfAbertos.has(r.id)?'▾':'▸'}</span>` : '';
     return `<tr class="${r.kind==='single'?'bf-total':r.kind==='grupo'?'bf-grupo':''}"><td style="${r.kind==='item'?'padding-left:26px;':''}${st}">${ab}${rpEsc(bfNomeDRE(r.nome))}</td>
-      <td class="num" style="${st}">${bfFmt(bud)}</td><td class="num" style="${st}">${bfFmt(ac1)}</td>
+      <td class="num" style="${st}">${bfFmt(bud)}</td><td class="num" style="${st}">${bfFmt(fc)}</td><td class="num" style="${st}">${bfFmt(ac1)}</td>
       <td class="num" style="${bfCor(v)}${st}">${Math.abs(v)<0.005?'–':bfFmt(v)}</td><td class="num" style="${pct===null?'':bfCor(pct)}${st}">${pct===null?'—':cxPct(pct,true)}</td></tr>`;
   };
   const corpo = [];
@@ -9629,9 +9631,9 @@ function bfDreHTML(b, mes){
   const html = `<div class="panel dg-col" style="grid-column:1/-1;">
       <div class="subpanel-header"><div class="subpanel-title">DRE Gerencial — ${cxMonthLabel(mes)}</div><span class="dg-note">${temB ? 'Estrutura da planilha de Budget · valores em R$' : 'Sem Budget para este mês (a planilha cobre '+b.meses.map(cxMonthLabel).join(', ')+')'}</span>
         <button class="cx-btn" id="bfdAbrir" style="margin-left:10px;">${dreBfAbertos.size?'− Recolher tudo':'+ Expandir tudo'}</button></div>
-      <div class="cx-table-wrap" style="overflow-x:auto;"><table class="cx-table bf-tbl bf-pl"><thead><tr><th>Descrição</th><th class="num">Budget</th><th class="num">Actual</th><th class="num">Variação</th><th class="num">% Variação</th></tr></thead><tbody>${corpo.join('')}</tbody></table></div>
+      <div class="cx-table-wrap" style="overflow-x:auto;"><table class="cx-table bf-tbl bf-pl"><thead><tr><th>Descrição</th><th class="num">Budget</th><th class="num">Forecast</th><th class="num">Actual</th><th class="num">Actual × Forecast</th><th class="num">%</th></tr></thead><tbody>${corpo.join('')}</tbody></table></div>
       </div>`;
-  const linhas = rows.filter(r=>r.kind!=='item' || vis(r)).map(r=>{ const bud=B[r.id], a1=A[r.id], R=x=>Math.round(x*100)/100; return {'Descrição':bfNomeDRE(r.nome), 'Budget':R(bud), 'Actual':R(a1), 'Variação':R(a1-bud)}; });
+  const linhas = rows.filter(r=>r.kind!=='item' || vis(r)).map(r=>{ const bud=B[r.id], f1=Fc[r.id], a1=A[r.id], R=x=>Math.round(x*100)/100; return {'Descrição':bfNomeDRE(r.nome), 'Budget':R(bud), 'Forecast':R(f1), 'Actual':R(a1), 'Actual × Forecast':R(a1-f1)}; });
   return {html, kpis, rows, linhas};
 }
 /* P&L do DRE Gerencial: Budget | Forecast | Actual | B/(W) | %B/(W) com as linhas da planilha */
