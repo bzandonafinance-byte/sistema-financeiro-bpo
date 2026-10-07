@@ -9778,7 +9778,7 @@ function cfSerie(emp, mk, base){
   return null;
 }
 function cfHTML(emp, mk){
-  const ini = cfInicio(emp), cab = `<div class="subpanel-header"><div class="subpanel-title">Fluxo de Caixa — Projetado × Actual · ${cxMonthLabel(mk)}</div><span class="dg-note">Caixa · saldo dos bancos · R$ · Projetado: receitas e repasses pelos títulos (mês sem faturas: taxas pelo Forecast e terceiros repetem o mês anterior), despesas pelo Forecast da planilha (ou o já lançado, se maior); sem juros/multa e aportes</span></div>`;
+  const ini = cfInicio(emp), cab = `<div class="subpanel-header"><div class="subpanel-title">Fluxo de Caixa — Projetado × Actual · ${cxMonthLabel(mk)}</div></div>`;
   const msg = t=>`<div class="panel dg-col" style="grid-column:1/-1;">${cab}<div class="empty-inline" style="padding:18px;">${t}</div></div>`;
   if(!emp) return '';
   if(!ini) return msg('Informe o saldo inicial das contas em Configurações › Contas bancárias para ver o fluxo de caixa.');
