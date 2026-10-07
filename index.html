@@ -8890,8 +8890,8 @@ function bcAplicarSugestao(tx, s){
 function bcCmp(a,b){ return a.data<b.data ? -1 : a.data>b.data ? 1 : (a.seq||0)-(b.seq||0); }
 function bcSemExtrato(emp, conta){
   const ini = ((BANKBAL[emp]||{})[conta]||{}).data || '';
-  const ap = state.accounts.filter(a=>a.empresaId===emp && (a.contaBancaria||BANK_ACCOUNTS[0])===conta && ['pago','aguardando_conciliacao'].includes(a.status) && (!ini || (a.dataPagamento||a.vencimento)>ini)).map(a=>({tipo:'ap', a, data:a.dataPagamento||a.vencimento, valor:a.valorPago!==undefined?a.valorPago:a.valor, parte:bcTitleParty('ap',a)}));
-  const ar = RECEIVABLES.filter(a=>a.empresaId===emp && (a.contaBancaria||BANK_ACCOUNTS[0])===conta && ['recebido','parcial','aguardando_conciliacao'].includes(a.status) && (!ini || (a.dataRecebimento||a.vencimento)>ini)).map(a=>({tipo:'ar', a, data:a.dataRecebimento||a.vencimento, valor:a.valorRecebido||a.valor, parte:bcTitleParty('ar',a)}));
+  const ap = state.accounts.filter(a=>a.empresaId===emp && (a.contaBancaria||BANK_ACCOUNTS[0])===conta && !(a.concs&&a.concs.length) && ['pago','aguardando_conciliacao'].includes(a.status) && (!ini || (a.dataPagamento||a.vencimento)>ini)).map(a=>({tipo:'ap', a, data:a.dataPagamento||a.vencimento, valor:a.valorPago!==undefined?a.valorPago:a.valor, parte:bcTitleParty('ap',a)}));
+  const ar = RECEIVABLES.filter(a=>a.empresaId===emp && (a.contaBancaria||BANK_ACCOUNTS[0])===conta && !(a.concs&&a.concs.length) && ['recebido','parcial','aguardando_conciliacao'].includes(a.status) && (!ini || (a.dataRecebimento||a.vencimento)>ini)).map(a=>({tipo:'ar', a, data:a.dataRecebimento||a.vencimento, valor:a.valorRecebido||a.valor, parte:bcTitleParty('ar',a)}));
   return ap.concat(ar).sort((x,y)=>x.data<y.data?-1:x.data>y.data?1:0);
 }
 function renderConciliacao(){
@@ -8949,7 +8949,8 @@ function renderConciliacao(){
   }
   el.innerHTML = `
     <div class="cx-head">
-      <div><div class="cx-title">Conciliação bancária</div><div class="cx-crumb">Financeiro &nbsp;/&nbsp; <b>Conciliação bancária</b>${co.nome?` &nbsp;·&nbsp; ${rpEsc(co.nome)}`:''}</div></div>
+      <div><div class="cx-title">Conciliação bancária</div><div class="cx-crumb">Financeiro &nbsp;/&nbsp; <b>Conciliação bancária</b>${co.nome?` &nbsp;·&nbsp; ${rpEsc(co.nome)}`:''}</div>
+        <div class="cx-crumb" style="margin-top:4px;"><b>Última conciliação:</b> ${rs.quando ? bcQuando(rs.quando)+(rs.quem?' · '+rpEsc(rs.quem):'')+' (extrato até '+(rs.conciliadoAte?fmtDateBR(rs.conciliadoAte):'—')+')' : (rs.conciliadoAte ? 'extrato conciliado até '+fmtDateBR(rs.conciliadoAte) : 'nenhuma linha conciliada ainda')}</div></div>
       <div class="cx-head-actions"><select class="cx-select" id="bcConta">${contas.map(c=>`<option ${c===bcConta?'selected':''}>${rpEsc(c)}</option>`).join('')}</select>
         <button class="cx-btn accent big" data-act="imp">${cxSvg('down')} Importar extrato</button></div>
     </div>
