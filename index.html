@@ -5616,7 +5616,7 @@ function rpIncData(){
     for(const a of cand){ if(pool.length && (Math.abs(acc-rep)<=0.015 || (acc<rep && explica(rep-acc)))) break; pool.push(a); acc += a.valor; }
     pool.forEach(a=>a._u = true);
     const soma = Math.round(pool.reduce((t,a)=>t+a.valor,0)*100)/100;
-    const aguardando = !baixado && r.vencimento>=today; // repasse ainda não gerado no Imobzi para aluguel que nem venceu
+    const aguardando = (!baixado && r.vencimento>=today) || r.repasseOk || (r.repasseEm && r.repasseEm>=today); // repasse ainda não gerado no Imobzi (aluguel que nem venceu, ou repasse combinado para uma data futura / já feito por fora)
     if(rep>0){
       if(rep>r.valor+0.005) addL('repdif','Receber',r,nome,`Repasse (${fmtCurrency(rep)}) maior que o valor do aluguel (${fmtCurrency(r.valor)}).`);
       else {
