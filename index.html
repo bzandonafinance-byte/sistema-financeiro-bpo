@@ -798,6 +798,10 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 }
 .client-card-logo img{width:100%;height:100%;object-fit:cover;}
 .client-card-name{font-size:13px;font-weight:600;line-height:1.3;}
+.client-card-bar{position:absolute;left:18px;bottom:9px;height:9px;width:calc(84% - 40px);background:#c0c4cc;}
+.client-card-bar.vermelho{background:#b9111c;}.client-card-bar.amarelo{background:#fbbf24;}.client-card-bar.verde{background:#1fae52;}
+.clientes-legenda{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:0 0 18px;font-size:12.5px;color:var(--text-secondary);}
+.clientes-legenda i{display:inline-block;width:22px;height:8px;margin-right:6px;vertical-align:middle;}
 
 .tb-profile{position:relative;}
 .tb-profile-menu{
@@ -2567,6 +2571,22 @@ function companyInitials(nome){
   return (nome||'').trim().split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase() || '--';
 }
 
+/* Semáforo da empresa (fechamento de D-1): vermelho = não iniciado, amarelo = falta conciliar, verde = tudo certo */
+function bcStatusEmpresa(emp){
+  try{
+    const f = bcFechamento(emp), dd = fmtDateBR(f.d1);
+    if(!f.linhas.length) return {nivel:'vermelho', txt:`Não iniciado: contas bancárias e saldos iniciais ainda não configurados`};
+    const faltaImp = f.linhas.filter(x=>!x.cobre);
+    if(faltaImp.length===f.linhas.length) return {nivel:'vermelho', txt:`Não iniciado: extratos de ${dd} ainda não importados`};
+    if(f.ok) return {nivel:'verde', txt:`Tudo certo: ${dd} conciliado e saldos batendo com os extratos`};
+    const m = [];
+    if(faltaImp.length) m.push('falta importar o extrato: '+faltaImp.map(x=>x.conta.split(' (')[0]).join(', '));
+    const pend = f.linhas.reduce((t,x)=>t+x.pend,0); if(pend) m.push(pend+' movimentação(ões) a conciliar');
+    const dif = f.linhas.filter(x=>x.cobre && x.dif!==null && Math.abs(x.dif)>=0.005); if(dif.length) m.push('saldo não confere: '+dif.map(x=>x.conta.split(' (')[0]).join(', '));
+    if(f.semConta) m.push(f.semConta+' lançamento(s) "A classificar"');
+    return {nivel:'amarelo', txt:`Falta conciliar (${dd}): `+m.join(' · ')};
+  }catch(e){ return {nivel:'vermelho', txt:'Não iniciado'}; }
+}
 function renderClientesGrid(filtro){
   const grid = document.getElementById('clientesGrid');
   const termo = (filtro||'').trim().toLowerCase();
@@ -2575,12 +2595,13 @@ function renderClientesGrid(filtro){
     grid.innerHTML = `<div class="empty-inline">${COMPANIES.length ? 'Nenhuma empresa encontrada.' : 'Nenhuma empresa cadastrada ainda. Clique em "Cadastro nova empresa" para começar, ou em "Explorar sistema" para conhecer as telas.'}</div>`;
     return;
   }
-  grid.innerHTML = list.map(c=>`
-    <button class="client-card" data-id="${c.id}" type="button">
+  const leg = `<div class="clientes-legenda" style="width:100%;"><span><i style="background:#b9111c;"></i>Não iniciado</span><span><i style="background:#fbbf24;"></i>Falta conciliar</span><span><i style="background:#1fae52;"></i>Tudo certo</span><span style="color:var(--text-tertiary);">· fechamento de ${fmtDateBR(fmtDateISO(new Date(TODAY.getFullYear(),TODAY.getMonth(),TODAY.getDate()-1)))} (D-1). Passe o mouse sobre a barra para ver o que falta.</span></div>`;
+  grid.innerHTML = leg + list.map(c=>{ const st = bcStatusEmpresa(c.id); return `
+    <button class="client-card" data-id="${c.id}" type="button" title="${rpEsc(st.txt).replace(/"/g,'&quot;')}">
       <div class="client-card-logo">${c.logo ? `<img src="${c.logo}" alt="">` : companyInitials(c.nome)}</div>
       <div class="client-card-name">${c.nome}</div>
-    </button>
-  `).join('');
+      <span class="client-card-bar ${st.nivel}"></span>
+    </button>`; }).join('');
   grid.querySelectorAll('.client-card').forEach(btn=>{
     btn.addEventListener('click', ()=> enterCompany(btn.dataset.id));
   });
@@ -4138,8 +4159,9 @@ function renderVisaoGeral(){
   const allReceivables = RECEIVABLES.filter(r=>!state.filters.empresaId || r.empresaId===state.filters.empresaId);
 
   // ---- KPIs (posição atual, não dependem do range) ----
+  const d1Iso = fmtDateISO(new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()-1)); // fechamento do dia anterior (D-1)
   const saldoAtual = (state.filters.empresaId && bankConfigurado(state.filters.empresaId))
-    ? BANK_ACCOUNTS.reduce((t,c)=>t+bankSaldo(state.filters.empresaId, c, todayIso).real, 0)
+    ? BANK_ACCOUNTS.reduce((t,c)=>t+bankSaldo(state.filters.empresaId, c, d1Iso).real, 0)
     : allReceivables.filter(r=>BAIXADO_AR.includes(r.status)).reduce((s,r)=>s+(r.valorRecebido||r.valor),0)
                     - allPayables.filter(a=>BAIXADO_AP.includes(a.status)).reduce((s,a)=>s+a.valor,0);
   const receberAberto = allReceivables.filter(r=>!['recebido','cancelado'].includes(r.status));
@@ -4164,7 +4186,7 @@ function renderVisaoGeral(){
   const saldoProjetado = saldoAtual + aCompensar + sum(receberNoRange) - sum(pagarNoRange);
 
   const kpis = [
-    {icon:'dollar-sign', title:'Saldo atual', value:fmtCurrency(saldoAtual), sub:bcOk ? 'Soma dos saldos nos bancos (confere com o extrato)' : 'Recebido − pago (sem saldo inicial)'},
+    {icon:'dollar-sign', title:'Saldo atual', value:fmtCurrency(saldoAtual), sub:bcOk ? `Saldo dos bancos em ${fmtDateBR(d1Iso)} (fechamento D-1)` : 'Recebido − pago (sem saldo inicial)'},
     {icon:'arrow-up-circle', title:'A receber', value:fmtCurrency(sum(receberAberto)), sub:`${receberAberto.length} título(s) em aberto`},
     {icon:'arrow-down-circle', title:'A pagar', value:fmtCurrency(sum(pagarAberto)), sub:`${pagarAberto.length} título(s) em aberto`},
     {icon:'alert-triangle', title:'Vencidos', value:fmtCurrency(sum(vencidosPagar)+sum(vencidosReceber)), sub:`${vencidosPagar.length} a pagar | ${vencidosReceber.length} a receber`},
