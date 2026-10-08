@@ -5662,6 +5662,7 @@ function rpIncData(){
 
   /* Pagamento sem dados do beneficiário / sem documento fiscal (só contas a pagar em aberto, exceto repasses) */
   AP.filter(a=>lancStatusDisplay(a.status)==='Em aberto' || cxEffStatus(a)==='Vencido').forEach(a=>{
+    if(a.categoria===CONTA_REPASSE) return; // repasses: o time financeiro tem as chaves cadastradas no banco
     const s = supplierById(a.fornecedorId)||{}, f = String(a.formaPagamento||'');
     if(/pix/i.test(f) && !s.pix && !a.pixCodigo) addL('pagto','Pagar',a,pParty(a),'Pagamento via PIX sem chave PIX informada.');
     else if(/transfer|ted|doc/i.test(f) && !s.banco) addL('pagto','Pagar',a,pParty(a),'Pagamento por transferência sem dados bancários do beneficiário.');
