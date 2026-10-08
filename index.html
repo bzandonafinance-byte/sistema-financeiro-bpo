@@ -2013,6 +2013,7 @@ const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a
 const LANC_REPASSE_NOME = 'Repasses a terceiros';
 /* linhas do Budget ainda sem conta mapeada que precisam existir no lançamento (aporte de sócios segue a conta já usada) */
 const LANC_PADRAO = {'aporte capital socios':'2.01.05.006', 'pagamento - aporte capital socios':'2.01.05.006'};
+const LANC_EXTRAS_REC = ['4.04.001']; // Rendimentos de Aplicações Financeiras: sempre disponível no lançamento de recebimentos
 let _lancCache = {emp:null, b:null, map:null, n:0, M:null};
 /* empresa do Budget: a selecionada; sem seleção, a única empresa que tem Budget carregado */
 function lancEmp(){ const e = state.filters.empresaId; if(e) return e; const ks = Object.keys(BF).filter(k=>BF[k] && BF[k].rows && BF[k].rows.length); return ks.length===1 ? ks[0] : ''; }
@@ -2047,6 +2048,7 @@ function lancLista(tipo, atual){
     if(vistos.has(i.primary)) return; vistos.add(i.primary);
     const a = contaByCod(i.primary); out.push(Object.assign({}, a, {_n:i.nome, _g:i.grupo}));
   });
+  if(tipo==='receber') LANC_EXTRAS_REC.forEach(c=>{ if(!vistos.has(c)){ const a = contaByCod(c); if(a && contaAtiva(a)){ vistos.add(c); out.push(Object.assign({}, a, {_g:'Receitas financeiras'})); } } });
   if(atual && !vistos.has(atual)){ const a = contaByCod(atual); if(a) out.push(a); }
   return out;
 }
@@ -5675,6 +5677,7 @@ function rpIncData(){
                    ...CLIENTS.filter(c=>(!emp||c.empresaId===emp) && c.status!=='Inativo').map(p=>({p, k:'Cliente'}))];
   const vz = v=>!String(v||'').replace(/[—\-\s]/g,'');
   parties.forEach(({p,k})=>{
+    if(p.semCadastro) return; // conta interna (ex.: aplicação, sócios): não precisa de dados cadastrais
     const falta = []; if(vz(p.cnpj)) falta.push('CPF/CNPJ'); if(vz(p.email)) falta.push('e-mail'); if(vz(p.telefone)) falta.push('telefone');
     if(falta.length) items.push({cat:'cadastro', sev: vz(p.cnpj) ? 'Média' : 'Baixa', tipo:'Cadastro de '+k.toLowerCase(), ref:'—', parte:p.nome, venc:'', valor:null, problema:'Falta: '+falta.join(', ')+'.', id:p.id});
   });
