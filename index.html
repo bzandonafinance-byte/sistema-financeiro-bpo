@@ -2066,6 +2066,7 @@ const INV_TIPOS = {
   outraRec:   {label:'Outra receita da imobiliária',   terc:false, conta:'4.01.024'},
   tarifa:     {label:'Tarifa de boleto (cobrada do inquilino)', terc:false, conta:'4.01.024'},
   juros:      {label:'Juros e multa por atraso',       terc:false, conta:'4.04.002'},
+  interno:    {label:'Pago pela própria imobiliária (sem receita)', terc:false, conta:'1.01.02.007'},
 };
 /* Parte de terceiros e parte da empresa de uma conta a receber (com ou sem composição) */
 function arParts(r){
@@ -5625,7 +5626,7 @@ function rpIncData(){
         if(!pool.length){ if(!aguardando) addL('repdif','Receber',r,nome,`Aluguel com repasse de ${fmtCurrency(rep)}, mas não há repasse a pagar lançado para o contrato ${c}.`); }
         else if(Math.abs(soma-rep)>0.015 && !(soma<rep && explica(rep-soma))) addL('repdif','Receber',r,nome,`Repasse do aluguel ${fmtCurrency(rep)} difere dos repasses a pagar ${fmtCurrency(soma)} (diferença de ${fmtCurrency(Math.abs(soma-rep))}).`);
         const taxa = (r.valor-rep)/r.valor*100;
-        if(taxa<INC_TAXA_MIN || taxa>INC_TAXA_MAX) addL('taxa','Receber',r,nome,`Taxa de administração de ${taxa.toFixed(1).replace('.',',')}% (${fmtCurrency(r.valor-rep)}) — esperado entre ${INC_TAXA_MIN}% e ${INC_TAXA_MAX}%.`);
+        if(!r.semTaxa && (taxa<INC_TAXA_MIN || taxa>INC_TAXA_MAX)) addL('taxa','Receber',r,nome,`Taxa de administração de ${taxa.toFixed(1).replace('.',',')}% (${fmtCurrency(r.valor-rep)}) — esperado entre ${INC_TAXA_MIN}% e ${INC_TAXA_MAX}%.`);
       }
     } else if(!r.repasseOk && !r.semRepasse){ // semRepasse = primeiro aluguel de contrato novo, que fica todo com a imobiliária
       addL('semrep','Receber',r,nome, pool.length ? `Há repasse a pagar de ${fmtCurrency(soma)} para o contrato ${c}, mas o repasse do aluguel não foi informado.` : `Aluguel do contrato ${c} sem repasse informado e sem repasse a pagar lançado.`);
@@ -5643,7 +5644,7 @@ function rpIncData(){
 
   /* Duplicidades */
   const dupes = (list, tipo, partyFn)=>{
-    const g = {}; list.forEach(x=>{ if(x.conciliacao) return; const k = [partyFn(x), x.valor, x.vencimento, incNorm(x.descricao)].join('|'); (g[k] = g[k]||[]).push(x); });
+    const g = {}; list.forEach(x=>{ if(x.conciliacao || x.dupOk) return; const k = [partyFn(x), x.valor, x.vencimento, incNorm(x.descricao)].join('|'); (g[k] = g[k]||[]).push(x); });
     Object.values(g).filter(a=>a.length>1).forEach(a=>a.forEach(x=>addL('dup',tipo,x,partyFn(x),`Possível duplicidade: ${a.length} lançamentos iguais (mesmo favorecido, valor, vencimento e descrição).`)));
   };
   dupes(AP,'Pagar',pParty); dupes(AR,'Receber',cParty);
@@ -8260,7 +8261,8 @@ function impApply(sel, emp, anexosBase, opts){
         if(exist && exist.canceladoManual){ /* repasse cancelado à mão (ex.: primeiro aluguel fica todo com a imobiliária): a sincronização não recria */ }
         else if(exist){
           const vm = exist.vencManual ? exist.vencimento : null; // data de pagamento combinada à mão: a sincronização não volta para a data do Imobzi
-          Object.assign(exist, camp); if(vm) exist.vencimento = vm;
+          const cm = exist.catManual ? {categoria:exist.categoria, planoContas:exist.planoContas} : null; // conta contábil reclassificada à mão (ex.: aluguel da sala da imobiliária)
+          Object.assign(exist, camp); if(vm) exist.vencimento = vm; if(cm) Object.assign(exist, cm);
           if(!emConc(exist) && !(exist.status==='pago' && !baixa)){ exist.status = baixa ? 'pago' : computeStatusForDate(exist.vencimento); exist.dataPagamento = baixa ? baixa.data : null; }
           nUp++;
         } else {
