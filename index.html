@@ -798,10 +798,10 @@ table.data-table{width:100%;border-collapse:collapse;table-layout:fixed;min-widt
 }
 .client-card-logo img{width:100%;height:100%;object-fit:cover;}
 .client-card-name{font-size:13px;font-weight:600;line-height:1.3;}
-.client-card-bar{position:absolute;left:18px;bottom:9px;height:9px;width:calc(84% - 40px);background:#c0c4cc;}
-.client-card-bar.vermelho{background:#b9111c;}.client-card-bar.amarelo{background:#fbbf24;}.client-card-bar.verde{background:#1fae52;}
+.client-card-bar{position:absolute;left:18px;bottom:11px;height:4px;width:56px;border-radius:2px;background:#c9ccd3;opacity:.7;}
+.client-card-bar.vermelho{background:var(--kpi-red-text);}.client-card-bar.amarelo{background:var(--kpi-amber-text);opacity:.55;}.client-card-bar.verde{background:var(--kpi-green-text);}
 .clientes-legenda{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin:0 0 18px;font-size:12.5px;color:var(--text-secondary);}
-.clientes-legenda i{display:inline-block;width:22px;height:8px;margin-right:6px;vertical-align:middle;}
+.clientes-legenda i{display:inline-block;width:18px;height:4px;border-radius:2px;margin-right:6px;vertical-align:middle;opacity:.7;}
 
 .tb-profile{position:relative;}
 .tb-profile-menu{
@@ -2578,7 +2578,7 @@ function bcStatusEmpresa(emp){
     if(!f.linhas.length) return {nivel:'vermelho', txt:`Não iniciado: contas bancárias e saldos iniciais ainda não configurados`};
     const faltaImp = f.linhas.filter(x=>!x.cobre);
     if(faltaImp.length===f.linhas.length) return {nivel:'vermelho', txt:`Não iniciado: extratos de ${dd} ainda não importados`};
-    if(f.ok) return {nivel:'verde', txt:`Tudo certo: ${dd} conciliado e saldos batendo com os extratos`};
+    if(f.ok) return {nivel:'verde', txt:`Conciliado: ${dd} fechado e saldos batendo com os extratos`};
     const m = [];
     if(faltaImp.length) m.push('falta importar o extrato: '+faltaImp.map(x=>x.conta.split(' (')[0]).join(', '));
     const pend = f.linhas.reduce((t,x)=>t+x.pend,0); if(pend) m.push(pend+' movimentação(ões) a conciliar');
@@ -2595,7 +2595,7 @@ function renderClientesGrid(filtro){
     grid.innerHTML = `<div class="empty-inline">${COMPANIES.length ? 'Nenhuma empresa encontrada.' : 'Nenhuma empresa cadastrada ainda. Clique em "Cadastro nova empresa" para começar, ou em "Explorar sistema" para conhecer as telas.'}</div>`;
     return;
   }
-  const leg = `<div class="clientes-legenda" style="width:100%;"><span><i style="background:#b9111c;"></i>Não iniciado</span><span><i style="background:#fbbf24;"></i>Falta conciliar</span><span><i style="background:#1fae52;"></i>Tudo certo</span><span style="color:var(--text-tertiary);">· fechamento de ${fmtDateBR(fmtDateISO(new Date(TODAY.getFullYear(),TODAY.getMonth(),TODAY.getDate()-1)))} (D-1). Passe o mouse sobre a barra para ver o que falta.</span></div>`;
+  const leg = `<div class="clientes-legenda" style="width:100%;"><span><i style="background:var(--kpi-red-text);"></i>Não iniciado</span><span><i style="background:var(--kpi-amber-text);opacity:.55;"></i>Falta conciliar</span><span><i style="background:var(--kpi-green-text);"></i>Conciliado</span><span style="color:var(--text-tertiary);">· fechamento de ${fmtDateBR(fmtDateISO(new Date(TODAY.getFullYear(),TODAY.getMonth(),TODAY.getDate()-1)))} (D-1). Passe o mouse sobre a barra para ver o que falta.</span></div>`;
   grid.innerHTML = leg + list.map(c=>{ const st = bcStatusEmpresa(c.id); return `
     <button class="client-card" data-id="${c.id}" type="button" title="${rpEsc(st.txt).replace(/"/g,'&quot;')}">
       <div class="client-card-logo">${c.logo ? `<img src="${c.logo}" alt="">` : companyInitials(c.nome)}</div>
