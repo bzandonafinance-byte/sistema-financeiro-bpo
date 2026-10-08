@@ -8254,8 +8254,9 @@ function impApply(sel, emp, anexosBase, opts){
       if(r.tipo==='pagar'){
         const camp = {faturaId:r.faturaId||undefined, fornecedorId:p.id, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), vencimento:r.venc, valor, categoria:conta, formaPagamento:r.forma, planoContas:contaLabel(conta)};
         if(exist){
-          Object.assign(exist, camp);
-          if(!emConc(exist) && !(exist.status==='pago' && !baixa)){ exist.status = baixa ? 'pago' : computeStatusForDate(r.venc); exist.dataPagamento = baixa ? baixa.data : null; }
+          const vm = exist.vencManual ? exist.vencimento : null; // data de pagamento combinada à mão: a sincronização não volta para a data do Imobzi
+          Object.assign(exist, camp); if(vm) exist.vencimento = vm;
+          if(!emConc(exist) && !(exist.status==='pago' && !baixa)){ exist.status = baixa ? 'pago' : computeStatusForDate(exist.vencimento); exist.dataPagamento = baixa ? baixa.data : null; }
           nUp++;
         } else {
           state.accounts.unshift(Object.assign({id:'AP'+id, empresaId:emp, documento:doc, emissao:fmtDateISO(TODAY), centroCusto:cc, pixCodigo:'', contaBancaria:BANK_ACCOUNTS[0], observacoes:'Importado de relatório.'+(r.obs?' '+r.obs:''),
