@@ -2571,6 +2571,8 @@ function companyInitials(nome){
   return (nome||'').trim().split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase() || '--';
 }
 
+/* Dia de referência do fechamento: o dia anterior (D-1); na segunda-feira (e fim de semana) vale a sexta */
+function bcDiaRef(){ const d = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()-1); while(d.getDay()===0 || d.getDay()===6) d.setDate(d.getDate()-1); return fmtDateISO(d); }
 /* Semáforo da empresa (fechamento de D-1): vermelho = não iniciado, amarelo = falta conciliar, verde = tudo certo */
 function bcStatusEmpresa(emp){
   try{
@@ -2595,7 +2597,7 @@ function renderClientesGrid(filtro){
     grid.innerHTML = `<div class="empty-inline">${COMPANIES.length ? 'Nenhuma empresa encontrada.' : 'Nenhuma empresa cadastrada ainda. Clique em "Cadastro nova empresa" para começar, ou em "Explorar sistema" para conhecer as telas.'}</div>`;
     return;
   }
-  const leg = `<div class="clientes-legenda" style="width:100%;"><span><i style="background:var(--kpi-red-text);"></i>Não iniciado</span><span><i style="background:var(--kpi-amber-text);opacity:.55;"></i>Falta conciliar</span><span><i style="background:var(--kpi-green-text);"></i>Conciliado</span><span style="color:var(--text-tertiary);">· fechamento de ${fmtDateBR(fmtDateISO(new Date(TODAY.getFullYear(),TODAY.getMonth(),TODAY.getDate()-1)))} (D-1). Passe o mouse sobre a barra para ver o que falta.</span></div>`;
+  const leg = `<div class="clientes-legenda" style="width:100%;"><span><i style="background:var(--kpi-red-text);"></i>Não iniciado</span><span><i style="background:var(--kpi-amber-text);opacity:.55;"></i>Falta conciliar</span><span><i style="background:var(--kpi-green-text);"></i>Conciliado</span><span style="color:var(--text-tertiary);">· fechamento de ${fmtDateBR(bcDiaRef())} (D-1; na segunda vale a sexta). Passe o mouse sobre a barra para ver o que falta.</span></div>`;
   grid.innerHTML = leg + list.map(c=>{ const st = bcStatusEmpresa(c.id); return `
     <button class="client-card" data-id="${c.id}" type="button" title="${rpEsc(st.txt).replace(/"/g,'&quot;')}">
       <div class="client-card-logo">${c.logo ? `<img src="${c.logo}" alt="">` : companyInitials(c.nome)}</div>
@@ -4159,7 +4161,7 @@ function renderVisaoGeral(){
   const allReceivables = RECEIVABLES.filter(r=>!state.filters.empresaId || r.empresaId===state.filters.empresaId);
 
   // ---- KPIs (posição atual, não dependem do range) ----
-  const d1Iso = fmtDateISO(new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()-1)); // fechamento do dia anterior (D-1)
+  const d1Iso = bcDiaRef(); // fechamento do dia anterior (D-1)
   const saldoAtual = (state.filters.empresaId && bankConfigurado(state.filters.empresaId))
     ? BANK_ACCOUNTS.reduce((t,c)=>t+bankSaldo(state.filters.empresaId, c, d1Iso).real, 0)
     : allReceivables.filter(r=>BAIXADO_AR.includes(r.status)).reduce((s,r)=>s+(r.valorRecebido||r.valor),0)
@@ -9077,7 +9079,7 @@ function bcSaveAll(){ bcCarimbar(); saveAccounts(state.accounts); saveReceivable
 /* resumo por conta: até onde o extrato vai, até onde está conciliado e quando foi a última ação */
 /* ---------- Fechamento do dia (D-1): conciliação, saldo dos bancos e contas contábeis ---------- */
 function bcFechamento(emp){
-  const d1 = fmtDateISO(new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()-1));
+  const d1 = bcDiaRef();
   const contas = BANK_ACCOUNTS.filter(c=>((BANKBAL[emp]||{})[c]||{}).saldoInicial!==undefined);
   const linhas = contas.map(c=>{
     const cfg = (BANKBAL[emp]||{})[c]||{}, tx = BANKTX.filter(t=>t.empresaId===emp && t.conta===c).sort(bcCmp);
