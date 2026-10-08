@@ -5599,20 +5599,29 @@ function rpIncData(){
   const pParty = a=>(supplierById(a.fornecedorId)||{}).nome||'—', cParty = r=>(clientById(r.clienteId)||{}).nome||'—';
   const addL = (cat, tipo, x, party, problema, extra)=>items.push(Object.assign({cat, sev:INC_CATS[cat].sev, tipo, ref:refOf(x), parte:party, venc:x.vencimento||'', valor:x.valor, problema, id:x.id}, extra||{}));
   const contratoAR = r=>(/^Contrato (\d+)$/.exec(r.documento||'')||[])[1];
-  const contratoAP = a=>a.categoria===CONTA_REPASSE ? (/(\d+)\s*$/.exec(a.descricao||'')||[])[1] : null;
+  const contratoAP = a=>(a.categoria===CONTA_REPASSE && !/^seguro/i.test(a.descricao||'')) ? ((/(?:locação|locacao|contrato)\s*(\d+)/i.exec(a.descricao||'')||/(\d+)\s*$/.exec(a.descricao||'')||[])[1]) : null;
 
   /* Aluguel x repasse (por contrato, vencimentos até 10 dias de distância) */
   const repAP = AP.filter(a=>contratoAP(a)); repAP.forEach(a=>a._u = false);
   const arContrato = new Set();
   AR.filter(contratoAR).sort((a,b)=>a.vencimento<b.vencimento?-1:1).forEach(r=>{
     const c = contratoAR(r); arContrato.add(c);
-    const pool = repAP.filter(a=>contratoAP(a)===c && !a._u && Math.abs(dias(a.vencimento, r.vencimento))<=10); pool.forEach(a=>a._u = true);
-    const soma = Math.round(pool.reduce((t,a)=>t+a.valor,0)*100)/100, rep = r.repasse||0, nome = cParty(r);
+    const baixado = BAIXADO_AR.includes(r.status), refD = (baixado && r.dataRecebimento) ? r.dataRecebimento : r.vencimento; // o repasse sai ~2 dias depois do recebimento
+    const cand = repAP.filter(a=>contratoAP(a)===c && !a._u && Math.abs(dias(a.vencimento, refD))<=10).sort((a,b)=>Math.abs(dias(a.vencimento,refD))-Math.abs(dias(b.vencimento,refD)));
+    const rep = r.repasse||0, nome = cParty(r);
+    // IPTU, água, condomínio e seguro cobrados na fatura podem ser pagos à parte (a outro beneficiário): se a diferença é a soma de alguns desses itens, está explicada
+    const extras = (r.itens||[]).filter(i=>i.t!=='repasse' && INV_TIPOS[i.t] && INV_TIPOS[i.t].terc).map(i=>i.v);
+    const explica = d=>{ let ok = false; const n = extras.length; for(let m=1;m<(1<<n) && !ok;m++){ let t=0; for(let k=0;k<n;k++) if(m&(1<<k)) t+=extras[k]; if(Math.abs(t-d)<0.02) ok = true; } return ok; };
+    const pool = []; let acc = 0; // pega os repasses mais próximos da data até fechar o valor (cada mês de um mesmo contrato usa o seu)
+    for(const a of cand){ if(pool.length && (Math.abs(acc-rep)<=0.015 || (acc<rep && explica(rep-acc)))) break; pool.push(a); acc += a.valor; }
+    pool.forEach(a=>a._u = true);
+    const soma = Math.round(pool.reduce((t,a)=>t+a.valor,0)*100)/100;
+    const aguardando = !baixado && r.vencimento>=today; // repasse ainda não gerado no Imobzi para aluguel que nem venceu
     if(rep>0){
       if(rep>r.valor+0.005) addL('repdif','Receber',r,nome,`Repasse (${fmtCurrency(rep)}) maior que o valor do aluguel (${fmtCurrency(r.valor)}).`);
       else {
-        if(!pool.length) addL('repdif','Receber',r,nome,`Aluguel com repasse de ${fmtCurrency(rep)}, mas não há repasse a pagar lançado para o contrato ${c}.`);
-        else if(Math.abs(soma-rep)>0.015) addL('repdif','Receber',r,nome,`Repasse do aluguel ${fmtCurrency(rep)} difere dos repasses a pagar ${fmtCurrency(soma)} (diferença de ${fmtCurrency(Math.abs(soma-rep))}).`);
+        if(!pool.length){ if(!aguardando) addL('repdif','Receber',r,nome,`Aluguel com repasse de ${fmtCurrency(rep)}, mas não há repasse a pagar lançado para o contrato ${c}.`); }
+        else if(Math.abs(soma-rep)>0.015 && !(soma<rep && explica(rep-soma))) addL('repdif','Receber',r,nome,`Repasse do aluguel ${fmtCurrency(rep)} difere dos repasses a pagar ${fmtCurrency(soma)} (diferença de ${fmtCurrency(Math.abs(soma-rep))}).`);
         const taxa = (r.valor-rep)/r.valor*100;
         if(taxa<INC_TAXA_MIN || taxa>INC_TAXA_MAX) addL('taxa','Receber',r,nome,`Taxa de administração de ${taxa.toFixed(1).replace('.',',')}% (${fmtCurrency(r.valor-rep)}) — esperado entre ${INC_TAXA_MIN}% e ${INC_TAXA_MAX}%.`);
       }
@@ -5632,7 +5641,7 @@ function rpIncData(){
 
   /* Duplicidades */
   const dupes = (list, tipo, partyFn)=>{
-    const g = {}; list.forEach(x=>{ const k = [partyFn(x), x.valor, x.vencimento, incNorm(x.descricao)].join('|'); (g[k] = g[k]||[]).push(x); });
+    const g = {}; list.forEach(x=>{ if(x.conciliacao) return; const k = [partyFn(x), x.valor, x.vencimento, incNorm(x.descricao)].join('|'); (g[k] = g[k]||[]).push(x); });
     Object.values(g).filter(a=>a.length>1).forEach(a=>a.forEach(x=>addL('dup',tipo,x,partyFn(x),`Possível duplicidade: ${a.length} lançamentos iguais (mesmo favorecido, valor, vencimento e descrição).`)));
   };
   dupes(AP,'Pagar',pParty); dupes(AR,'Receber',cParty);
@@ -5640,7 +5649,7 @@ function rpIncData(){
   /* Valores, datas, baixas */
   const lim = TODAY.getFullYear()+2;
   const chk = (x,tipo,party)=>{
-    if(!(x.valor>0)) addL('valor',tipo,x,party,'Valor zerado, negativo ou vazio.');
+    if(!(x.valor>0) && !(x.valor<0 && x.origemExtrato)) addL('valor',tipo,x,party,'Valor zerado, negativo ou vazio.');
     const y = parseInt((x.vencimento||'').slice(0,4),10);
     if(!x.vencimento || isNaN(y) || y<2020 || y>lim) addL('datas',tipo,x,party,`Vencimento fora do esperado (${x.vencimento?fmtDateBR(x.vencimento):'em branco'}).`);
   };
@@ -5648,7 +5657,7 @@ function rpIncData(){
   AP.filter(a=>['pago','aguardando_conciliacao','conciliado'].includes(a.status) && !a.dataPagamento).forEach(a=>addL('baixa','Pagar',a,pParty(a),'Marcada como paga, mas sem data de pagamento.'));
   AR.filter(r=>['recebido','parcial','aguardando_conciliacao','conciliado'].includes(r.status)).forEach(r=>{
     if(!r.dataRecebimento || !(r.valorRecebido>0)) addL('baixa','Receber',r,cParty(r),'Marcada como recebida, mas sem data ou valor recebido.');
-    else if(r.valorRecebido < r.valor-0.005) addL('baixa','Receber',r,cParty(r),`Recebimento parcial: recebido ${fmtCurrency(r.valorRecebido)} de ${fmtCurrency(r.valor)} (saldo ${fmtCurrency(r.valor-r.valorRecebido)}).`);
+    else if(r.valorRecebido < r.valor-Math.max(0.005, (r.concs&&r.concs.length) ? BC_TARIFA_MAX : 0)) addL('baixa','Receber',r,cParty(r),`Recebimento parcial: recebido ${fmtCurrency(r.valorRecebido)} de ${fmtCurrency(r.valor)} (saldo ${fmtCurrency(r.valor-r.valorRecebido)}).`);
   });
 
   /* Pagamento sem dados do beneficiário / sem documento fiscal (só contas a pagar em aberto, exceto repasses) */
