@@ -2005,6 +2005,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
+const APP_VERSION = '08/10-a'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -2013,6 +2014,8 @@ const LANC_REPASSE_NOME = 'Repasses a terceiros';
 /* linhas do Budget ainda sem conta mapeada que precisam existir no lançamento (aporte de sócios segue a conta já usada) */
 const LANC_PADRAO = {'aporte capital socios':'2.01.05.006', 'pagamento - aporte capital socios':'2.01.05.006'};
 let _lancCache = {emp:null, b:null, map:null, n:0, M:null};
+/* empresa do Budget: a selecionada; sem seleção, a única empresa que tem Budget carregado */
+function lancEmp(){ const e = state.filters.empresaId; if(e) return e; const ks = Object.keys(BF).filter(k=>BF[k] && BF[k].rows && BF[k].rows.length); return ks.length===1 ? ks[0] : ''; }
 function lancModelo(emp){
   const b = BF[emp]; if(!b || !b.rows || !b.rows.length) return null;
   if(_lancCache.emp===emp && _lancCache.b===b && _lancCache.map===b.map && _lancCache.n===PLANO.length) return _lancCache.M;
@@ -2032,12 +2035,12 @@ function lancModelo(emp){
 }
 function lancNome(c){
   if(c===CONTA_REPASSE) return LANC_REPASSE_NOME;
-  try{ const M = lancModelo(state.filters.empresaId), x = M && M.idx.get(c); return (x && !x.conflito) ? x.nome : ''; }catch(e){ return ''; }
+  try{ const M = lancModelo(lancEmp()), x = M && M.idx.get(c); return (x && !x.conflito) ? x.nome : ''; }catch(e){ return ''; }
 }
 /* contas oferecidas no lançamento manual: as linhas do Budget/Forecast (só o nome), repasses e "A classificar"; sem Budget carregado, a lista completa */
 function lancLista(tipo, atual){
   const cheia = tipo==='pagar' ? contasPagar() : contasReceber(); let M = null;
-  try{ M = lancModelo(state.filters.empresaId); }catch(e){}
+  try{ M = lancModelo(lancEmp()); }catch(e){}
   if(!M) return cheia;
   const lado = tipo==='pagar' ? 'P' : 'R', out = [cheia[0], {cod:CONTA_REPASSE, nome:LANC_REPASSE_NOME, dem:'BP', _g:'Valores de terceiros'}], vistos = new Set([cheia[0].cod, CONTA_REPASSE]);
   M.itens.filter(i=>i.lado===lado).forEach(i=>{
@@ -3148,7 +3151,7 @@ function renderHeaderDate(){
   document.getElementById('phDate').textContent = `${days[TODAY.getDay()]}, ${TODAY.getDate()} de ${months[TODAY.getMonth()]} de ${TODAY.getFullYear()}`;
   const now = new Date();
   const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
-  document.getElementById('phUpdated').textContent = `Dados atualizados em ${fmtDateBR(fmtDateISO(TODAY))} às ${hh}:${mm}`;
+  document.getElementById('phUpdated').textContent = `Dados atualizados em ${fmtDateBR(fmtDateISO(TODAY))} às ${hh}:${mm} · versão ${APP_VERSION}`;
 }
 
 /* ================================================================
@@ -9322,7 +9325,7 @@ function bcOpen(id){
   bcModalRender(); document.getElementById('bcOverlay').classList.add('open');
 }
 function bcContaLista(debito){
-  let M = null; try{ M = lancModelo(state.filters.empresaId); }catch(e){}
+  let M = null; try{ M = lancModelo(lancEmp()); }catch(e){}
   if(!M) return debito ? contasPagar() : contasReceber().concat(PLANO.filter(a=>contaAtiva(a) && bcContaDespesa(a.cod))); // sem Budget: lista completa como antes
   const usa = lancLista(debito?'pagar':'receber'), outra = lancLista(debito?'receber':'pagar');
   return usa.concat(debito ? [] : outra.filter(a=>!usa.some(x=>x.cod===a.cod)));
@@ -10073,7 +10076,7 @@ function pageHeaderHTML(title, subtitle){
     </div>
     <div class="ph-right">
       <div class="ph-date">${days[TODAY.getDay()]}, ${TODAY.getDate()} de ${months[TODAY.getMonth()]} de ${TODAY.getFullYear()}</div>
-      <div class="ph-updated">Dados atualizados em ${fmtDateBR(fmtDateISO(TODAY))} às ${hh}:${mm}</div>
+      <div class="ph-updated">Dados atualizados em ${fmtDateBR(fmtDateISO(TODAY))} às ${hh}:${mm} · versão ${APP_VERSION}</div>
     </div>
   </div>`;
 }
