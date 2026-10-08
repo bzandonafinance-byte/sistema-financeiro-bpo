@@ -5625,7 +5625,7 @@ function rpIncData(){
         const taxa = (r.valor-rep)/r.valor*100;
         if(taxa<INC_TAXA_MIN || taxa>INC_TAXA_MAX) addL('taxa','Receber',r,nome,`Taxa de administração de ${taxa.toFixed(1).replace('.',',')}% (${fmtCurrency(r.valor-rep)}) — esperado entre ${INC_TAXA_MIN}% e ${INC_TAXA_MAX}%.`);
       }
-    } else {
+    } else if(!r.repasseOk && !r.semRepasse){ // semRepasse = primeiro aluguel de contrato novo, que fica todo com a imobiliária
       addL('semrep','Receber',r,nome, pool.length ? `Há repasse a pagar de ${fmtCurrency(soma)} para o contrato ${c}, mas o repasse do aluguel não foi informado.` : `Aluguel do contrato ${c} sem repasse informado e sem repasse a pagar lançado.`);
     }
   });
@@ -8253,7 +8253,8 @@ function impApply(sel, emp, anexosBase, opts){
       const emConc = x=>['aguardando_conciliacao','conciliado'].includes(x.status) || !!x.conciliacao;
       if(r.tipo==='pagar'){
         const camp = {faturaId:r.faturaId||undefined, fornecedorId:p.id, descricao:r.desc||'Importado de relatório', competencia:monthOf(r.venc), vencimento:r.venc, valor, categoria:conta, formaPagamento:r.forma, planoContas:contaLabel(conta)};
-        if(exist){
+        if(exist && exist.canceladoManual){ /* repasse cancelado à mão (ex.: primeiro aluguel fica todo com a imobiliária): a sincronização não recria */ }
+        else if(exist){
           const vm = exist.vencManual ? exist.vencimento : null; // data de pagamento combinada à mão: a sincronização não volta para a data do Imobzi
           Object.assign(exist, camp); if(vm) exist.vencimento = vm;
           if(!emConc(exist) && !(exist.status==='pago' && !baixa)){ exist.status = baixa ? 'pago' : computeStatusForDate(exist.vencimento); exist.dataPagamento = baixa ? baixa.data : null; }
