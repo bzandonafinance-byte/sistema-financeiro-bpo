@@ -5679,7 +5679,7 @@ function rpIncData(){
   parties.forEach(({p,k})=>{
     if(p.semCadastro) return; // conta interna (ex.: aplicação, sócios): não precisa de dados cadastrais
     const falta = []; if(vz(p.cnpj)) falta.push('CPF/CNPJ'); if(vz(p.email)) falta.push('e-mail'); if(vz(p.telefone)) falta.push('telefone');
-    if(falta.length) items.push({cat:'cadastro', sev: vz(p.cnpj) ? 'Média' : 'Baixa', tipo:'Cadastro de '+k.toLowerCase(), ref:'—', parte:p.nome, venc:'', valor:null, problema:'Falta: '+falta.join(', ')+'.', id:p.id});
+    if(falta.length) items.push({cat:'cadastro', sev:'Baixa', tipo:'Cadastro de '+k.toLowerCase(), ref:'—', parte:p.nome, venc:'', valor:null, problema:'Falta: '+falta.join(', ')+'.', id:p.id});
   });
   const gp = {}; parties.forEach(({p,k})=>{ const n = incNorm(p.nome); if(n) (gp[k+'|'+n] = gp[k+'|'+n]||[]).push(p); const d = String(p.cnpj||'').replace(/\D/g,''); if(d.length>=11) (gp[k+'#'+d] = gp[k+'#'+d]||[]).push(p); });
   const vistos = new Set();
@@ -6311,7 +6311,7 @@ function renderRelatorios(){
       <button class="tab-btn ${mode==='diario'?'active':''}" data-tab="diario">Relatório diário</button>
       <button class="tab-btn ${sem?'active':''}" data-tab="semanal">Relatório semanal</button>
       <button class="tab-btn ${ext?'active':''}" data-tab="ext">Extrato de terceiros</button>
-      <button class="tab-btn ${inc?'active':''}" data-tab="incons">Inconsistências${di.items.length?` (${di.items.length})`:''}</button>
+      <button class="tab-btn ${inc?'active':''}" data-tab="incons">Inconsistências${di.items.filter(x=>x.sev!=='Baixa').length?` (${di.items.filter(x=>x.sev!=='Baixa').length})`:''}</button>
     </div></div>
     <div class="rp-bar">
       <span>Destinatário: <b>${d.company&&d.company.email?d.company.email:'— sem e-mail cadastrado —'}</b> (cadastro da empresa)</span>
@@ -9051,6 +9051,33 @@ function bcCarimbar(){
 }
 function bcSaveAll(){ bcCarimbar(); saveAccounts(state.accounts); saveReceivables(); saveBankTx(); saveTransfers(); }
 /* resumo por conta: até onde o extrato vai, até onde está conciliado e quando foi a última ação */
+/* ---------- Fechamento do dia (D-1): conciliação, saldo dos bancos e contas contábeis ---------- */
+function bcFechamento(emp){
+  const d1 = fmtDateISO(new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()-1));
+  const contas = BANK_ACCOUNTS.filter(c=>((BANKBAL[emp]||{})[c]||{}).saldoInicial!==undefined);
+  const linhas = contas.map(c=>{
+    const cfg = (BANKBAL[emp]||{})[c]||{}, tx = BANKTX.filter(t=>t.empresaId===emp && t.conta===c).sort(bcCmp);
+    const pend = tx.filter(t=>t.status!=='conciliado' && t.data<=d1).length;
+    const ate = cfg.extData || (tx.length ? tx[tx.length-1].data : '');
+    const ult = [...tx].reverse().find(t=>t.data<=d1 && t.saldo!==null && t.saldo!==undefined);
+    const ext = ult ? ult.saldo : (cfg.extData && cfg.extData<=d1 && cfg.extrato!==undefined ? cfg.extrato : null);
+    const sis = bankSaldo(emp, c, d1).real, dif = ext===null ? null : bcR2(sis-ext);
+    const cobre = !!ate && ate>=d1;
+    return {conta:c, ate, pend, ext, sis, dif, cobre, ok: cobre && pend===0 && dif!==null && Math.abs(dif)<0.005};
+  });
+  const ac = impAcOf('pagar'), ar = impAcOf('receber');
+  const semConta = state.accounts.filter(a=>a.empresaId===emp && a.status!=='cancelado' && a.categoria===ac).length + RECEIVABLES.filter(r=>r.empresaId===emp && r.status!=='cancelado' && r.categoria===ar && !(r.itens&&r.itens.length)).length;
+  return {d1, linhas, semConta, ok: linhas.length>0 && linhas.every(x=>x.ok) && semConta===0};
+}
+function bcFechamentoHTML(emp){
+  const f = bcFechamento(emp); if(!f.linhas.length) return '';
+  const tag = ok=>`<span class="imp-tag ${ok?'new':'warn'}">${ok?'OK':'Ajustar'}</span>`;
+  return `<div class="panel" style="margin-top:14px;"><div class="subpanel-header"><div class="subpanel-title">Fechamento de ${fmtDateBR(f.d1)} (D-1)</div>${f.ok?'<span class="imp-tag new">Fechado</span>':'<span class="imp-tag warn">Pendente</span>'}</div>
+    <div class="cx-table-wrap"><table class="cx-table"><thead><tr><th>1 · Conciliação e 2 · Saldo bancário</th><th>Extrato até</th><th class="num">Pendentes</th><th class="num">Saldo do extrato</th><th class="num">Saldo no sistema</th><th class="num">Diferença</th><th></th></tr></thead><tbody>
+    ${f.linhas.map(x=>`<tr><td><b>${rpEsc(x.conta)}</b></td><td>${x.ate?fmtDateBR(x.ate):'—'}${x.cobre?'':' <span style="color:#b42318;">(falta importar)</span>'}</td><td class="num">${x.pend}</td><td class="num">${x.ext===null?'—':fmtCurrency(x.ext)}</td><td class="num">${fmtCurrency(x.sis)}</td><td class="num" style="color:${x.dif!==null&&Math.abs(x.dif)<0.005?'#0f6e45':'#b42318'};">${x.dif===null?'—':(Math.abs(x.dif)<0.005?'Confere':fmtCurrency(x.dif))}</td><td>${tag(x.ok)}</td></tr>`).join('')}
+    <tr><td><b>3 · Lançamentos com a conta contábil correta</b></td><td colspan="5">${f.semConta ? f.semConta+' lançamento(s) ainda "A classificar"' : 'Nenhum lançamento "A classificar"'}</td><td>${tag(f.semConta===0)}</td></tr>
+    </tbody></table></div></div>`;
+}
 function bcResumoConta(emp, conta){
   const l = BANKTX.filter(t=>t.empresaId===emp && t.conta===conta), conc = l.filter(t=>t.status==='conciliado');
   const comHora = conc.filter(t=>t.conciliadoEm).sort((a,b)=>a.conciliadoEm<b.conciliadoEm?-1:1), ult = comHora[comHora.length-1];
@@ -9262,6 +9289,7 @@ function renderConciliacao(){
       ${kpi('Última conciliação', rs.quando ? bcQuando(rs.quando) : (rs.conciliadoAte ? 'até '+fmtDateBR(rs.conciliadoAte) : '—'),
         rs.quando ? `${rs.quem?'por '+rpEsc(rs.quem)+' · ':''}extrato conciliado até ${rs.conciliadoAte?fmtDateBR(rs.conciliadoAte):'—'}` : (rs.conciliadoAte ? 'horário não registrado (conciliado antes desta versão)' : 'nenhuma linha conciliada'))}
     </div>
+    ${bcFechamentoHTML(emp)}
     ${quadro ? `<div class="panel" style="margin-top:14px;"><div class="subpanel-header"><div class="subpanel-title">Situação da conciliação por conta</div><span class="dg-note">Clique em uma conta para abri-la</span></div>
       <div class="cx-table-wrap"><table class="cx-table"><thead><tr><th>Conta</th><th>Extrato até</th><th>Conciliado até</th><th>Última conciliação</th><th class="num">Pendentes</th></tr></thead><tbody>${quadro}</tbody></table></div></div>` : ''}
     <div class="panel" style="margin-top:14px;">
