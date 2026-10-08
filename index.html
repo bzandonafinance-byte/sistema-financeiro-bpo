@@ -2009,7 +2009,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '08/10-a'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '08/10-b'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -2571,6 +2571,16 @@ function companyInitials(nome){
   return (nome||'').trim().split(/\s+/).filter(Boolean).slice(0,2).map(w=>w[0]).join('').toUpperCase() || '--';
 }
 
+/* Atualização automática: ao abrir, compara com a versão publicada no GitHub e, se for diferente, recarrega uma vez (evita ficar preso numa cópia antiga do navegador) */
+(async function autoAtualizar(){
+  try{
+    if(location.protocol==='file:') return;
+    const r = await fetch(location.pathname+'?chk='+Date.now(), {cache:'no-store'}); if(!r.ok) return;
+    const m = /const APP_VERSION = '([^']+)'/.exec(await r.text()); if(!m || m[1]===APP_VERSION) return;
+    const k = 'bpo_autoupd_'+m[1]; if(sessionStorage.getItem(k)) return; sessionStorage.setItem(k,'1');
+    location.replace(location.pathname+'?v='+encodeURIComponent(m[1]));
+  }catch(e){}
+})();
 /* Dia de referência do fechamento: o dia anterior (D-1); na segunda-feira (e fim de semana) vale a sexta */
 function bcDiaRef(){ const d = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()-1); while(d.getDay()===0 || d.getDay()===6) d.setDate(d.getDate()-1); return fmtDateISO(d); }
 /* Semáforo da empresa (fechamento de D-1): vermelho = não iniciado, amarelo = falta conciliar, verde = tudo certo */
