@@ -2009,7 +2009,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '08/10-b'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '09/10-a'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -2587,9 +2587,11 @@ function bcDiaRef(){ const d = new Date(TODAY.getFullYear(), TODAY.getMonth(), T
 function bcStatusEmpresa(emp){
   try{
     const f = bcFechamento(emp), dd = fmtDateBR(f.d1);
-    if(!f.linhas.length) return {nivel:'vermelho', txt:`Não iniciado: contas bancárias e saldos iniciais ainda não configurados`};
+    /* "Não iniciado" (vermelho) é só para empresa nova, sem nada feito: nenhum extrato importado nem lançamento. Quem já tem histórico fica no máximo amarelo. */
+    const comHistorico = BANKTX.some(t=>t.empresaId===emp) || RECEIVABLES.some(r=>r.empresaId===emp) || state.accounts.some(a=>a.empresaId===emp);
+    if(!f.linhas.length) return comHistorico ? {nivel:'amarelo', txt:`Falta conciliar: contas bancárias e saldos iniciais ainda não configurados`} : {nivel:'vermelho', txt:`Não iniciado: empresa nova, sem contas bancárias, extratos ou lançamentos`};
     const faltaImp = f.linhas.filter(x=>!x.cobre);
-    if(faltaImp.length===f.linhas.length) return {nivel:'vermelho', txt:`Não iniciado: extratos de ${dd} ainda não importados`};
+    if(faltaImp.length===f.linhas.length && !BANKTX.some(t=>t.empresaId===emp)) return {nivel:'vermelho', txt:`Não iniciado: nenhum extrato importado ainda`};
     if(f.ok) return {nivel:'verde', txt:`Conciliado: ${dd} fechado e saldos batendo com os extratos`};
     const m = [];
     if(faltaImp.length) m.push('falta importar o extrato: '+faltaImp.map(x=>x.conta.split(' (')[0]).join(', '));
@@ -2607,7 +2609,7 @@ function renderClientesGrid(filtro){
     grid.innerHTML = `<div class="empty-inline">${COMPANIES.length ? 'Nenhuma empresa encontrada.' : 'Nenhuma empresa cadastrada ainda. Clique em "Cadastro nova empresa" para começar, ou em "Explorar sistema" para conhecer as telas.'}</div>`;
     return;
   }
-  const leg = `<div class="clientes-legenda" style="width:100%;"><span><i style="background:var(--kpi-red-text);"></i>Não iniciado</span><span><i style="background:var(--kpi-amber-text);opacity:.55;"></i>Falta conciliar</span><span><i style="background:var(--kpi-green-text);"></i>Conciliado</span><span style="color:var(--text-tertiary);">· fechamento de ${fmtDateBR(bcDiaRef())} (D-1; na segunda vale a sexta). Passe o mouse sobre a barra para ver o que falta.</span></div>`;
+  const leg = `<div class="clientes-legenda" style="width:100%;"><span><i style="background:var(--kpi-red-text);"></i>Não iniciado (empresa nova)</span><span><i style="background:var(--kpi-amber-text);opacity:.55;"></i>Falta conciliar</span><span><i style="background:var(--kpi-green-text);"></i>Conciliado</span><span style="color:var(--text-tertiary);">· fechamento de ${fmtDateBR(bcDiaRef())} (D-1; na segunda vale a sexta). Passe o mouse sobre a barra para ver o que falta.</span></div>`;
   grid.innerHTML = leg + list.map(c=>{ const st = bcStatusEmpresa(c.id); return `
     <button class="client-card" data-id="${c.id}" type="button" title="${rpEsc(st.txt).replace(/"/g,'&quot;')}">
       <div class="client-card-logo">${c.logo ? `<img src="${c.logo}" alt="">` : companyInitials(c.nome)}</div>
