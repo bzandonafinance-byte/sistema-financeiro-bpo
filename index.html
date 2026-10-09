@@ -2009,7 +2009,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '09/10-c'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '09/10-d'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -9756,7 +9756,7 @@ function bfResumoRow(b, r){
   const n = bfNorm(r.nome), ultima = [...b.rows].reverse().find(x=>x.kind==='single');
   return (r.kind==='grupo' && n==='receita bruta') || (r.kind==='single' && (/total.*desp/.test(n) || /ebtida|ebitda/.test(n))) || (ultima && r.id===ultima.id);
 }
-const bfNomeTab = r=> /lucro operacional|lucro liquido/.test(bfNorm(r.nome)) ? 'Lucro Operacional' : r.nome;
+const bfNomeTab = r=> /lucro operacional|lucro liquido/.test(bfNorm(r.nome)) ? 'Lucro Operacional' : (BF_RENOMEAR[bfNorm(r.nome)] || r.nome);
 function bfLinhasVisiveis(b, t){
   const out = [];
   b.rows.forEach((r,i)=>{
@@ -9830,7 +9830,9 @@ function renderBudget(){
 }
 /* nomes do DRE Gerencial conforme a lista do Bruno (a planilha pode ter variações de escrita) */
 const BF_NOMES_DRE = {'deducoes de vendas':'Dedução de vendas', 'deducao de vendas':'Dedução de vendas', 'receita liquida':'Receita Liquida'};
-const bfNomeDRE = nome=> BF_NOMES_DRE[bfNorm(nome)] || nome;
+/* nomes de exibição que valem em todas as telas (a planilha continua com o nome original) */
+const BF_RENOMEAR = {'telecomunicacoes (fixo, movel, internet)':'Despesas com Telecomunicação'};
+const bfNomeDRE = nome=> BF_RENOMEAR[bfNorm(nome)] || BF_NOMES_DRE[bfNorm(nome)] || nome;
 /* DRE Gerencial nas linhas do modelo (planilha): Budget | Actual | Variação | % Variação, no mês escolhido */
 /* ---------- Fluxo de caixa mensal: Projetado × Actual (saldo dos bancos) ---------- */
 /* primeiro mês coberto: o mês seguinte à data do saldo inicial das contas bancárias */
@@ -10105,7 +10107,7 @@ function bfMapOpen(){
     <div class="rp-hint" style="line-height:1.6;margin-bottom:10px;">Cada linha do Budget recebe o realizado das contas listadas (separe os códigos por vírgula; um código de grupo, como 6.07, pega todas as contas dele). O Actual é calculado a partir dessas contas, por competência. Mostro o realizado de ${cxMonthFull(mes)} ao lado de cada linha.</div>
     ${nao.length?`<div class="rp-bar" style="background:#fff6df;border-color:#f6e7bd;color:#6b4a00;margin-bottom:10px;"><span><b>Realizado sem linha (${cxMonthFull(mes)}):</b> ${nao.map(([k,v])=>`${rpEsc(k.split('|')[1])} ${rpEsc(contaNome(k.split('|')[1]))} ${cxMoney(v)}`).join(' · ')}</span></div>`:''}
     <div class="cx-table-wrap" style="max-height:52vh;overflow:auto;"><table class="cx-table"><thead><tr><th>Linha do Budget</th><th>Lado</th><th>Contas do plano</th><th class="num">Realizado</th></tr></thead><tbody>${b.rows.map(r=>{
-      if(r.kind==='grupo'){ g = r.nome; return `<tr><td colspan="4" style="font-weight:700;background:#fafafb;">${rpEsc(r.nome)}</td></tr>`; }
+      if(r.kind==='grupo'){ g = r.nome; return `<tr><td colspan="4" style="font-weight:700;background:#fafafb;">${rpEsc(BF_RENOMEAR[bfNorm(r.nome)] || r.nome)}</td></tr>`; }
       if(r.kind!=='item') return '';
       const cods = (b.map[r.id]||[]).join(', ');
       return `<tr><td style="padding-left:24px;">${rpEsc(r.nome)}</td><td>${r.lado==='R'?'Receita':'Despesa'}</td><td><input class="cx-input bf-mp" data-id="${r.id}" list="bfContasDl" value="${rpEsc(cods)}" placeholder="ex.: 6.01.002, 6.01.015" style="width:100%;min-width:260px;"></td><td class="num">${bfFmt(A[r.id]||0)}</td></tr>`; }).join('')}</tbody></table></div>`;
