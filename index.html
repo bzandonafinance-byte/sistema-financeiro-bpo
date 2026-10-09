@@ -2009,7 +2009,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '09/10-b'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '09/10-c'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -9090,6 +9090,14 @@ function bcCarimbar(){
 }
 function bcSaveAll(){ bcCarimbar(); saveAccounts(state.accounts); saveReceivables(); saveBankTx(); saveTransfers(); }
 /* resumo por conta: até onde o extrato vai, até onde está conciliado e quando foi a última ação */
+/* Saldo do extrato no fim do último dia (até um limite): entre as linhas do mesmo dia, a última é a que ninguém usa como "saldo anterior" (a ordem de importação pode misturar a sequência) */
+function bcFimDia(tx, ate){
+  const com = tx.filter(t=>t.data<=ate && t.saldo!==null && t.saldo!==undefined); if(!com.length) return null;
+  const dia = com.reduce((m,t)=>t.data>m?t.data:m,''), l = com.filter(t=>t.data===dia);
+  const anteriores = new Set(l.map(t=>Math.round((t.saldo-t.valor)*100)));
+  const ultimas = l.filter(t=>!anteriores.has(Math.round(t.saldo*100)));
+  return (ultimas.length===1 ? ultimas[0] : l.slice().sort(bcCmp).pop());
+}
 /* ---------- Fechamento do dia (D-1): conciliação, saldo dos bancos e contas contábeis ---------- */
 function bcFechamento(emp){
   const d1 = bcDiaRef();
@@ -9098,7 +9106,7 @@ function bcFechamento(emp){
     const cfg = (BANKBAL[emp]||{})[c]||{}, tx = BANKTX.filter(t=>t.empresaId===emp && t.conta===c).sort(bcCmp);
     const pend = tx.filter(t=>t.status!=='conciliado' && t.data<=d1).length;
     const ate = cfg.extData || (tx.length ? tx[tx.length-1].data : '');
-    const ult = [...tx].reverse().find(t=>t.data<=d1 && t.saldo!==null && t.saldo!==undefined);
+    const ult = bcFimDia(tx, d1);
     const ext = ult ? ult.saldo : (cfg.extData && cfg.extData<=d1 && cfg.extrato!==undefined ? cfg.extrato : null);
     const sis = bankSaldo(emp, c, d1).real, dif = ext===null ? null : bcR2(sis-ext);
     const cobre = !!ate && ate>=d1;
@@ -9266,7 +9274,7 @@ function renderConciliacao(){
   const pend = todas.filter(t=>t.status!=='conciliado'), conc = todas.filter(t=>t.status==='conciliado');
   const semExt = bcSemExtrato(emp, bcConta);
   const regras = BANKRULES.filter(r=>r.empresaId===emp);
-  const ult = [...todas].reverse().find(t=>t.saldo!==null && t.saldo!==undefined);
+  const ult = bcFimDia(todas, '9999-12-31');
   const ate = ult ? ult.data : fmtDateISO(TODAY), sis = bankSaldo(emp, bcConta, ate);
   const cfg = (BANKBAL[emp]||{})[bcConta] || {};
   const dif = ult ? bcR2(sis.saldo - ult.saldo) : null;
@@ -9317,6 +9325,7 @@ function renderConciliacao(){
       <div><div class="cx-title">Conciliação bancária</div><div class="cx-crumb">Financeiro &nbsp;/&nbsp; <b>Conciliação bancária</b>${co.nome?` &nbsp;·&nbsp; ${rpEsc(co.nome)}`:''}</div>
         <div class="cx-crumb" style="margin-top:4px;"><b>Última conciliação:</b> ${rs.quando ? bcQuando(rs.quando)+(rs.quem?' · '+rpEsc(rs.quem):'')+' (extrato até '+(rs.conciliadoAte?fmtDateBR(rs.conciliadoAte):'—')+')' : (rs.conciliadoAte ? 'extrato conciliado até '+fmtDateBR(rs.conciliadoAte) : 'nenhuma linha conciliada ainda')}</div></div>
       <div class="cx-head-actions"><select class="cx-select" id="bcConta">${contas.map(c=>`<option ${c===bcConta?'selected':''}>${rpEsc(c)}</option>`).join('')}</select>
+        ${(cfg.extData||'') < bcDiaRef() ? `<button class="cx-btn" id="bcSemMov" title="O banco não teve movimento; mantém o saldo anterior">Sem movimentação em ${fmtDateBR(bcDiaRef())}</button>` : ''}
         <button class="cx-btn accent big" data-act="imp">${cxSvg('down')} Importar extrato</button></div>
     </div>
     <div class="vg-kpi-grid">
@@ -9342,6 +9351,7 @@ function renderConciliacao(){
         ${bcTab==='pendentes' && auto.length ? `<button class="cx-btn accent" data-act="bulk">Confirmar ${auto.length} sugest${auto.length>1?'ões':'ão'} automática${auto.length>1?'s':''}</button>` : ''}</div>` : ''}
       ${corpo}
     </div>`;
+  const smv = el.querySelector('#bcSemMov'); if(smv) smv.addEventListener('click', ()=>{ const d1 = bcDiaRef(); if(!confirm(`Confirmar que ${bcConta} não teve movimentação até ${fmtDateBR(d1)}? O saldo anterior (${fmtCurrency(cfg.extrato!==undefined?cfg.extrato:sis.saldo)}) será mantido.`)) return; BANKBAL[emp][bcConta] = Object.assign(BANKBAL[emp][bcConta]||{}, {extData:d1}); saveBankBal(); showToast('Dia registrado sem movimentação.'); renderConciliacao(); });
   el.querySelector('#bcConta').addEventListener('change', e=>{ bcConta = e.target.value; renderConciliacao(); });
   el.querySelectorAll('tr[data-conta]').forEach(tr=>tr.addEventListener('click', ()=>{ bcConta = tr.dataset.conta; bcTab = 'pendentes'; renderConciliacao(); }));
   el.querySelectorAll('.tab-btn[data-tab]').forEach(b=>b.addEventListener('click', ()=>{ bcTab = b.dataset.tab; renderConciliacao(); }));
