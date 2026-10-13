@@ -2009,7 +2009,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '13/10-a'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '13/10-b'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -9330,6 +9330,7 @@ function renderConciliacao(){
         <div class="cx-crumb" style="margin-top:4px;"><b>Última conciliação:</b> ${rs.quando ? bcQuando(rs.quando)+(rs.quem?' · '+rpEsc(rs.quem):'')+' (extrato até '+(rs.conciliadoAte?fmtDateBR(rs.conciliadoAte):'—')+')' : (rs.conciliadoAte ? 'extrato conciliado até '+fmtDateBR(rs.conciliadoAte) : 'nenhuma linha conciliada ainda')}</div></div>
       <div class="cx-head-actions"><select class="cx-select" id="bcConta">${contas.map(c=>`<option ${c===bcConta?'selected':''}>${rpEsc(c)}</option>`).join('')}</select>
         ${(cfg.extData||'') < bcDiaRef() ? `<button class="cx-btn" id="bcSemMov" title="O banco não teve movimento; mantém o saldo anterior">Sem movimentação em ${fmtDateBR(bcDiaRef())}</button>` : ''}
+        ${(()=>{ const bk = bankDe(bcConta), bc = bancosCfg()[bk]; return bk && bc && bc.habilitado ? (bc.ativo ? `<button class="cx-btn" id="bcBanco" data-modo="buscar" title="Traz os lançamentos direto do banco, sem importar arquivo">Buscar do banco</button>` : `<button class="cx-btn" id="bcBanco" data-modo="validar" title="Compara o que o banco informa com o extrato já importado, antes de ligar a busca automática">Validar conexão com o banco</button>`) : ''; })()}
         ${/pjbank/i.test(bcConta) ? `<button class="cx-btn" id="bcPjb" title="Traz os boletos recebidos e as tarifas direto do Imobzi, sem importar arquivo">Buscar do Imobzi</button>` : ''}
         <button class="cx-btn accent big" data-act="imp">${cxSvg('down')} Importar extrato</button></div>
     </div>
@@ -9356,6 +9357,7 @@ function renderConciliacao(){
         ${bcTab==='pendentes' && auto.length ? `<button class="cx-btn accent" data-act="bulk">Confirmar ${auto.length} sugest${auto.length>1?'ões':'ão'} automática${auto.length>1?'s':''}</button>` : ''}</div>` : ''}
       ${corpo}
     </div>`;
+  const bkb = el.querySelector('#bcBanco'); if(bkb) bkb.addEventListener('click', async ()=>{ if(denyIfReadOnly()) return; const bk = bankDe(bcConta); bkb.disabled = true; bkb.textContent = 'Consultando…'; if(bkb.dataset.modo==='validar'){ await bankValidarUI(bk); } else { const r = await bankSync(bk, {force:true}); if(!r.ok) showToast('Banco: '+(r.erro||'não foi possível buscar')+'.'); } renderConciliacao(); });
   const pjb = el.querySelector('#bcPjb'); if(pjb) pjb.addEventListener('click', async ()=>{ if(denyIfReadOnly()) return; pjb.disabled = true; pjb.textContent = 'Buscando…'; const r = await pjbSync({force:true}); if(!r.ok){ showToast('PJBank/Imobzi: '+(r.erro||'não foi possível buscar')+'.'); renderConciliacao(); } });
   const smv = el.querySelector('#bcSemMov'); if(smv) smv.addEventListener('click', ()=>{ const d1 = bcDiaRef(); if(!confirm(`Confirmar que ${bcConta} não teve movimentação até ${fmtDateBR(d1)}? O saldo anterior (${fmtCurrency(cfg.extrato!==undefined?cfg.extrato:sis.saldo)}) será mantido.`)) return; BANKBAL[emp][bcConta] = Object.assign(BANKBAL[emp][bcConta]||{}, {extData:d1}); saveBankBal(); showToast('Dia registrado sem movimentação.'); renderConciliacao(); });
   el.querySelector('#bcConta').addEventListener('change', e=>{ bcConta = e.target.value; renderConciliacao(); });
@@ -9593,7 +9595,9 @@ async function bcImpLoad(file){
 function bcImpConfirm(){
   const emp = state.filters.empresaId, p = bcImp.parsed; let conta = bcImpContaFinal(); if(!p || !conta) return;
   if(!BANK_ACCOUNTS.includes(conta)){ BANK_ACCOUNTS.push(conta); saveBankAccounts(); }
-  const hojeIso = fmtDateISO(TODAY), lista = p.tx.filter(x=>x.data<=hojeIso), futuras = p.tx.length - lista.length; // data futura = agendado: fica de fora
+  const hojeIso = fmtDateISO(TODAY), extAtual = (((BANKBAL[emp]||{})[conta])||{}).extData || '', buscaAuto = !!(bancosCfg()[bankDe(conta)]||{}).ativo;
+  let lista = p.tx.filter(x=>x.data<=hojeIso), futuras = p.tx.length - lista.length; // data futura = agendado: fica de fora
+  if(buscaAuto && extAtual) lista = lista.filter(x=>x.data>extAtual); // dias que o banco já entregou direto não são importados de novo
   const keys = bcKeys(lista, emp, conta), ex = new Set(BANKTX.map(t=>t.key)), stamp = Date.now(); let n = 0;
   lista.forEach((x,i)=>{
     if(ex.has(keys[i])) return;
@@ -9689,6 +9693,102 @@ async function pjbSync(opts){
 setInterval(()=>{ if(imobziAutoOn()) pjbSync({silent:true}); }, 30*60*1000);
 document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && imobziAutoOn()) pjbSync({silent:true}); });
 setTimeout(()=>{ if(imobziAutoOn()) pjbSync({silent:true}); }, 8000);
+
+/* ================================================================
+   Extratos direto dos bancos (Sicredi / Banco do Brasil) pelo cofre de extratos
+   Apps Script (ação extrato_banco) → cofre (guarda certificado e credenciais) → banco.
+   Cada lançamento chega com o identificador do banco (não duplica) e o saldo real; entra só até D-1.
+   Configuração por banco em envioCfg().bancos[banco] = {habilitado, ativo, desde, ultimo}:
+     habilitado = o cofre está ligado a esse banco (aparece o botão "Validar conexão")
+     ativo      = a busca automática está ligada (depois de validar contra o extrato importado)
+   ================================================================ */
+const bankDe = conta=> /sicredi/i.test(conta||'') ? 'sicredi' : /banco do brasil|^bb\b/i.test(conta||'') ? 'bb' : '';
+const bankIsFeed = t=> /^(sic|bb|teste):/.test(t.key||'');
+const bancosCfg = ()=> (envioCfg().bancos || {});
+function bancosSetCfg(banco, o){ const c = envioCfg(); const b = Object.assign({}, c.bancos||{}); b[banco] = Object.assign({}, b[banco]||{}, o); envioSave(Object.assign({}, c, {bancos:b})); }
+let bankBusy = false;
+const bankOntem = ()=> fmtDateISO(new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate()-1));
+const bankDiaSeguinte = iso=> fmtDateISO(new Date(new Date(iso+'T12:00:00').getTime()+864e5));
+async function bankBuscar(banco, inicio, fim){
+  const j = await rpPost({acao:'extrato_banco', banco, inicio, fim});
+  if(!j || !j.ok) throw new Error((j && j.erro) || 'resposta inválida do Apps Script (atualize para a versão 15)');
+  return j;
+}
+/* compara o que o banco informa com o que já foi importado à mão (dias já fechados), sem gravar nada */
+async function bankValidar(banco, dias){
+  const emp = (envioCfg().imobzi||{}).empresa, conta = BANK_ACCOUNTS.find(c=>bankDe(c)===banco);
+  if(!emp || !conta) throw new Error('conta bancária não encontrada');
+  const fim = bankOntem(), inicio = fmtDateISO(new Date(new Date(fim+'T12:00:00').getTime()-(dias||7)*864e5));
+  const j = await bankBuscar(banco, inicio, fim);
+  const mx = BANKTX.filter(t=>t.empresaId===emp && t.conta===conta && t.data>=inicio && t.data<=fim && !bankIsFeed(t));
+  const usados = new Set(); let casadas = 0; const soBanco = [];
+  j.linhas.forEach(l=>{ const t = mx.find(x=>!usados.has(x.id) && x.data===l.data && Math.abs(x.valor-l.valor)<0.005); if(t){ usados.add(t.id); casadas++; } else soBanco.push(l); });
+  const soSistema = mx.filter(x=>!usados.has(x.id));
+  const cfg = (BANKBAL[emp]||{})[conta] || {};
+  return {banco, conta, periodo:[inicio, fim], linhasBanco:j.linhas.length, linhasSistema:mx.length, casadas, soBanco, soSistema, saldoFinalBanco:j.saldoFinal, saldoExtratoSistema:cfg.extrato, extDataSistema:cfg.extData};
+}
+function bankAplicar(emp, conta, linhas, ate){
+  const stamp = Date.now(), ex = new Set(BANKTX.filter(t=>t.empresaId===emp && t.conta===conta).map(t=>t.key));
+  const novas = [];
+  linhas.forEach((l,i)=>{
+    if(ex.has(l.key)) return;
+    BANKTX.push({id:'BTbk'+stamp+String(i).padStart(4,'0'), empresaId:emp, conta, data:l.data, desc:l.desc, doc:l.doc||'', valor:l.valor, saldo:l.saldo, seq:i, key:l.key, status:'pendente', vinc:null, importadoEm:new Date().toISOString(), origem:'banco'}); novas.push(l);
+  });
+  return novas;
+}
+async function bankSync(banco, opts){
+  opts = opts || {};
+  const cfg = envioCfg(), emp = (cfg.imobzi||{}).empresa, conta = BANK_ACCOUNTS.find(c=>bankDe(c)===banco), bc = bancosCfg()[banco] || {};
+  if(bankBusy) return {ok:false, erro:'já há uma busca em andamento'};
+  if(!(cfg.url && cfg.token && emp && conta)) return {ok:false, erro:'configure o envio/Apps Script primeiro'};
+  if(!bc.ativo && !opts.force) return {ok:false, erro:'busca automática desligada'};
+  const bal = (BANKBAL[emp]||{})[conta];
+  if(!bal || bal.saldoInicial===undefined || !bal.extData) return {ok:false, erro:'importe um extrato uma vez para marcar o ponto de partida'};
+  if(!opts.force && bc.ultimo && (Date.now()-new Date(bc.ultimo).getTime()) < 25*60*1000) return {ok:false, erro:'recente'};
+  const ontem = bankOntem(), desde = bc.desde || bankDiaSeguinte(bal.extData);
+  if(desde>ontem){ bancosSetCfg(banco, {desde, ultimo:new Date().toISOString()}); return {ok:true, novos:0}; }
+  bankBusy = true;
+  try{
+    const hoje = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate());
+    const ini10 = fmtDateISO(new Date(hoje.getTime()-10*864e5)), inicio = ini10 > desde ? ini10 : desde;
+    const j = await bankBuscar(banco, inicio, ontem);
+    const linhas = j.linhas.filter(l=>l.data>=desde && l.data<=ontem);
+    const primeira = !BANKTX.some(t=>t.empresaId===emp && t.conta===conta && bankIsFeed(t));
+    /* primeira busca: o saldo anterior do banco precisa bater com o último extrato importado */
+    if(primeira && inicio===desde && j.saldoAnterior!==null && j.saldoAnterior!==undefined && bal.extrato!==undefined && Math.abs(j.saldoAnterior-bal.extrato)>0.005){
+      return {ok:false, erro:`o saldo anterior do banco (${fmtCurrency(j.saldoAnterior)}) não bate com o último extrato importado (${fmtCurrency(bal.extrato)}) — conferir antes de ligar`};
+    }
+    const antes = bal.extrato;
+    const novas = bankAplicar(emp, conta, linhas, ontem), novos = novas.length;
+    const todas = BANKTX.filter(t=>t.empresaId===emp && t.conta===conta);
+    const ult = bcFimDia(todas, ontem);
+    let aviso = '';
+    if(novos && ult && ult.saldo!==null && ult.saldo!==undefined && antes!==undefined){
+      const esperado = bcR2(antes + novas.reduce((t,l)=>t+l.valor,0));
+      if(Math.abs(esperado-ult.saldo)>0.005) aviso = `saldo do banco ${fmtCurrency(ult.saldo)} × saldo anterior mais os lançamentos novos ${fmtCurrency(esperado)} — conferir se falta algum dia`;
+    }
+    const cb = ((BANKBAL[emp] = BANKBAL[emp] || {})[conta] = (BANKBAL[emp]||{})[conta] || {});
+    if(ult && ult.saldo!==null && ult.saldo!==undefined){ cb.extrato = ult.saldo; }
+    cb.extData = ontem; saveBankBal();
+    bcSaveAll(); bancosSetCfg(banco, {desde, ultimo:new Date().toISOString(), novos});
+    if(!opts.silent || novos) showToast(`${conta}: ${novos} lançamento(s) novo(s) direto do banco.${aviso?' Atenção: '+aviso+'.':''}`);
+    if(currentPageKey==='conciliacao') renderConciliacao();
+    return {ok:true, novos, aviso};
+  }catch(e){ return {ok:false, erro:e.message||String(e)}; }
+  finally{ bankBusy = false; }
+}
+async function bankValidarUI(banco){
+  try{
+    const r = await bankValidar(banco, 7);
+    const ok = r.soBanco.length===0 && r.soSistema.length===0;
+    const resumo = `${r.conta} — últimos 7 dias (${fmtDateBR(r.periodo[0])} a ${fmtDateBR(r.periodo[1])})\n\nLinhas no banco: ${r.linhasBanco}\nLinhas já importadas: ${r.linhasSistema}\nIguais (data e valor): ${r.casadas}\nSó no banco: ${r.soBanco.length}\nSó no sistema: ${r.soSistema.length}\nSaldo final do banco: ${r.saldoFinalBanco!==null&&r.saldoFinalBanco!==undefined?fmtCurrency(r.saldoFinalBanco):'—'}  ·  saldo do extrato no sistema: ${r.saldoExtratoSistema!==undefined?fmtCurrency(r.saldoExtratoSistema):'—'}`;
+    if(!ok){ alert(resumo+'\n\nHá diferenças. A busca automática NÃO foi ligada.'); return; }
+    if(confirm(resumo+'\n\nTudo igual. Ligar a busca automática deste banco (importação manual passa a ser só reserva)?')){ bancosSetCfg(banco, {ativo:true, desde:bankDiaSeguinte((((BANKBAL[(envioCfg().imobzi||{}).empresa]||{})[r.conta])||{}).extData||r.periodo[1])}); showToast('Busca automática ligada para '+r.conta+'.'); bankSync(banco, {force:true}); }
+  }catch(e){ alert('Não foi possível validar: '+(e.message||e)); }
+}
+setInterval(()=>{ ['sicredi','bb'].forEach(b=>{ if(bancosCfg()[b] && bancosCfg()[b].ativo && imobziAutoOn()) bankSync(b, {silent:true}); }); }, 30*60*1000);
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && imobziAutoOn()) ['sicredi','bb'].forEach(b=>{ if(bancosCfg()[b] && bancosCfg()[b].ativo) bankSync(b, {silent:true}); }); });
+setTimeout(()=>{ if(imobziAutoOn()) ['sicredi','bb'].forEach(b=>{ if(bancosCfg()[b] && bancosCfg()[b].ativo) bankSync(b, {silent:true}); }); }, 12000);
 
 /* ================================================================
    SECTION: PAGE — Budget & Forecast (P&L: Budget | Forecast | Actual | B/(W) | %B/(W))
