@@ -2009,7 +2009,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '13/10-b'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '13/10-c'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -6004,7 +6004,7 @@ function rpExtPlain(d, msg){
 }
 
 /* ================================================================
-   Relatório semanal (sexta 17h): o que recebemos, o que pagamos, caixa Projetado × Actual e DRE Budget × Forecast × Actual
+   Relatório semanal (sexta 16h): o que recebemos, o que pagamos, caixa Projetado × Actual e DRE Budget × Forecast × Actual
    ================================================================ */
 let semSel = '';
 function semSegunda(iso){ const d = new Date(iso+'T12:00:00Z'), w = (d.getUTCDay()+6)%7; d.setUTCDate(d.getUTCDate()-w); return d.toISOString().slice(0,10); }
@@ -6153,28 +6153,300 @@ function semPDF(d){
   doc.text(doc.splitTextToSize(`Relatório gerado em ${new Date(d.geradoEm).toLocaleString('pt-BR')}. As informações refletem os lançamentos e conciliações registrados no sistema até a emissão. Os valores de terceiros (proprietários) passam pela conta, mas não são receita da imobiliária.`, CW), M, y);
   return doc;
 }
+/* ================================================================
+   Relatório semanal v2 — layout do modelo do Bruno (Book 1.xlsx)
+   1) Caixa da semana: Saldo inicial / Entradas / Saídas / Saldo final por dia + gráfico de linhas "Cash Week"
+   2) Explicação da semana (rascunho automático, editável) e estratégias
+   3) Projeção de caixa da próxima semana: mesma tabela e gráfico
+   4) DRE Gerencial: Budget | Forecast | Actual | B/(W) + 4 gráficos de colunas (Actual × Forecast)
+   ================================================================ */
+const sem2Money = (v, sinal)=>{ if(v===null || v===undefined || isNaN(v)) return '—'; const n = Math.abs(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); return (v<0?'-':(sinal&&v>0.004?'+':''))+'R$ '+n; };
+const sem2K = v=>{ const a = Math.abs(v); const n = a>=1e6 ? (a/1e6).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mi' : a>=1e3 ? (a/1e3).toLocaleString('pt-BR',{maximumFractionDigits:1})+' mil' : a.toLocaleString('pt-BR',{maximumFractionDigits:0}); return (v<0?'-':'')+n; };
+const SEM2_DIAS = ['dom','seg','ter','qua','qui','sex','sáb'];
+
+/* ---------- caixa realizado por dia: movimentos dos extratos de todas as contas (transferências entre contas não contam) ---------- */
+function semCaixaDias(emp, seg, hoje){
+  /* regra D-1: o extrato só vai até o dia anterior; dias depois disso aparecem como "—" */
+  const dias = Array.from({length:7}, (_,i)=>rpAddDays(seg, i)), ontem = rpAddDays(hoje, -1), fimDados = ontem < dias[6] ? ontem : dias[6];
+  const contas = BANK_ACCOUNTS.filter(c=>((BANKBAL[emp]||{})[c]||{}).saldoInicial!==undefined);
+  /* transferência entre contas próprias não é entrada nem saída da empresa — inclui as que ainda aguardam conciliação (PIX do próprio CNPJ) */
+  const eTransf = t=> (t.vinc && t.vinc.tipo==='transf') || /^pjbt:/.test(t.key||'') || (t.status!=='conciliado' && (()=>{ try{ const sg = bcSugestao(t); return !!sg && /^transf/.test(sg.tipo); }catch(e){ return false; } })());
+  const tx = BANKTX.filter(t=>t.empresaId===emp && contas.includes(t.conta));
+  /* saída que paga repasse a proprietário (dinheiro de terceiros), pelo vínculo da conciliação */
+  const ehRepasse = t=>{
+    const v = t.vinc || {}, ap = id=>state.accounts.find(a=>a.id===id);
+    if(v.tipo==='ap') { const a = ap(v.id); return !!a && a.categoria===CONTA_REPASSE; }
+    if(v.tipo==='novo-ap') return v.conta===CONTA_REPASSE;
+    if(v.tipo==='multi') return (v.itens||[]).some(it=>{ const a = it.tipo==='ap' && ap(it.id); return !!a && a.categoria===CONTA_REPASSE; });
+    return false;
+  };
+  const antes = rpAddDays(seg, -1);
+  let saldo = contas.reduce((s,c)=>s + (((BANKBAL[emp]||{})[c]||{}).saldoInicial||0), 0) + tx.filter(t=>t.data<=antes).reduce((s,t)=>s+t.valor, 0);
+  saldo = Math.round(saldo*100)/100;
+  const linhas = dias.map(dia=>{
+    if(dia > fimDados) return {dia, futuro:true, ini:null, ent:null, sai:null, fim:null};
+    const L = tx.filter(t=>t.data===dia && !eTransf(t)), ent = L.filter(t=>t.valor>0).reduce((s,t)=>s+t.valor,0), sai = L.filter(t=>t.valor<0).reduce((s,t)=>s+t.valor,0);
+    const ini = saldo; saldo = Math.round((ini+ent+sai)*100)/100;
+    const rep = L.filter(t=>t.valor<0 && ehRepasse(t)).reduce((s,t)=>s+t.valor,0);
+    return {dia, futuro:false, ini, ent:Math.round(ent*100)/100, sai:Math.round(sai*100)/100, rep:Math.round(rep*100)/100, fim:saldo};
+  });
+  const pend = tx.filter(t=>t.data>=seg && t.data<=fimDados && t.status!=='conciliado').length;
+  return {dias:linhas, saldoFinal:saldo, pendentes:pend, contas, ate:fimDados};
+}
+
+/* ---------- projeção da próxima semana: títulos em aberto por vencimento + despesas do Forecast ainda não lançadas ---------- */
+function semProjecao(emp, ini, saldoIni){
+  /* os 7 dias seguintes ao último dia com extrato */
+  const dias = Array.from({length:7}, (_,i)=>rpAddDays(ini, i));
+  const aberto = x=>!['cancelado','reprovado','conciliado'].includes(x.status) && !BAIXADO_AR.includes(x.status) && !BAIXADO_AP.includes(x.status);
+  const ar = RECEIVABLES.filter(r=>r.empresaId===emp && aberto(r)), ap = state.accounts.filter(a=>a.empresaId===emp && aberto(a));
+  /* despesas do Forecast ainda não lançadas no mês, rateadas pelos dias úteis que faltam */
+  let resto = 0, mkP = monthOf(ini);
+  try{
+    const M = cfModelo(emp);
+    if(M && M.b.meses.includes(mkP)){
+      const F = M.forecast(mkP), lanc = {};
+      state.accounts.forEach(a=>{ if(a.empresaId!==emp || ['cancelado','reprovado'].includes(a.status) || a.categoria===CONTA_REPASSE || monthOf(a.vencimento)!==mkP) return; const g = M.nomeDe(a.categoria); if(g) lanc[g] = (lanc[g]||0) + (a.valorPago!==undefined?a.valorPago:a.valor); });
+      Object.keys(F).forEach(g=>{ if(F[g]>0.004) resto += Math.max(0, F[g]-(lanc[g]||0)); });
+    }
+  }catch(e){}
+  const util = d=>{ const w = new Date(d+'T12:00:00').getDay(); return w!==0 && w!==6; };
+  const [y,m] = mkP.split('-').map(Number), ultimo = new Date(y, m, 0).getDate();
+  let diasUteisRest = 0; for(let i=1;i<=ultimo;i++){ const d = `${mkP}-${String(i).padStart(2,'0')}`; if(d>=ini && util(d)) diasUteisRest++; }
+  const porDia = diasUteisRest ? resto/diasUteisRest : 0;
+  let saldo = saldoIni;
+  const linhas = dias.map(dia=>{
+    const ent = ar.filter(r=>r.vencimento===dia).reduce((s,r)=>s+r.valor,0);
+    const pagT = ap.filter(a=>a.vencimento===dia).reduce((s,a)=>s+a.valor,0), prev = (util(dia) && monthOf(dia)===mkP) ? porDia : 0;
+    const sai = -(pagT + prev), i0 = saldo; saldo = Math.round((i0+ent+sai)*100)/100;
+    return {dia, futuro:false, ini:i0, ent:Math.round(ent*100)/100, sai:Math.round(sai*100)/100, fim:saldo};
+  });
+  const menor = linhas.reduce((a,l)=>(!a || l.fim<a.fim) ? l : a, null);
+  return {dias:linhas, saldoFinal:saldo, menor, restoForecast:resto, ini, fim:dias[6]};
+}
+
+/* ---------- DRE no formato do modelo ---------- */
+function semDRE6(d){
+  const alvo = [['Receitas',/^receita bruta|^receitas?$/],['Deduções',/^deducao|^deducoes/],['Receita Líquida',/^receita liquida/],['Margem',/^margem/],['Total Despesas',/^total despesas/],['EBITDA',/^ebitda|^ebtida/]];
+  return alvo.map(([nome,re])=>{ const r = (d.dre||[]).find(x=>re.test(bfNorm(x.nome))); return r ? {nome, b:r.b, f:r.f, a:r.a, bw:r.a-r.b} : {nome, b:null, f:null, a:null, bw:null}; });
+}
+
+/* ---------- explicação da semana: rascunho automático (o analista pode editar antes de enviar) ---------- */
+function semNarrativa(d, cx, pj, dre){
+  const t = [], real = cx.dias.filter(l=>!l.futuro), ent = real.reduce((s,l)=>s+l.ent,0), sai = real.reduce((s,l)=>s+l.sai,0);
+  t.push(`Na semana de ${d.rotulo} entraram ${sem2Money(ent)} e saíram ${sem2Money(-sai)} do caixa (${sem2Money(ent+sai,true)}), fechando em ${sem2Money(cx.saldoFinal)} em ${fmtDateBR(real.length?real[real.length-1].dia:d.fim)}.`);
+  const rep = -real.reduce((s,l)=>s+(l.rep||0),0); if(rep>0) t.push(`Das saídas, ${sem2Money(rep)} foram repasses a proprietários (dinheiro de terceiros) e ${sem2Money(-sai-rep)} foram despesas e demais pagamentos da empresa.`);
+  const rb = dre.find(x=>x.nome==='Receitas'), eb = dre.find(x=>x.nome==='EBITDA'), td = dre.find(x=>x.nome==='Total Despesas');
+  if(rb && rb.a!==null && rb.f){ const p = rb.f ? rb.a/rb.f*100 : 0; t.push(`No mês, a Receita Bruta realizada está em ${sem2Money(rb.a)}, ${p.toFixed(0)}% do Forecast (${sem2Money(rb.f)}).`); }
+  if(eb && eb.a!==null && eb.f!==null) t.push(`O EBITDA realizado está em ${sem2Money(eb.a)} contra ${sem2Money(eb.f)} previstos no Forecast.`);
+  const est = [];
+  if(td && td.a!==null && td.f!==null && Math.abs(td.a) > Math.abs(td.f)*1.0001) est.push(`as despesas já passaram do Forecast em ${sem2Money(Math.abs(td.a)-Math.abs(td.f))}: revisar os grupos acima do previsto antes de novos gastos`);
+  if(rb && rb.a!==null && rb.f && rb.a < rb.f) est.push(`a receita ainda está abaixo do Forecast: priorizar a cobrança dos vencidos${d.venc && d.venc.nReceber ? ` (${d.venc.nReceber} título(s), ${sem2Money(d.venc.receber)} em atraso)` : ''} e a renovação/reajuste de contratos`);
+  if(pj && pj.menor && pj.menor.fim < 0) est.push(`a projeção indica falta de caixa de ${sem2Money(-pj.menor.fim)} em ${fmtDateBR(pj.menor.dia)}: antecipar recebimentos ou reprogramar pagamentos não urgentes`);
+  t.push(est.length ? 'Estratégias para atingir o alvo: '+est.join('; ')+'.' : 'Estratégia: manter o ritmo de cobrança e o controle de despesas para sustentar o resultado do mês.');
+  if(cx.pendentes) t.push(`Observação: ${cx.pendentes} lançamento(s) do extrato da semana ainda estão sem conciliação.`);
+  return t;
+}
+
+/* ---------- dados completos do relatório v2 ---------- */
+/* texto da explicação editado pelo analista (por empresa e semana); vazio = rascunho automático */
+const SEM_TEXTO_KEY = 'bpo_financeiro_sem_texto_v1';
+function semTextoGet(emp, seg){ try{ return ((JSON.parse(localStorage.getItem(SEM_TEXTO_KEY)||'{}')[emp]||{})[seg]) || ''; }catch(e){ return ''; } }
+function semTextoSet(emp, seg, txt){ let o = {}; try{ o = JSON.parse(localStorage.getItem(SEM_TEXTO_KEY)||'{}') || {}; }catch(e){} o[emp] = o[emp] || {}; if(txt && txt.trim()) o[emp][seg] = txt.trim(); else delete o[emp][seg]; persist(SEM_TEXTO_KEY, o); }
+function semData2(emp, seg){
+  const d = semData(emp, seg), cx = semCaixaDias(emp, seg, d.hoje), pj = semProjecao(emp, rpAddDays(cx.ate, 1), cx.saldoFinal), dre = semDRE6(d);
+  const auto = semNarrativa(d, cx, pj, dre), salvo = semTextoGet(emp, seg);
+  d.v2 = {cx, pj, dre, textoAuto:auto, textoEditado:!!salvo, texto: salvo ? salvo.split(/\n+/).filter(Boolean) : auto};
+  return d;
+}
+
+/* ---------- desenho do PDF ---------- */
+function sem2TabelaCaixa(doc, M, CW, y, dias, cor){
+  const NAVY = [23,40,59], GRAY = [107,122,144], LINE = [226,229,234], PALE = [243,244,247];
+  const head = [''].concat(dias.map(l=>`${l.dia.slice(8,10)}/${l.dia.slice(5,7)}\n${SEM2_DIAS[new Date(l.dia+'T12:00:00').getDay()]}`));
+  const row = (nome,k)=>[nome].concat(dias.map(l=>l.futuro ? '—' : sem2Money(l[k])));
+  doc.autoTable({startY:y, margin:{left:M,right:M}, theme:'plain', head:[head], body:[row('Saldo inicial','ini'), row('Entradas','ent'), row('Saídas','sai'), row('Saldo final','fim')],
+    styles:{font:'helvetica', fontSize:7, textColor:[30,38,50], cellPadding:{top:5,bottom:5,left:3,right:3}, halign:'right', overflow:'visible'},
+    headStyles:{fillColor:PALE, textColor:NAVY, fontStyle:'bold', halign:'right', fontSize:7.5}, columnStyles:{0:{halign:'left', fontStyle:'bold', cellWidth:58}},
+    didParseCell:h=>{ if(h.section==='body'){ const r = h.row.index; if(r===3){ h.cell.styles.fontStyle = 'bold'; h.cell.styles.fillColor = PALE; } if(h.column.index>0){ if(r===1) h.cell.styles.textColor = [15,110,69]; if(r===2) h.cell.styles.textColor = [180,35,24]; } } if(h.section==='head' && h.column.index===0) h.cell.styles.halign = 'left'; },
+    didDrawCell:h=>{ if(h.section==='body'){ doc.setDrawColor(...LINE); doc.setLineWidth(.5); doc.line(h.cell.x, h.cell.y+h.cell.height, h.cell.x+h.cell.width, h.cell.y+h.cell.height); } }});
+  return doc.lastAutoTable.finalY;
+}
+function sem2GraficoLinhas(doc, x, y, w, h, titulo, dias, series){
+  const NAVY = [23,40,59], GRAY = [107,122,144], LINE = [226,229,234];
+  doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...NAVY); doc.text(titulo, x, y);
+  const px = x+42, py = y+22, pw = w-52, ph = h-48;
+  const vals = series.flatMap(s=>s.v.filter(v=>v!==null)), vmax0 = Math.max(0, ...vals), vmin0 = Math.min(0, ...vals);
+  /* escala com valores redondos no eixo */
+  const nice = x=>{ const e = Math.pow(10, Math.floor(Math.log10(x))), f = x/e; return (f<=1 ? 1 : f<=2 ? 2 : f<=2.5 ? 2.5 : f<=5 ? 5 : 10)*e; };
+  const step = nice(((vmax0-vmin0) || 1)/4), vmin = Math.floor(vmin0/step)*step, vmax = Math.max(Math.ceil(vmax0/step)*step, vmin+step), span = vmax-vmin;
+  const Y = v=>py + ph - (v-vmin)/span*ph;
+  doc.setLineWidth(.4); doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...GRAY);
+  for(let v = vmin; v <= vmax+step/1000; v += step){ const yy = Y(v); doc.setDrawColor(...LINE); doc.line(px, yy, px+pw, yy); doc.text(sem2K(Math.abs(v)<step/1000 ? 0 : v), px-4, yy+2, {align:'right'}); }
+  const X = i=>px + (dias.length>1 ? pw*i/(dias.length-1) : pw/2);
+  dias.forEach((l,i)=>{ doc.setTextColor(...GRAY); doc.text(`${l.dia.slice(8,10)}/${l.dia.slice(5,7)}`, X(i), py+ph+11, {align:'center'}); });
+  if(vmin<0){ doc.setDrawColor(150,160,175); doc.setLineWidth(.7); doc.line(px, Y(0), px+pw, Y(0)); }
+  series.forEach(s=>{
+    doc.setDrawColor(...s.cor); doc.setFillColor(...s.cor); doc.setLineWidth(1.4);
+    let ant = null; s.v.forEach((v,i)=>{ if(v===null){ ant = null; return; } if(ant!==null) doc.line(X(ant.i), Y(ant.v), X(i), Y(v)); doc.circle(X(i), Y(v), 1.7, 'F'); ant = {i,v}; });
+  });
+  let lx = px; series.forEach(s=>{ doc.setFillColor(...s.cor); doc.rect(lx, y+h-9, 8, 4, 'F'); doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(...GRAY); doc.text(s.nome, lx+11, y+h-5.5); lx += 70; });
+}
+function sem2GraficoColunas(doc, x, y, w, h, titulo, forecast, actual, nota){
+  const NAVY = [23,40,59], GRAY = [107,122,144], LINE = [226,229,234];
+  doc.setFont('helvetica','bold'); doc.setFontSize(8.5); doc.setTextColor(...NAVY); doc.text(titulo, x, y);
+  const px = x+4, pw = w-8, py = y+16, ph = h-40, vals = [forecast||0, actual||0], vmax = Math.max(0, ...vals), vmin = Math.min(0, ...vals), span = (vmax-vmin) || 1;
+  const Y = v=>py + ph - (v-vmin)/span*ph, bw = pw/5;
+  doc.setDrawColor(...LINE); doc.setLineWidth(.5); doc.line(px, Y(0), px+pw, Y(0));
+  [[forecast||0,'Forecast',[150,166,188],pw*0.18],[actual||0,'Actual',NAVY,pw*0.58]].forEach(([v,nome,cor,ox])=>{
+    const y0 = Y(0), y1 = Y(v), top = Math.min(y0,y1), alt = Math.max(Math.abs(y1-y0), .8);
+    doc.setFillColor(...cor); doc.rect(px+ox, top, bw, alt, 'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...NAVY); doc.text(sem2K(v), px+ox+bw/2, v>=0 ? top-3 : top+alt+8, {align:'center'});
+    doc.setFont('helvetica','normal'); doc.setFontSize(6.8); doc.setTextColor(...GRAY); doc.text(nome, px+ox+bw/2, py+ph+11, {align:'center'});
+  });
+  if(nota){ doc.setFontSize(6.3); doc.setTextColor(...GRAY); doc.text(nota, x, y+h-2); }
+}
+function semPDF2(d){
+  const { jsPDF } = window.jspdf, doc = new jsPDF({unit:'pt', format:'a4', compress:true}), V = d.v2;
+  const W = 595.28, M = 36, CW = W-2*M, NAVY = [23,40,59], GRAY = [107,122,144], LINE = [226,229,234], PALE = [243,244,247];
+  const cabecalho = ()=>{ doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...NAVY); doc.text(RP_BRAND, M, 40); doc.setFontSize(8.5); doc.setTextColor(...GRAY); doc.text('RELATÓRIO FINANCEIRO SEMANAL', W-M, 40, {align:'right'}); doc.setDrawColor(...LINE); doc.setLineWidth(.8); doc.line(M, 47, W-M, 47); };
+  const secao = (t, y)=>{ doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.setTextColor(...NAVY); doc.text(t, M, y); };
+  /* ---- página 1 ---- */
+  cabecalho();
+  let y = 76; doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.setTextColor(...NAVY);
+  while(doc.getTextWidth(d.nome) > CW && doc.getFontSize()>11) doc.setFontSize(doc.getFontSize()-1);
+  doc.text(d.nome, M, y); y += 15; doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(...GRAY); doc.text(`Relatório semanal · semana de ${d.rotulo} · extrato até ${fmtDateBR(V.cx.ate)}`, M, y);
+  y += 26; secao('Caixa da semana', y); y = sem2TabelaCaixa(doc, M, CW, y+8, V.cx.dias) + 18;
+  const real = V.cx.dias;
+  sem2GraficoLinhas(doc, M, y, CW, 190, 'Cash Week', real, [{nome:'Entradas', cor:[15,110,69], v:real.map(l=>l.futuro?null:l.ent)},{nome:'Saídas', cor:[180,35,24], v:real.map(l=>l.futuro?null:l.sai)}]);
+  y += 208; secao('Explicação da semana', y); y += 14;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(30,38,50);
+  V.texto.forEach(p=>{ const ls = doc.splitTextToSize(p, CW); if(y + ls.length*11.5 > 790){ doc.addPage(); cabecalho(); y = 70; } doc.text(ls, M, y); y += ls.length*11.5 + 5; });
+  /* ---- página 2: projeção ---- */
+  doc.addPage(); cabecalho(); y = 76;
+  secao(`Projeção de caixa · ${fmtDateBR(V.pj.ini)} a ${fmtDateBR(V.pj.fim)}`, y); y = sem2TabelaCaixa(doc, M, CW, y+8, V.pj.dias) + 14;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(...GRAY);
+  const necessidade = V.pj.menor && V.pj.menor.fim<0 ? `Necessidade de caixa: o saldo projetado fica negativo, com mínimo de ${sem2Money(V.pj.menor.fim)} em ${fmtDateBR(V.pj.menor.dia)}.` : `Menor saldo projetado na semana: ${sem2Money(V.pj.menor?V.pj.menor.fim:0)}${V.pj.menor?' em '+fmtDateBR(V.pj.menor.dia):''} — sem necessidade de caixa adicional.`;
+  doc.text(doc.splitTextToSize(`${necessidade} Entradas = títulos a receber por vencimento; saídas = títulos a pagar por vencimento (inclui repasses) mais despesas do Forecast ainda não lançadas${V.pj.restoForecast>0?` (${sem2Money(V.pj.restoForecast)} no mês)`:''}.`, CW), M, y); y += 30;
+  sem2GraficoLinhas(doc, M, y, CW, 190, 'Cash Week — projeção', V.pj.dias, [{nome:'Entradas', cor:[15,110,69], v:V.pj.dias.map(l=>l.ent)},{nome:'Saídas', cor:[180,35,24], v:V.pj.dias.map(l=>l.sai)}]);
+  y += 214;
+  /* ---- DRE gerencial ---- */
+  secao(`DRE Gerencial · ${d.mk.slice(5,7)}/${d.mk.slice(0,4)}`, y);
+  doc.autoTable({startY:y+8, margin:{left:M,right:M}, theme:'plain', head:[['','Budget','Forecast','Actual','B/(W)']],
+    body:V.dre.map(r=>[r.nome, sem2Money(r.b), sem2Money(r.f), sem2Money(r.a), r.bw===null?'—':sem2Money(r.bw,true)]),
+    styles:{font:'helvetica', fontSize:8.5, textColor:[30,38,50], cellPadding:{top:5,bottom:5,left:6,right:6}, halign:'right'}, headStyles:{fillColor:PALE, textColor:NAVY, fontStyle:'bold', halign:'right'},
+    columnStyles:{0:{halign:'left', fontStyle:'bold', cellWidth:130}},
+    didParseCell:h=>{ if(h.section==='head' && h.column.index===0) h.cell.styles.halign = 'left'; if(h.section==='body' && h.column.index===4){ const v = V.dre[h.row.index].bw; if(v!==null) h.cell.styles.textColor = v>=0 ? [15,110,69] : [180,35,24]; } },
+    didDrawCell:h=>{ if(h.section==='body'){ doc.setDrawColor(...LINE); doc.setLineWidth(.5); doc.line(h.cell.x, h.cell.y+h.cell.height, h.cell.x+h.cell.width, h.cell.y+h.cell.height); } }});
+  /* ---- página 3: gráficos de colunas ---- */
+  doc.addPage(); cabecalho(); y = 76; secao('Actual × Forecast do mês', y); y += 18;
+  const g = n=>V.dre.find(r=>r.nome===n) || {f:0,a:0}, cw = (CW-20)/2, ch = 190;
+  const nota = 'Actual = realizado no mês até a data · Forecast = previsão do mês';
+  sem2GraficoColunas(doc, M, y, cw, ch, 'Gráfico 1 — Receita Bruta', g('Receitas').f, g('Receitas').a, nota);
+  sem2GraficoColunas(doc, M+cw+20, y, cw, ch, 'Gráfico 2 — Margem de contribuição', g('Margem').f, g('Margem').a, nota);
+  y += ch + 26;
+  sem2GraficoColunas(doc, M, y, cw, ch, 'Gráfico 3 — Despesas', Math.abs(g('Total Despesas').f||0), Math.abs(g('Total Despesas').a||0), nota);
+  sem2GraficoColunas(doc, M+cw+20, y, cw, ch, 'Gráfico 4 — EBITDA', g('EBITDA').f, g('EBITDA').a, nota);
+  y += ch + 30;
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...GRAY);
+  doc.text(doc.splitTextToSize(`Relatório gerado em ${new Date(d.geradoEm).toLocaleString('pt-BR')}. As informações refletem os lançamentos e as conciliações bancárias registrados no sistema até a emissão. B/(W) = Actual - Budget (a favor + / contra -).`, CW), M, y);
+  return doc;
+}
+
+/* ---------- pré-visualização na tela (HTML com gráficos SVG), e-mail e instantâneo para o envio de sexta ---------- */
+function sem2Escala(vmin0, vmax0){
+  const nice = x=>{ const e = Math.pow(10, Math.floor(Math.log10(x))), f = x/e; return (f<=1 ? 1 : f<=2 ? 2 : f<=2.5 ? 2.5 : f<=5 ? 5 : 10)*e; };
+  const step = nice(((vmax0-vmin0) || 1)/4), vmin = Math.floor(vmin0/step)*step, vmax = Math.max(Math.ceil(vmax0/step)*step, vmin+step);
+  return {step, vmin, vmax};
+}
+function sem2SvgLinhas(dias, series, w, h){
+  const px = 46, py = 8, pw = w-px-12, ph = h-py-38, vals = series.flatMap(s=>s.v.filter(v=>v!==null)), E = sem2Escala(Math.min(0, ...vals), Math.max(0, ...vals));
+  const Y = v=>py + ph - (v-E.vmin)/(E.vmax-E.vmin)*ph, X = i=>px + (dias.length>1 ? pw*i/(dias.length-1) : pw/2);
+  let g = '';
+  for(let v = E.vmin; v <= E.vmax+E.step/1000; v += E.step){ const yy = Y(v); g += `<line x1="${px}" y1="${yy}" x2="${px+pw}" y2="${yy}" stroke="#e2e5ea" stroke-width="1"/><text x="${px-5}" y="${yy+3}" font-size="9" fill="#6b7a90" text-anchor="end">${sem2K(Math.abs(v)<E.step/1000 ? 0 : v)}</text>`; }
+  if(E.vmin<0) g += `<line x1="${px}" y1="${Y(0)}" x2="${px+pw}" y2="${Y(0)}" stroke="#97a1b1" stroke-width="1.4"/>`;
+  dias.forEach((l,i)=>{ g += `<text x="${X(i)}" y="${py+ph+14}" font-size="9" fill="#6b7a90" text-anchor="middle">${l.dia.slice(8,10)}/${l.dia.slice(5,7)}</text>`; });
+  series.forEach(s=>{
+    let pts = []; const segs = [];
+    s.v.forEach((v,i)=>{ if(v===null){ if(pts.length) segs.push(pts); pts = []; } else pts.push([X(i), Y(v)]); }); if(pts.length) segs.push(pts);
+    segs.forEach(sg=>{ g += `<polyline points="${sg.map(p=>p.join(',')).join(' ')}" fill="none" stroke="${s.cor}" stroke-width="2.2"/>` + sg.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="2.8" fill="${s.cor}"/>`).join(''); });
+  });
+  g += series.map((s,i)=>`<rect x="${px+i*90}" y="${h-12}" width="10" height="5" fill="${s.cor}"/><text x="${px+i*90+14}" y="${h-7}" font-size="10" fill="#6b7a90">${s.nome}</text>`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;display:block;">${g}</svg>`;
+}
+function sem2SvgColunas(titulo, f, a, w, h){
+  const px = 10, py = 24, pw = w-20, ph = h-py-26, E = sem2Escala(Math.min(0, f||0, a||0), Math.max(0, f||0, a||0));
+  const Y = v=>py + ph - (v-E.vmin)/(E.vmax-E.vmin)*ph, bw = pw/5;
+  let g = `<text x="0" y="12" font-size="11" font-weight="bold" fill="#17283b">${rpEsc(titulo)}</text><line x1="${px}" y1="${Y(0)}" x2="${px+pw}" y2="${Y(0)}" stroke="#97a1b1" stroke-width="1"/>`;
+  [[f||0,'Forecast','#96a6bc',pw*0.18],[a||0,'Actual','#17283b',pw*0.58]].forEach(([v,nome,cor,ox])=>{
+    const y0 = Y(0), y1 = Y(v), top = Math.min(y0,y1), alt = Math.max(Math.abs(y1-y0), 1);
+    g += `<rect x="${px+ox}" y="${top}" width="${bw}" height="${alt}" fill="${cor}"/><text x="${px+ox+bw/2}" y="${v>=0 ? top-4 : top+alt+11}" font-size="10" font-weight="bold" fill="#17283b" text-anchor="middle">${sem2K(v)}</text><text x="${px+ox+bw/2}" y="${py+ph+14}" font-size="10" fill="#6b7a90" text-anchor="middle">${nome}</text>`;
+  });
+  return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="max-width:${w}px;display:block;">${g}</svg>`;
+}
+function sem2TabelaHTML(dias){
+  const e = rpEsc, td = 'padding:5px 6px;border-bottom:1px solid #e2e5ea;text-align:right;white-space:nowrap;', th = 'padding:5px 6px;background:#f3f4f7;font-size:10px;text-align:right;';
+  const linha = (nome,k,cor,forte)=>`<tr${forte?' style="background:#f3f4f7;font-weight:bold;"':''}><td style="${td}text-align:left;font-weight:bold;">${nome}</td>${dias.map(l=>`<td style="${td}${cor&&!l.futuro?'color:'+cor+';':''}">${l.futuro?'—':e(sem2Money(l[k]))}</td>`).join('')}</tr>`;
+  return `<table style="width:100%;border-collapse:collapse;font-size:9.5px;"><tr><th style="${th}text-align:left;"></th>${dias.map(l=>`<th style="${th}">${l.dia.slice(8,10)}/${l.dia.slice(5,7)}<br>${SEM2_DIAS[new Date(l.dia+'T12:00:00').getDay()]}</th>`).join('')}</tr>
+    ${linha('Saldo inicial','ini')}${linha('Entradas','ent','#0f6e45')}${linha('Saídas','sai','#b42318')}${linha('Saldo final','fim','',true)}</table>`;
+}
+function semHTML2(d){
+  const V = d.v2, e = rpEsc, h3 = 'font-size:13px;color:#17283b;margin:20px 0 8px;', cor = {ent:'#0f6e45', sai:'#b42318'};
+  const g = n=>V.dre.find(r=>r.nome===n) || {f:0,a:0};
+  const neces = V.pj.menor && V.pj.menor.fim<0 ? `Necessidade de caixa: o saldo projetado fica negativo, com mínimo de ${sem2Money(V.pj.menor.fim)} em ${fmtDateBR(V.pj.menor.dia)}.` : `Menor saldo projetado: ${sem2Money(V.pj.menor?V.pj.menor.fim:0)}${V.pj.menor?' em '+fmtDateBR(V.pj.menor.dia):''} — sem necessidade de caixa adicional.`;
+  const dre = V.dre.map(r=>`<tr><td style="padding:6px;border-bottom:1px solid #e2e5ea;font-weight:bold;">${e(r.nome)}</td>${[r.b,r.f,r.a].map(x=>`<td style="padding:6px;border-bottom:1px solid #e2e5ea;text-align:right;">${e(sem2Money(x))}</td>`).join('')}<td style="padding:6px;border-bottom:1px solid #e2e5ea;text-align:right;color:${r.bw===null?'#1e2632':r.bw>=0?'#0f6e45':'#b42318'};">${r.bw===null?'—':e(sem2Money(r.bw,true))}</td></tr>`).join('');
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1e2632;font-size:11px;max-width:760px;margin:0 auto;">
+    <table style="width:100%;border-collapse:collapse;"><tr><td style="font-size:12px;font-weight:bold;color:#17283b;">${e(RP_BRAND)}</td><td style="text-align:right;font-size:10px;color:#6b7a90;">RELATÓRIO FINANCEIRO SEMANAL</td></tr></table>
+    <div style="font-size:22px;font-weight:bold;color:#17283b;margin-top:14px;">${e(d.nome)}</div>
+    <div style="font-size:12px;color:#6b7a90;">Relatório semanal · semana de ${e(d.rotulo)} · extrato até ${e(fmtDateBR(V.cx.ate))}</div>
+    <h3 style="${h3}">Caixa da semana</h3>${sem2TabelaHTML(V.cx.dias)}
+    <div style="margin-top:14px;font-weight:bold;font-size:11px;color:#17283b;">Cash Week</div>${sem2SvgLinhas(V.cx.dias, [{nome:'Entradas',cor:cor.ent,v:V.cx.dias.map(l=>l.futuro?null:l.ent)},{nome:'Saídas',cor:cor.sai,v:V.cx.dias.map(l=>l.futuro?null:l.sai)}], 700, 230)}
+    <h3 style="${h3}">Explicação da semana</h3>${V.texto.map(p=>`<p style="margin:0 0 7px;font-size:11.5px;line-height:1.45;">${e(p)}</p>`).join('')}
+    <h3 style="${h3}">Projeção de caixa · ${e(fmtDateBR(V.pj.ini))} a ${e(fmtDateBR(V.pj.fim))}</h3>${sem2TabelaHTML(V.pj.dias)}
+    <div style="font-size:10px;color:#6b7a90;margin:8px 0 6px;">${e(neces)} Entradas = títulos a receber por vencimento; saídas = títulos a pagar por vencimento (inclui repasses) mais despesas do Forecast ainda não lançadas${V.pj.restoForecast>0?' ('+e(sem2Money(V.pj.restoForecast))+' no mês)':''}.</div>
+    ${sem2SvgLinhas(V.pj.dias, [{nome:'Entradas',cor:cor.ent,v:V.pj.dias.map(l=>l.ent)},{nome:'Saídas',cor:cor.sai,v:V.pj.dias.map(l=>l.sai)}], 700, 230)}
+    <h3 style="${h3}">DRE Gerencial · ${e(d.mk.slice(5,7)+'/'+d.mk.slice(0,4))}</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:11px;"><tr>${['','Budget','Forecast','Actual','B/(W)'].map((x,i)=>`<th style="padding:6px;background:#f3f4f7;text-align:${i?'right':'left'};">${x}</th>`).join('')}</tr>${dre}</table>
+    <h3 style="${h3}">Actual × Forecast do mês</h3>
+    <table style="width:100%;border-collapse:collapse;"><tr><td style="width:50%;padding:0 10px 12px 0;">${sem2SvgColunas('Gráfico 1 — Receita Bruta', g('Receitas').f, g('Receitas').a, 340, 190)}</td><td style="width:50%;padding:0 0 12px 10px;">${sem2SvgColunas('Gráfico 2 — Margem de contribuição', g('Margem').f, g('Margem').a, 340, 190)}</td></tr>
+    <tr><td style="padding:0 10px 0 0;">${sem2SvgColunas('Gráfico 3 — Despesas', Math.abs(g('Total Despesas').f||0), Math.abs(g('Total Despesas').a||0), 340, 190)}</td><td style="padding:0 0 0 10px;">${sem2SvgColunas('Gráfico 4 — EBITDA', g('EBITDA').f, g('EBITDA').a, 340, 190)}</td></tr></table>
+    <div style="font-size:9px;color:#6b7a90;margin-top:6px;">Actual = realizado no mês até a data · Forecast = previsão do mês. B/(W) = Actual - Budget (a favor + / contra -).</div>
+    <div style="font-size:8.5px;color:#6b7a90;margin-top:12px;">Relatório gerado em ${e(new Date(d.geradoEm).toLocaleString('pt-BR'))}. As informações refletem os lançamentos e as conciliações bancárias registrados no sistema até a emissão.</div></div>`;
+}
+function semResumo(d){
+  const V = d.v2, real = V.cx.dias.filter(l=>!l.futuro), ent = real.reduce((s,l)=>s+l.ent,0), sai = real.reduce((s,l)=>s+l.sai,0), g = n=>V.dre.find(r=>r.nome===n) || {f:0,a:0};
+  return [
+    ['Entradas na semana', sem2Money(ent)], ['Saídas na semana', sem2Money(sai)], [`Saldo em caixa em ${fmtDateBR(V.cx.ate)}`, sem2Money(V.cx.saldoFinal)],
+    ['Menor saldo projetado (próximos 7 dias)', V.pj.menor ? sem2Money(V.pj.menor.fim)+' em '+fmtDateBR(V.pj.menor.dia) : '—'],
+    ['Receita Bruta no mês (Actual × Forecast)', sem2Money(g('Receitas').a)+' × '+sem2Money(g('Receitas').f)], ['EBITDA no mês (Actual × Forecast)', sem2Money(g('EBITDA').a)+' × '+sem2Money(g('EBITDA').f)]];
+}
 function semEmailHTML(d, msg){
-  const k = semSecoes(d)[0].itens, cel = 'padding:6px;border-bottom:1px solid #eee;';
+  const k = semResumo(d), cel = 'padding:6px;border-bottom:1px solid #eee;';
   return `<div style="font-family:Arial,sans-serif;max-width:720px;color:#1e2632;"><p style="white-space:pre-line;font-size:14px;">${rpEsc(msg)}</p>
     <table style="width:100%;border-collapse:collapse;font-size:13px;">${k.map(x=>`<tr><td style="${cel}">${rpEsc(x[0])}</td><td style="${cel}text-align:right;"><b>${rpEsc(x[1])}</b></td></tr>`).join('')}</table>
     <p style="font-size:12px;color:#6b7a90;margin-top:14px;">O relatório completo segue em anexo (PDF).<br>${RP_BRAND}</p></div>`;
 }
-function semPlain(d, msg){ return `${msg}\n\n` + semSecoes(d)[0].itens.map(x=>`${x[0]}: ${x[1]}`).join('\n') + `\n\n(O relatório completo em PDF está anexado.)\n\n${RP_BRAND}`; }
+function semPlain(d, msg){ return `${msg}\n\n` + semResumo(d).map(x=>`${x[0]}: ${x[1]}`).join('\n') + `\n\n(O relatório completo em PDF está anexado.)\n\n${RP_BRAND}`; }
 function semPreviewHTML(d){
   const opts = semOpcoes().map(s=>`<option value="${s}" ${s===d.seg?'selected':''}>Semana de ${semRotulo(s)}</option>`).join('');
-  return `<div class="rp-paper rp-wide"><div class="cx-filters" style="padding:0 0 10px;border:0;"><select class="cx-select" id="semSel">${opts}</select></div>${semHTML(d)}</div>`;
+  return `<div class="rp-paper rp-wide"><div class="cx-filters" style="padding:0 0 10px;border:0;"><select class="cx-select" id="semSel">${opts}</select></div>${semHTML2(d)}</div>
+    <div class="rp-paper rp-wide" style="margin-top:12px;"><div style="font-weight:700;margin-bottom:4px;">Explicação da semana</div>
+      <div class="rp-hint" style="margin-bottom:6px;">${d.v2.textoEditado ? 'Texto editado por você para esta semana.' : 'Rascunho automático com os números da semana. Edite se quiser: o que estiver aqui vai no PDF e no e-mail.'}</div>
+      <textarea id="semTxt" rows="9" style="width:100%;box-sizing:border-box;font:13px/1.45 inherit;padding:8px;border:1px solid #d6dae1;border-radius:6px;">${rpEsc(d.v2.texto.join('\n\n'))}</textarea>
+      <div style="margin-top:8px;display:flex;gap:8px;"><button class="cx-btn accent" id="semTxtSave">Salvar texto</button><button class="cx-btn" id="semTxtReset">Voltar ao rascunho</button></div></div>`;
 }
-/* Pré-renderiza o relatório da semana atual de cada empresa dentro do instantâneo, para o Apps Script mandar às sextas, 17h */
+/* Pré-renderiza o relatório da semana atual de cada empresa (PDF pronto) dentro do instantâneo, para o Apps Script mandar às sextas, 16h */
 function semSnapshot(){
   const seg = semSegunda(fmtDateISO(TODAY)), out = {};
   COMPANIES.forEach(c=>{
     try{
-      const d = semData(c.id, seg), pn = c.responsavel ? c.responsavel.split(' ')[0] : '', msg = `Olá${pn?', '+pn:''},\n\nSegue em anexo o relatório financeiro da semana (${d.rotulo}) da ${c.nome}: o que recebemos e pagamos, o caixa projetado × actual e o DRE Gerencial (Budget × Forecast × Actual).\n\nQualquer dúvida, estamos à disposição.`;
-      out[c.id] = {ini:seg, dom:d.dom, fim:d.fim, geradoEm:d.geradoEm, assunto:`Relatório Financeiro Semanal — ${c.nome} — ${d.rotulo}`, html:semHTML(d), email:semEmailHTML(d, msg)};
+      const d = semData2(c.id, seg), pn = c.responsavel ? c.responsavel.split(' ')[0] : '', msg = `Olá${pn?', '+pn:''},\n\nSegue em anexo o relatório financeiro da semana (${d.rotulo}) da ${c.nome}: o caixa da semana, a explicação do que aconteceu, a projeção de caixa da próxima semana e o DRE Gerencial (Budget × Forecast × Actual).\n\nQualquer dúvida, estamos à disposição.`;
+      out[c.id] = {ini:seg, dom:d.dom, fim:d.fim, geradoEm:d.geradoEm, assunto:`Relatório Financeiro Semanal — ${c.nome} — ${d.rotulo}`, email:semEmailHTML(d, msg), pdf:semPDF2(d).output('datauristring').split(',')[1]};
     }catch(e){}
   });
   return out;
 }
+
 function rpSemanalOn(){ const c = envioCfg(); return !!(c.url && c.token && c.semanal); }
 async function rpSemanalToggle(on){
   const cfg = envioCfg();
@@ -6183,7 +6455,7 @@ async function rpSemanalToggle(on){
     const j = await rpPost({acao: on ? 'ativar_semanal' : 'desativar_semanal'});
     if(!j.ok){ showToast('Não foi possível '+(on?'ativar':'desativar')+': '+(j.erro||'o Apps Script ainda não tem o envio semanal')+'. Atualize o código do Apps Script (Configurar envio).'); return; }
     envioSave(Object.assign({}, envioCfg(), {semanal:!!on}));
-    if(on){ await rpSync(true); showToast('Envio semanal ativado: toda sexta às 17h, para o e-mail cadastrado da empresa.'); } else showToast('Envio semanal desativado.');
+    if(on){ await rpSync(true); showToast('Envio semanal ativado: toda sexta às 16h, para o e-mail cadastrado da empresa.'); } else showToast('Envio semanal desativado.');
     if(currentPageKey==='relatorios') renderRelatorios();
   }catch(e){ showToast('Não foi possível falar com o Apps Script: '+e.message); }
 }
@@ -6214,8 +6486,8 @@ function rpCtx(mode){
       html:m=>rpIncEmailHTML(d,m), plain:m=>rpIncPlain(d,m), hint:'PDF gerado na hora com as inconsistências atuais'};
   }
   if(mode==='semanal'){
-    const d = semData(state.filters.empresaId, semSel || semSegunda(fmtDateISO(TODAY))), pn = d.company && d.company.responsavel ? d.company.responsavel.split(' ')[0] : '';
-    return {mode, d, pdf:()=>semPDF(d), filename:semFilename(d), subject:`Relatório Financeiro Semanal — ${d.nome} — ${d.rotulo}`,
+    const d = semData2(state.filters.empresaId, semSel || semSegunda(fmtDateISO(TODAY))), pn = d.company && d.company.responsavel ? d.company.responsavel.split(' ')[0] : '';
+    return {mode, d, pdf:()=>semPDF2(d), filename:semFilename(d), subject:`Relatório Financeiro Semanal — ${d.nome} — ${d.rotulo}`,
       msg:`Olá${pn?', '+pn:''},\n\nSegue em anexo o relatório financeiro da semana (${d.rotulo}) da ${d.nome||'empresa'}: o que recebemos e pagamos, o caixa projetado × actual e o DRE Gerencial (Budget × Forecast × Actual).\n\nQualquer dúvida, estamos à disposição.`,
       html:m=>semEmailHTML(d,m), plain:m=>semPlain(d,m), hint:'PDF gerado na hora com os dados da semana'};
   }
@@ -6330,7 +6602,7 @@ function renderRelatorios(){
   const cfg = envioCfg();
   const last = cfg.last ? `Último envio: ${new Date(cfg.last.at).toLocaleString('pt-BR')} para ${cfg.last.to}` : '';
   const inc = rpTab==='incons', ext = rpTab==='ext', sem = rpTab==='semanal', mode = inc ? 'incons' : ext ? 'ext' : sem ? 'semanal' : 'diario';
-  const di = rpIncData(), de = ext ? rpExtData() : null, ds = (sem && state.filters.empresaId) ? semData(state.filters.empresaId, semSel || semSegunda(fmtDateISO(TODAY))) : null;
+  const di = rpIncData(), de = ext ? rpExtData() : null, ds = (sem && state.filters.empresaId) ? semData2(state.filters.empresaId, semSel || semSegunda(fmtDateISO(TODAY))) : null;
   const syncTxt = cfg.sync ? `dados sincronizados em ${new Date(cfg.sync).toLocaleString('pt-BR')}` : 'ainda sem sincronização';
   el.innerHTML = `
     <div class="cx-head">
@@ -6361,7 +6633,7 @@ function renderRelatorios(){
       <span style="display:flex;gap:8px;">${cfg.diario ? `<button class="cx-btn" id="rpDiaTeste">Enviar agora (teste)</button><button class="cx-btn" id="rpDiaSync">Sincronizar</button><button class="cx-btn" id="rpDiaOff">Desativar</button>` : `<button class="cx-btn" id="rpDiaOn">Ativar envio diário às 8h</button>`}</span>
     </div>`}
     ${!sem ? '' : `<div class="rp-bar" style="align-items:center;">
-      <span>Envio automático toda <b>sexta às 17:00</b>: <b>${cfg.semanal?'ativo':'desligado'}</b>${cfg.semanal?` · ${syncTxt}`:''}</span>
+      <span>Envio automático toda <b>sexta às 16:00</b>: <b>${cfg.semanal?'ativo':'desligado'}</b>${cfg.semanal?` · ${syncTxt}`:''}</span>
       <span style="display:flex;gap:8px;">${cfg.semanal ? `<button class="cx-btn" id="rpSemTeste">Enviar agora (teste)</button><button class="cx-btn" id="rpDiaSync">Sincronizar</button><button class="cx-btn" id="rpSemOff">Desativar</button>` : `<button class="cx-btn accent" id="rpSemOn">Ativar envio semanal</button>`}</span>
     </div>`}
     ${inc ? rpIncPreviewHTML(di) : ext ? rpExtPreviewHTML(de) : sem ? (ds ? semPreviewHTML(ds) : '<div class="cx-empty">Selecione uma empresa para ver o relatório semanal.</div>') : rpPreviewHTML(d)}`;
@@ -6370,6 +6642,8 @@ function renderRelatorios(){
   el.querySelector('#rpSendBtn').addEventListener('click', ()=>rpOpenSend(mode));
   el.querySelectorAll('.tab-btn[data-tab]').forEach(b=>b.addEventListener('click', ()=>{ rpTab = b.dataset.tab; renderRelatorios(); }));
   const ss = el.querySelector('#semSel'); if(ss) ss.addEventListener('change', e=>{ semSel = e.target.value; renderRelatorios(); });
+  const stx = el.querySelector('#semTxtSave'); if(stx) stx.addEventListener('click', ()=>{ if(denyIfReadOnly()) return; semTextoSet(state.filters.empresaId, semSel || semSegunda(fmtDateISO(TODAY)), el.querySelector('#semTxt').value); showToast('Texto da semana salvo.'); if(rpSemanalOn()) rpSync(true); renderRelatorios(); });
+  const srx = el.querySelector('#semTxtReset'); if(srx) srx.addEventListener('click', ()=>{ if(denyIfReadOnly()) return; semTextoSet(state.filters.empresaId, semSel || semSegunda(fmtDateISO(TODAY)), ''); showToast('Voltou ao rascunho automático.'); if(rpSemanalOn()) rpSync(true); renderRelatorios(); });
   const so = el.querySelector('#rpSemOn'); if(so) so.addEventListener('click', ()=>rpSemanalToggle(true));
   const sf = el.querySelector('#rpSemOff'); if(sf) sf.addEventListener('click', ()=>rpSemanalToggle(false));
   const st = el.querySelector('#rpSemTeste'); if(st) st.addEventListener('click', rpSemanalTeste);
