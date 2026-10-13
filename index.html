@@ -2009,7 +2009,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '13/10-d'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '13/10-e'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -6636,7 +6636,7 @@ function renderRelatorios(){
     </div>`}
     ${!sem ? '' : `<div class="rp-bar" style="align-items:center;">
       <span>Envio automático toda <b>sexta às 16:00</b>: <b>${cfg.semanal?'ativo':'desligado'}</b>${cfg.semanal?` · ${syncTxt}`:''}</span>
-      <span style="display:flex;gap:8px;">${cfg.semanal ? `<button class="cx-btn" id="rpSemTeste">Enviar agora (teste)</button><button class="cx-btn" id="rpDiaSync">Sincronizar</button><button class="cx-btn" id="rpSemOff">Desativar</button>` : `<button class="cx-btn accent" id="rpSemOn">Ativar envio semanal</button>`}</span>
+      <span style="display:flex;gap:8px;">${cfg.semanal ? `<button class="cx-btn" id="rpDiaSync">Sincronizar</button><button class="cx-btn" id="rpSemOff">Desativar</button>` : `<button class="cx-btn accent" id="rpSemOn">Ativar envio semanal</button>`}</span>
     </div>`}
     ${inc ? rpIncPreviewHTML(di) : ext ? rpExtPreviewHTML(de) : sem ? (ds ? semPreviewHTML(ds) : '<div class="cx-empty">Selecione uma empresa para ver o relatório semanal.</div>') : rpPreviewHTML(d)}`;
   el.querySelector('#rpCfgBtn').addEventListener('click', rpOpenConfig);
@@ -6648,7 +6648,6 @@ function renderRelatorios(){
   const srx = el.querySelector('#semTxtReset'); if(srx) srx.addEventListener('click', ()=>{ if(denyIfReadOnly()) return; semTextoSet(state.filters.empresaId, semSel || semSegunda(fmtDateISO(TODAY)), ''); showToast('Voltou ao rascunho automático.'); if(rpSemanalOn()) rpSync(true); renderRelatorios(); });
   const so = el.querySelector('#rpSemOn'); if(so) so.addEventListener('click', ()=>rpSemanalToggle(true));
   const sf = el.querySelector('#rpSemOff'); if(sf) sf.addEventListener('click', ()=>rpSemanalToggle(false));
-  const st = el.querySelector('#rpSemTeste'); if(st) st.addEventListener('click', rpSemanalTeste);
   const on = el.querySelector('#rpDiaOn'); if(on) on.addEventListener('click', ()=>rpDiarioToggle(true));
   const off = el.querySelector('#rpDiaOff'); if(off) off.addEventListener('click', ()=>rpDiarioToggle(false));
   const sy = el.querySelector('#rpDiaSync'); if(sy) sy.addEventListener('click', ()=>rpSync(false));
