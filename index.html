@@ -2009,7 +2009,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '13/10-c'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '13/10-d'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -6181,7 +6181,9 @@ function semCaixaDias(emp, seg, hoje){
     return false;
   };
   const antes = rpAddDays(seg, -1);
-  let saldo = contas.reduce((s,c)=>s + (((BANKBAL[emp]||{})[c]||{}).saldoInicial||0), 0) + tx.filter(t=>t.data<=antes).reduce((s,t)=>s+t.valor, 0);
+  /* transferência ainda sem conciliar (só um lado lançado) fica fora do saldo inicial também, para o dinheiro não contar em dobro */
+  const transfPend = t=> t.status!=='conciliado' && (()=>{ try{ const sg = bcSugestao(t); return !!sg && /^transf/.test(sg.tipo); }catch(e){ return false; } })();
+  let saldo = contas.reduce((s,c)=>s + (((BANKBAL[emp]||{})[c]||{}).saldoInicial||0), 0) + tx.filter(t=>t.data<=antes && !transfPend(t)).reduce((s,t)=>s+t.valor, 0);
   saldo = Math.round(saldo*100)/100;
   const linhas = dias.map(dia=>{
     if(dia > fimDados) return {dia, futuro:true, ini:null, ent:null, sai:null, fim:null};
