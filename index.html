@@ -2009,7 +2009,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '09/10-d'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '13/10-a'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -9064,6 +9064,10 @@ function bcCombinar(tx, tits){
 }
 function bcSugestao(tx){
   const co = COMPANIES.find(c=>c.id===tx.empresaId) || {}, cnpj = String(co.cnpj||'').replace(/\D/g,'');
+  if(tx.imobziFatura){ /* linha que veio do Imobzi (PJBank) já traz a fatura: casa direto com o título */
+    const ar = RECEIVABLES.find(r=>r.empresaId===tx.empresaId && String(r.imobziId)===String(tx.imobziFatura) && !['cancelado','conciliado'].includes(r.status));
+    if(ar) return {tipo:'ar', id:ar.id, label:`Receber: ${bcParty('ar', ar.clienteId)||'—'} · ${ar.descricao||''} (fatura ${tx.imobziFatura} do Imobzi)`, score:100, auto:true};
+  }
   const tr = bcTransfCandidatas(tx)[0];
   if(tr) return {tipo:'transf', tf:tr, label:`Transferência já lançada: ${tr.origem} → ${tr.destino}`, score:100, auto:true};
   if(cnpj && cnpj.length>=11 && String(tx.desc).replace(/\D/g,'').includes(cnpj) && BANK_ACCOUNTS.length>1){
@@ -9326,6 +9330,7 @@ function renderConciliacao(){
         <div class="cx-crumb" style="margin-top:4px;"><b>Última conciliação:</b> ${rs.quando ? bcQuando(rs.quando)+(rs.quem?' · '+rpEsc(rs.quem):'')+' (extrato até '+(rs.conciliadoAte?fmtDateBR(rs.conciliadoAte):'—')+')' : (rs.conciliadoAte ? 'extrato conciliado até '+fmtDateBR(rs.conciliadoAte) : 'nenhuma linha conciliada ainda')}</div></div>
       <div class="cx-head-actions"><select class="cx-select" id="bcConta">${contas.map(c=>`<option ${c===bcConta?'selected':''}>${rpEsc(c)}</option>`).join('')}</select>
         ${(cfg.extData||'') < bcDiaRef() ? `<button class="cx-btn" id="bcSemMov" title="O banco não teve movimento; mantém o saldo anterior">Sem movimentação em ${fmtDateBR(bcDiaRef())}</button>` : ''}
+        ${/pjbank/i.test(bcConta) ? `<button class="cx-btn" id="bcPjb" title="Traz os boletos recebidos e as tarifas direto do Imobzi, sem importar arquivo">Buscar do Imobzi</button>` : ''}
         <button class="cx-btn accent big" data-act="imp">${cxSvg('down')} Importar extrato</button></div>
     </div>
     <div class="vg-kpi-grid">
@@ -9351,6 +9356,7 @@ function renderConciliacao(){
         ${bcTab==='pendentes' && auto.length ? `<button class="cx-btn accent" data-act="bulk">Confirmar ${auto.length} sugest${auto.length>1?'ões':'ão'} automática${auto.length>1?'s':''}</button>` : ''}</div>` : ''}
       ${corpo}
     </div>`;
+  const pjb = el.querySelector('#bcPjb'); if(pjb) pjb.addEventListener('click', async ()=>{ if(denyIfReadOnly()) return; pjb.disabled = true; pjb.textContent = 'Buscando…'; const r = await pjbSync({force:true}); if(!r.ok){ showToast('PJBank/Imobzi: '+(r.erro||'não foi possível buscar')+'.'); renderConciliacao(); } });
   const smv = el.querySelector('#bcSemMov'); if(smv) smv.addEventListener('click', ()=>{ const d1 = bcDiaRef(); if(!confirm(`Confirmar que ${bcConta} não teve movimentação até ${fmtDateBR(d1)}? O saldo anterior (${fmtCurrency(cfg.extrato!==undefined?cfg.extrato:sis.saldo)}) será mantido.`)) return; BANKBAL[emp][bcConta] = Object.assign(BANKBAL[emp][bcConta]||{}, {extData:d1}); saveBankBal(); showToast('Dia registrado sem movimentação.'); renderConciliacao(); });
   el.querySelector('#bcConta').addEventListener('change', e=>{ bcConta = e.target.value; renderConciliacao(); });
   el.querySelectorAll('tr[data-conta]').forEach(tr=>tr.addEventListener('click', ()=>{ bcConta = tr.dataset.conta; bcTab = 'pendentes'; renderConciliacao(); }));
@@ -9604,6 +9610,85 @@ function bcImpConfirm(){
   showToast(`${n} lançamento(s) do extrato importado(s).${futuras?` ${futuras} agendado(s) com data futura ficaram de fora.`:''}`);
   if(currentPageKey!=='conciliacao') navigateTo('conciliacao'); else renderConciliacao();
 }
+
+/* ================================================================
+   PJBank direto do Imobzi (sem importar extrato)
+   O razão do Imobzi para a Conta Digital PJBank traz cada boleto recebido (com a data do crédito e a fatura) e a
+   tarifa debitada no dia. Cada boleto vira uma linha do extrato, líquida da tarifa (como no extrato do PJBank).
+   A saída para o Sicredi só entra depois que o Sicredi confirmou a entrada (transferência já conciliada lá).
+   ================================================================ */
+let pjbBusy = false;
+const pjbIsFeed = t=> t.origem==='imobzi' || /^pjbt?:/.test(t.key||'');
+function pjbMontar(linhas){
+  const dias = {}; (linhas||[]).forEach(l=>{ if(l.data) (dias[l.data] = dias[l.data] || []).push(l); });
+  const out = [];
+  Object.keys(dias).sort().forEach(d=>{
+    const L = dias[d], taxas = L.filter(l=>l.valor<0 && /d[ée]bito em conta/i.test(l.metodo||'')), cred = L.filter(l=>l.valor>0), outros = L.filter(l=>l.valor<0 && !taxas.includes(l));
+    const bol = cred.filter(l=>l.boleto), taxa = bcR2(-taxas.reduce((t,l)=>t+l.valor,0));
+    const embute = bol.length>0 && taxa>0 && taxa/bol.length <= BC_TARIFA_MAX; // a tarifa de cada boleto sai do próprio crédito
+    let acum = 0;
+    cred.forEach(l=>{
+      let v = l.valor, desc = (l.boleto ? 'BOLETO PAGO — ' : 'CRÉDITO — ') + (l.contato || l.desc || '').slice(0,60) + (l.fatura ? ' · fatura '+l.fatura : '');
+      if(embute && l.boleto){ const i = bol.indexOf(l), f = i===bol.length-1 ? bcR2(taxa-acum) : bcR2(taxa/bol.length); acum = bcR2(acum+f); v = bcR2(v-f); }
+      out.push({key:'pjb:'+l.id, data:d, valor:v, desc, doc:l.fatura?('FAT'+l.fatura):'', fatura:l.fatura?String(l.fatura):''});
+    });
+    if(!embute) taxas.forEach(l=>out.push({key:'pjb:'+l.id, data:d, valor:l.valor, desc:'TARIFA PJBANK', doc:'', fatura:''}));
+    outros.forEach(l=>out.push({key:'pjb:'+l.id, data:d, valor:l.valor, desc:('PAGAMENTO — '+(l.contato||l.desc||l.metodo||'')).slice(0,70), doc:'', fatura:''}));
+  });
+  return out;
+}
+function pjbRecalcSaldo(emp, conta, ate){
+  const cfg = ((BANKBAL[emp] = BANKBAL[emp] || {})[conta] = ((BANKBAL[emp]||{})[conta] || {}));
+  const todas = BANKTX.filter(t=>t.empresaId===emp && t.conta===conta), antigas = todas.filter(t=>!pjbIsFeed(t)), feed = todas.filter(pjbIsFeed);
+  let acc = bcR2((cfg.saldoInicial||0) + antigas.reduce((t,x)=>t+x.valor,0));
+  feed.sort((a,b)=> a.data<b.data ? -1 : a.data>b.data ? 1 : ((b.valor>0)-(a.valor>0)) || String(a.id).localeCompare(String(b.id)));
+  feed.forEach((t,i)=>{ acc = bcR2(acc+t.valor); t.saldo = acc; t.seq = 1000+i; });
+  cfg.extrato = acc; cfg.extData = ate; saveBankBal();
+}
+async function pjbSync(opts){
+  opts = opts || {};
+  const cfg = envioCfg(), im = cfg.imobzi || {}, emp = im.empresa, conta = (BANK_ACCOUNTS.find(c=>/pjbank/i.test(c)) || '');
+  if(pjbBusy) return {ok:false, erro:'já há uma busca em andamento'};
+  if(!(cfg.url && cfg.token && emp && conta)) return {ok:false, erro:'configure o envio/Imobzi primeiro'};
+  const bal = (BANKBAL[emp]||{})[conta];
+  if(!bal || bal.saldoInicial===undefined) return {ok:false, erro:'defina o saldo inicial do PJBank'};
+  const pjb = im.pjb || {}, hoje = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate());
+  if(!opts.force && pjb.ultimo && (Date.now()-new Date(pjb.ultimo).getTime()) < 25*60*1000) return {ok:false, erro:'recente'};
+  const ontem = fmtDateISO(new Date(hoje.getTime()-864e5));
+  const desde = pjb.desde || (bal.extData ? fmtDateISO(new Date(new Date(bal.extData+'T12:00:00').getTime()+864e5)) : '');
+  if(!desde) return {ok:false, erro:'importe um extrato do PJBank uma vez para marcar o ponto de partida'};
+  if(desde>ontem){ imobziSetCfg({pjb:Object.assign({}, pjb, {desde, ultimo:new Date().toISOString()})}); return {ok:true, novos:0}; }
+  pjbBusy = true;
+  try{
+    const ini10 = fmtDateISO(new Date(hoje.getTime()-10*864e5)), inicio = ini10 > desde ? ini10 : desde;
+    const j = await rpPost({acao:'imobzi_pjbank', inicio, fim:ontem, contaId:pjb.contaId||''});
+    if(!j || !j.ok) return {ok:false, erro:(j && j.erro) || 'resposta inválida do Apps Script (atualize para a versão 14)'};
+    const linhas = pjbMontar((j.linhas||[]).filter(l=>l.data>=desde && l.data<=ontem));
+    const ex = new Map(BANKTX.filter(t=>t.empresaId===emp && t.conta===conta && /^pjb:/.test(t.key||'')).map(t=>[t.key, t]));
+    const stamp = Date.now(); let novos = 0, atual = 0;
+    linhas.forEach((x,i)=>{
+      const t = ex.get(x.key);
+      if(t){ if(t.status!=='conciliado' && (t.valor!==x.valor || t.data!==x.data)){ t.valor = x.valor; t.data = x.data; t.desc = x.desc; atual++; } return; }
+      BANKTX.push({id:'BTpjb'+stamp+String(i).padStart(4,'0'), empresaId:emp, conta, data:x.data, desc:x.desc, doc:x.doc, valor:x.valor, saldo:null, seq:0, key:x.key, status:'pendente', vinc:null, importadoEm:new Date().toISOString(), origem:'imobzi', imobziFatura:x.fatura}); novos++;
+    });
+    /* saída para o Sicredi: só depois que a entrada foi conciliada no outro banco */
+    let saidas = 0;
+    TRANSFERS.filter(t=>t.empresaId===emp && t.origem===conta && t.data>=desde && t.data<=ontem && !(t.conc||{})[conta]).forEach((t,i)=>{
+      const id = 'BTpjt'+stamp+String(i).padStart(4,'0');
+      BANKTX.push({id, empresaId:emp, conta, data:t.data, desc:'PIX ENVIADO — transferência para '+t.destino+' (entrada confirmada no outro banco)', doc:'', valor:-t.valor, saldo:null, seq:0, key:'pjbt:'+t.id, status:'conciliado', vinc:{tipo:'transf', id:t.id, criada:false}, importadoEm:new Date().toISOString(), origem:'imobzi'});
+      t.conc = t.conc || {}; t.conc[conta] = id; saidas++;
+    });
+    pjbRecalcSaldo(emp, conta, ontem);
+    bcSaveAll(); imobziSetCfg({pjb:{desde, contaId:j.contaId||pjb.contaId||'', ultimo:new Date().toISOString(), novos, saidas}});
+    if(!opts.silent || novos || saidas) showToast(`PJBank (Imobzi): ${novos} lançamento(s) novo(s)${atual?`, ${atual} atualizado(s)`:''}${saidas?`, ${saidas} saída(s) para o Sicredi`:''}.`);
+    if(currentPageKey==='conciliacao') renderConciliacao();
+    return {ok:true, novos, atual, saidas};
+  }catch(e){ return {ok:false, erro:e.message||String(e)}; }
+  finally{ pjbBusy = false; }
+}
+setInterval(()=>{ if(imobziAutoOn()) pjbSync({silent:true}); }, 30*60*1000);
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible' && imobziAutoOn()) pjbSync({silent:true}); });
+setTimeout(()=>{ if(imobziAutoOn()) pjbSync({silent:true}); }, 8000);
 
 /* ================================================================
    SECTION: PAGE — Budget & Forecast (P&L: Budget | Forecast | Actual | B/(W) | %B/(W))
