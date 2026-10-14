@@ -2009,7 +2009,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '13/10-e'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '14/10-a'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -8588,8 +8588,10 @@ function impApply(sel, emp, anexosBase, opts){
         const stAberto = new Date(r.venc+'T00:00:00')<TODAY?'vencido':'a_vencer';
         if(exist){
           const man = exist.itensManual ? {itens:exist.itens, repasse:exist.repasse} : null;
+          const cmR = exist.catManual ? {categoria:exist.categoria, planoContas:exist.planoContas} : null; // conta contábil reclassificada à mão: a sincronização não volta para a do Imobzi
           Object.assign(exist, camp);
           if(man){ exist.itens = man.itens; exist.repasse = man.repasse; }
+          if(cmR) Object.assign(exist, cmR);
           if(!emConc(exist) && !(['recebido','parcial'].includes(exist.status) && !baixa)){ exist.status = baixa ? 'recebido' : stAberto; exist.dataRecebimento = baixa ? baixa.data : null; exist.valorRecebido = baixa ? baixa.valor : null; }
           if(!emConc(exist) && (envioCfg().imobzi||{}).contaReceb) exist.contaBancaria = imobziContaReceb();
           nUp++;
