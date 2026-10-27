@@ -2009,7 +2009,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '14/10-a'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '27/10-a'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -2136,6 +2136,13 @@ function bankSaldo(emp, conta, ateIso){
   const cR = compR.reduce((t,r)=>t+(r.valorRecebido||r.valor),0), cP = compP.reduce((t,a)=>t+(a.valorPago!==undefined?a.valorPago:a.valor),0);
   const saldo = r2(ini+ent+tin-sai-tout);
   return {ini:r2(ini), ent:r2(ent+tin), sai:r2(sai+tout), tin:r2(tin), tout:r2(tout), saldo, desde, compensar:r2(cR-cP), nCompensar:compR.length+compP.length, real:r2(saldo-cR+cP)};
+}
+/* saldo do extrato importado até o dia (só quando o extrato cobre esse dia): mostra o saldo real do banco mesmo com lançamentos ainda sem conciliar */
+function bankSaldoExtrato(emp, conta, ateIso){
+  const cfg = (BANKBAL[emp]||{})[conta];
+  if(!cfg || !cfg.extData || cfg.extData < ateIso) return null;
+  const L = BANKTX.filter(t=>t.empresaId===emp && t.conta===conta && t.data<=ateIso && t.saldo!==null && t.saldo!==undefined).sort((a,b)=> a.data<b.data ? -1 : a.data>b.data ? 1 : (a.seq||0)-(b.seq||0));
+  return L.length ? L[L.length-1].saldo : null;
 }
 function bankConfigurado(emp){ const o = BANKBAL[emp]||{}; return Object.keys(o).some(k=>o[k] && o[k].saldoInicial!==undefined); }
 const TRANSFERS_KEY = 'bpo_financeiro_transfers_v1';
@@ -4176,7 +4183,7 @@ function renderVisaoGeral(){
   // ---- KPIs (posição atual, não dependem do range) ----
   const d1Iso = bcDiaRef(); // fechamento do dia anterior (D-1)
   const saldoAtual = (state.filters.empresaId && bankConfigurado(state.filters.empresaId))
-    ? BANK_ACCOUNTS.reduce((t,c)=>t+bankSaldo(state.filters.empresaId, c, d1Iso).real, 0)
+    ? BANK_ACCOUNTS.reduce((t,c)=>{ const x = bankSaldoExtrato(state.filters.empresaId, c, d1Iso); return t + (x!==null ? x : bankSaldo(state.filters.empresaId, c, d1Iso).real); }, 0)
     : allReceivables.filter(r=>BAIXADO_AR.includes(r.status)).reduce((s,r)=>s+(r.valorRecebido||r.valor),0)
                     - allPayables.filter(a=>BAIXADO_AP.includes(a.status)).reduce((s,a)=>s+a.valor,0);
   const receberAberto = allReceivables.filter(r=>!['recebido','cancelado'].includes(r.status));
