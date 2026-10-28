@@ -2023,7 +2023,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '27/10-c'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '27/10-d'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -6756,7 +6756,7 @@ function renderCfgTabBody(){
 
 /* ---------- Cópia para consulta: gera um arquivo com os dados de uma empresa para abrir no modo consulta (?leitura) ---------- */
 const COPIA_EXCLUIR = /^bpo_financeiro_(users_v1|auth_v1|session_user_v1|envio_v1|last_activity_v1|documents_v1|approval_requests_v1|locked_empresa_v1|producao_v1|leitura_meta|imp_zoom|prefs_v1)/;
-const COPIA_PJ = /\b(ltda|eireli|epp|s\.?a\.?|s\/a|me|mei|cia|comercio|comércio|servicos|serviços|imobiliaria|imobiliária|empreendimento|seguros|seguradora|banco|associacao|associação|condominio|condomínio|telefonica|telefônica|cpfl|sanasa|vivo|amil|porto seguro|pottencial|sicredi|pjbank|imobzi)\b/i;
+const COPIA_PJ = /\b(ltda|eireli|epp|s\.?a\.?|s\/a|me|mei|cia|comercio|comércio|servicos|serviços|imobiliaria|imobiliária|empreendimento|seguros|seguradora|banco|associacao|associação|condominio|condomínio|telefonica|telefônica|cpfl|sanasa|vivo|amil|porto seguro|pottencial|sicredi|pjbank|imobzi|prefeitura|conselho|ordem|advogados|posto|assessoria|nucleo|núcleo|informacao|informação|credito|crédito|receita|brasil|manutencao|manutenção|texas|ajuste|origem|federal|estadual|municipal|regional|sindicato|cartorio|cartório|farmacia|farmácia|mercado|padaria|auto|pecas|peças)\b/i;
 function copiaSemAcento(t){ return String(t).normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
 function copiaEsc(t){ return String(t).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
 function copiaGerar(emp, opt){
@@ -6774,6 +6774,7 @@ function copiaGerar(emp, opt){
   let txt = JSON.stringify(dados);   // todo o conteúdo como texto para mascarar de uma vez
   const LET = "A-Za-zÀ-ÿ";
   const reNome = n=> new RegExp('(?<![' + LET + '])' + n.trim().split(/\s+/).map(copiaEsc).join('\\s+') + '(?![' + LET + '])', 'gi');
+  if(opt.ocultar) txt = txt.replace(/[\w.+-]+@[\w-]+(\.[\w-]+)+/g,'email@oculto');   // e-mails antes de renomear a empresa (o domínio pode conter o nome dela)
   /* renomear a empresa primeiro (antes de mascarar nomes), preservando o nome de quem concilia */
   if(novoNome && nomeOriginal){
     [nomeOriginal, copiaSemAcento(nomeOriginal), (empresa.nomeFantasia||'')].filter(x=>x && x.length>=4).forEach(v=>{ try{ txt = txt.replace(new RegExp(copiaEsc(v),'gi'), novoNome); }catch(e){} });
@@ -6795,7 +6796,8 @@ function copiaGerar(emp, opt){
     const lista = [...nomes].sort((a,b)=>b.length-a.length);
     lista.forEach(n=>{ const al = ali(n); [n, copiaSemAcento(n)].forEach(v=>{ try{ txt = txt.replace(reNome(v), al); }catch(e){} }); });
     /* nomes soltos em textos livres (primeiro nome ou sobrenome de pessoas dos cadastros) */
-    const SOBRE = new Set(); lista.forEach(n=>n.split(/\s+/).forEach(t=>{ if(t.length>=5 && !/^(bruno|zandon[aá])$/i.test(t)) SOBRE.add(t); }));
+    const CAMPOS = new Set(); (txt.match(/[A-Za-z_]+(?=\\":)/g)||[]).forEach(k=>CAMPOS.add(k.toLowerCase()));   // nomes de campos do sistema nunca são trocados
+    const SOBRE = new Set(); lista.forEach(n=>n.split(/\s+/).forEach(t=>{ if(t.length>=5 && !/^(bruno|zandon[aá])$/i.test(t) && !CAMPOS.has(t.toLowerCase())) SOBRE.add(t); }));
     [...SOBRE].forEach(t=>{ [t, copiaSemAcento(t)].forEach(v=>{ try{ txt = txt.replace(new RegExp('(?<![' + LET + '])' + copiaEsc(v) + '(?![' + LET + '])','gi'), 'Pessoa'); }catch(e){} }); });
     /* 2) CNPJ, CPF, e-mail e telefone */
     txt = txt.replace(/\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/g,'**.***.***/****-**')
