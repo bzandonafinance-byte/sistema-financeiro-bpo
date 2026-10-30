@@ -2023,7 +2023,7 @@ function contaNome(c){ const a=contaByCod(c); return a ? a.nome : (c||'—'); }
 function contaLabel(c){ const a=contaByCod(c); if(!a) return c||'—'; return a.sistema ? 'A classificar' : (lancNome(c) || a.nome); }
 function contaGrupoCod(c){ if(c==='PAG-AC' || c==='REC-AC') return c; return String(c||'').split('.').slice(0,2).join('.'); }
 function contaGrupoNome(c){ const g=contaGrupoCod(c); if(g==='PAG-AC' || g==='REC-AC') return 'A classificar'; const a=contaByCod(g); return a ? a.nome : g; }
-const APP_VERSION = '27/10-d'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
+const APP_VERSION = '30/10-a'; // aparece ao lado de "Dados atualizados em" para conferir qual versão está carregada
 const CONTA_REPASSE = '2.01.08.012'; // Valores de Terceiros a Repassar (passivo): aluguel de proprietário, não é receita nem despesa
 const CONTA_TAXA_ADM = '4.01.008';   // Receita de Intermediação: usada para a taxa de administração
 
@@ -6584,7 +6584,7 @@ function rpSnapshotBase(){
   const aberto = x=>{ const st = cxEffStatus(x); return st==='Em aberto' || st==='Vencido'; };
   const pagar = state.accounts.filter(aberto).map(a=>({e:a.empresaId, v:a.vencimento, p:(supplierById(a.fornecedorId)||{}).nome||'—', d:a.descricao||'', f:a.formaPagamento||'—', $:a.valor, r:a.categoria===CONTA_REPASSE?1:0, i:a.imobziId||'', fi:a.faturaId||'', c:a.categoria===CONTA_REPASSE?((/(\d+)\s*$/.exec(a.descricao||''))||[])[1]||'':''}));
   const receber = RECEIVABLES.filter(aberto).map(r=>({e:r.empresaId, v:r.vencimento, p:(clientById(r.clienteId)||{}).nome||'—', d:r.descricao||'', f:r.formaRecebimento||'—', $:r.valor, i:r.imobziId||''}));
-  return {geradoEm:new Date().toISOString(), imobziEmpresa:(imobziAutoOn() ? envioCfg().imobzi.empresa : ''), imobziCorte:(envioCfg().imobzi||{}).corte||'', empresas:COMPANIES.map(c=>({id:c.id, nome:c.nome, email:c.email||'', responsavel:c.responsavel||''})), pagar, receber};
+  return {geradoEm:new Date().toISOString(), imobziEmpresa:(imobziAutoOn() ? envioCfg().imobzi.empresa : ''), imobziCorte:(envioCfg().imobzi||{}).corte||'', empresas:COMPANIES.map(c=>({id:c.id, nome:c.nome, email:c.email||'', responsavel:c.responsavel||''})), pagar, receber, quitados:state.accounts.filter(a=>a.imobziId && ['conciliado','pago'].includes(a.status)).map(a=>a.imobziId)};   // repasses já quitados no sistema: o servidor não os recoloca como vencidos ao reler o Imobzi
 }
 async function rpPost(obj){
   if(LEITURA) return {ok:false, erro:'Modo consulta: sem conexão com o Apps Script.'};
